@@ -1,7 +1,7 @@
 // src/pages/DashboardLayout.jsx
 import { useState, useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { me } from "../api/manual";          // 👈 get current user from API
+import { me, logout } from "../api/manual";          // 👈 get current user from API
 import "./DashboardLayout.css";
 
 export default function DashboardLayout() {
@@ -17,16 +17,30 @@ export default function DashboardLayout() {
     me()
       .then((res) => {
         if (res?.user) setCurrentUser(res.user);
+        else navigate("/login", { replace: true });
       })
       .catch(() => {
-        // if this fails, you could optionally navigate to /login
+        navigate("/login", { replace: true });
       });
-  }, []);
+  }, [navigate]);
 
-  const handleSignOut = () => {
-    // TODO: if you add a logout API, call it here
+
+  const handleSignOut = async () => {
+  try {
+    await logout(); // calls POST /auth/logout
+  } catch (e) {
+    // even if it fails, force local sign-out so user isn't stuck
+    console.warn("Logout failed:", e?.message || e);
+  } finally {
+    setCurrentUser(null);
+
+    // optional: clear any stored token you might use anywhere
+    localStorage.removeItem("gradeifyToken");
+
     navigate("/login", { replace: true });
-  };
+  }
+};
+
 
   return (
     <div className="app-shell">
