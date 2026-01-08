@@ -1058,4 +1058,23 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ ok: false, error: err.message || "Internal Server Error" });
 });
 
+app.post("/auth/logout", (req, res) => {
+  const cookieOptions =
+    process.env.NODE_ENV === "production"
+      ? { httpOnly: true, sameSite: "none", secure: true, path: "/" }
+      : { httpOnly: true, sameSite: "lax", secure: false, path: "/" };
+
+  // Clear cookie even if session is missing
+  res.clearCookie("gradeify.sid", cookieOptions);
+
+  // Destroy server session
+  if (!req.session) return res.json({ ok: true });
+
+  req.session.destroy((err) => {
+    if (err) return res.status(500).json({ ok: false, error: "Failed to logout" });
+    return res.json({ ok: true });
+  });
+});
+
+
 server.listen(PORT, () => console.log(`✅ Backend running on ${PORT} (Socket.IO active)`));
