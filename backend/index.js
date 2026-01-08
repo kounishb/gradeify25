@@ -24,20 +24,45 @@ const app = express();
 
 
 /* ----------- ORIGIN NORMALIZATION + PROXY TRUST ----------- */
-const rawOrigin = (process.env.CLIENT_ORIGIN || "http://localhost:5173").replace(/\/$/, "");
-const isHttpsOrigin = /^https:\/\//i.test(rawOrigin);
+// Prefer CLIENT_ORIGINS (comma-separated). Keep CLIENT_ORIGIN as fallback.
+const originEnv =
+  process.env.CLIENT_ORIGINS ||
+  process.env.CLIENT_ORIGIN ||
+  "http://localhost:5173";
 
-// Needed if you're behind a proxy/https (Codespaces/Cloud), so secure cookies work
-if (isHttpsOrigin) app.set("trust proxy", 1);
+const allowedOrigins = new Set(
+  originEnv
+    .split(",")
+    .map(s => s.trim().replace(/\/$/, ""))
+    .filter(Boolean)
+);
+
+// Always include common local dev origins (safe)
+[
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+].forEach(o => allowedOrigins.add(o));
+
+// Render/production behind proxy: required for secure cookies
+if (process.env.NODE_ENV === "production") app.set("trust proxy", 1);
+
 
 /* ------------------------ HTTP + Socket.IO ------------------------ */
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: {
-    origin: rawOrigin,
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (origin.startsWith("chrome-extension://")) return cb(null, true);
+      if (allowedOrigins.has(origin.replace(/\/$/, ""))) return cb(null, true);
+      return cb(new Error(`Socket.IO CORS blocked for origin: ${origin}`));
+    },
     credentials: true,
   },
 });
+
 
 /* -------------------------- middleware -------------------------- */
 app.use(
@@ -54,28 +79,24 @@ app.use(
 );
 
 app.use(express.json());
-const allowedOrigins = new Set([
-  rawOrigin, // whatever CLIENT_ORIGIN is
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://127.0.0.1:5173",
-  "http://127.0.0.1:5174",
-]);
+const corsOptions = {
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);
+    if (origin.startsWith("chrome-extension://")) return cb(null, true);
 
-app.use(
-  cors({
-    origin(origin, cb) {
-      if (!origin) return cb(null, true);
-      if (origin.startsWith("chrome-extension://")) return cb(null, true);
-      if (allowedOrigins.has(origin)) return cb(null, true);
-      return cb(new Error(`CORS blocked for origin: ${origin}`));
-    },
-    credentials: true,
-  })
-);
+    const normalized = origin.replace(/\/$/, "");
+    if (allowedOrigins.has(normalized)) return cb(null, true);
 
-// ✅ handle preflight
-app.options("*", cors());
+    return cb(new Error(`CORS blocked for origin: ${origin}`));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // IMPORTANT: same config as app.use
+
 
 app.use(
   session({
@@ -84,9 +105,9 @@ app.use(
     resave: false,
     saveUninitialized: false,
     proxy: true,
-    cookie: isHttpsOrigin
-      ? { httpOnly: true, sameSite: "none", secure: true } // HTTPS (Codespaces, etc.)
-      : { httpOnly: true, sameSite: "lax", secure: false }, // Local HTTP
+    cookie: process.env.NODE_ENV === "production"
+        ? { httpOnly: true, sameSite: "none", secure: true }
+        : { httpOnly: true, sameSite: "lax", secure: false },
   })
 );
 
