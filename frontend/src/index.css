@@ -78,3 +78,14 @@ html[data-theme="dark"] {
   background-image: none;
 }
 
+/* Keep KaTeX math from stretching across the row */
+.katex {
+  display: inline-block;
+  white-space: normal;
+}
+
+/* Prevent long radicals/fractions from overflowing weirdly */
+.katex-display {
+  display: inline-block;
+  margin: 0;
+}

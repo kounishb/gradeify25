@@ -12,7 +12,7 @@ console.log("VITE_API_URL:", import.meta.env.VITE_API_URL);
 console.log("VITE_API_BASE:", import.meta.env.VITE_API_BASE);
 
 
-async function request(path, { method = "GET", body, headers, timeoutMs = 10000 } = {}) {
+async function request(path, { method = "GET", body, headers, timeoutMs = 60000 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const opts = {

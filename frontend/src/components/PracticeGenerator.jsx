@@ -1,6 +1,8 @@
 // src/components/PracticeGenerator.jsx
 import { useState, useEffect } from "react";
 import { generatePractice } from "../api/manual";
+import { InlineMath, BlockMath } from "react-katex";
+
 
 
 const STORAGE_KEY = "gradeify_practice_state_v1";
@@ -68,6 +70,43 @@ function normalizeText(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "");
 }
+
+function renderMath(text) {
+  const str = String(text ?? "");
+  const parts = [];
+  let last = 0;
+
+  // matches \( ... \) OR \[ ... \]
+  const re = /\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]/g;
+  let m;
+
+  while ((m = re.exec(str)) !== null) {
+    if (m.index > last) {
+      parts.push({ type: "text", value: str.slice(last, m.index) });
+    }
+
+    if (m[1] != null) parts.push({ type: "inline", value: m[1] });
+    else parts.push({ type: "block", value: m[2] });
+
+    last = re.lastIndex;
+  }
+
+  if (last < str.length) parts.push({ type: "text", value: str.slice(last) });
+
+  // If no \( \) or \[ \] wrappers but it still looks like LaTeX, render as inline math
+  const hasWrappers = parts.some((p) => p.type !== "text");
+  const looksLikeLatex =
+    /\\(int|frac|sqrt|sum|prod|left|right|cdot|times|pi|ln|log|sin|cos|tan|arctan|\^|_)/.test(str);
+
+  if (!hasWrappers && looksLikeLatex) return <InlineMath math={str} />;
+
+  return parts.map((p, i) => {
+    if (p.type === "text") return <span key={i}>{p.value}</span>;
+    if (p.type === "inline") return <InlineMath key={i} math={p.value} />;
+    return <BlockMath key={i} math={p.value} />;
+  });
+}
+
 
 function getCorrectAnswerInfo(q) {
   const raw = String(q.answer ?? "").trim();
@@ -441,7 +480,7 @@ export default function PracticeGenerator({ isDarkMode = false }) {
                           color: isDarkMode ? "#e5e7eb" : "#111827",
                         }}
                       >
-                        {q.question}
+                        {renderMath(q.question)}
                       </p>
                       {submitted && (
                         <span
@@ -488,7 +527,7 @@ export default function PracticeGenerator({ isDarkMode = false }) {
                               checked={userAnswer === choice}
                               onChange={() => handleChoiceChange(q.id, choice)}
                             />
-                            <span>{choice}</span>
+                            <span style={{ display: "inline-block" }}>{renderMath(choice)}</span>
                           </label>
                         ))}
                       </div>
@@ -515,11 +554,11 @@ export default function PracticeGenerator({ isDarkMode = false }) {
                       >
                         <p>
                           <strong>Correct answer:</strong>{" "}
-                          {getCorrectAnswerInfo(q).display}
+                          {renderMath(getCorrectAnswerInfo(q).display)}
                         </p>
                         {q.explanation && (
                           <p style={{ marginTop: "3px" }}>
-                            <strong>Explanation:</strong> {q.explanation}
+                            <strong>Explanation:</strong> {renderMath(q.explanation)}
                           </p>
                         )}
                       </div>

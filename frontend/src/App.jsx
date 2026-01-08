@@ -8,6 +8,8 @@ import ManualDashboard from "./pages/ManualDashboard.jsx";
 import SettingsPage from "./pages/Settings.jsx";
 import WelcomePage from "./pages/WelcomePage.jsx";
 import DashboardLayout from "./pages/DashboardLayout.jsx";
+import "katex/dist/katex.min.css";
+
 
 // use the Learn page file we created
 import LearnPage from "./pages/Learn.jsx";
