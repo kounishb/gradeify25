@@ -1,0 +1,21 @@
+{
+  "name": "gradeify-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.80.0",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^9.6.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.1",
+    "express-session": "^1.17.3",
+    "helmet": "^7.1.0",
+    "openai": "^6.13.0",
+    "socket.io": "^4.8.1",
+    "studentvue": "^2.0.4"
+  }
+}

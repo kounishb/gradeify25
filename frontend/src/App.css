@@ -1,0 +1,128 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap');
+
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: 'Nunito', sans-serif;
+}
+
+/* Card */
+.login-page {
+  background: #fffdf6;
+  padding: 50px 40px;
+  border-radius: 25px;
+  box-shadow: 0 15px 30px rgba(0, 0, 0, 0.12);
+  text-align: center;
+  width: 380px;
+  max-width: 90%;
+  color: #333;
+}
+
+/* Titles */
+.title {
+  font-size: 2.6rem;
+  font-weight: 700;
+  color: #5a5dff;
+  margin-bottom: 6px;
+}
+
+.subtitle {
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: #6b7280;
+  margin-bottom: 28px;
+}
+
+/* Form */
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+}
+
+.form-group label {
+  font-size: 0.95rem;
+  color: #245fb1;
+  font-weight: 600;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  font-size: 1rem;
+  transition: border 0.2s, box-shadow 0.2s;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #a5b4fc;
+  box-shadow: 0 0 8px rgba(165, 180, 252, 0.35);
+}
+
+/* Button */
+.login-form button {
+  width: 100%;
+  padding: 12px;
+  border-radius: 14px;
+  border: none;
+  background: linear-gradient(90deg, #f9a8d4, #a5b4fc);
+  color: white;
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.login-form button:hover {
+  transform: scale(1.03);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.12);
+}
+
+/* Error + links */
+.error-text {
+  color: #ef4444;
+  font-size: 0.85rem;
+  margin-top: -6px;
+}
+
+.switch-link {
+  margin-top: 18px;
+  font-size: 0.92rem;
+  color: #6b7280;
+}
+
+.link {
+  color: #6366f1;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.edit-remove {
+  display: flex;
+  gap: 10px;    /* adjust to 12px or 16px if you want */
+  align-items: center;
+}
+
+.page-wide {
+  max-width: 1500px;       /* stretch across most of the screen */
+  width: 100%;
+  margin: 8px auto 24px;   /* small top/bottom margin, centered */
+}
+

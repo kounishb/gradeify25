@@ -1,0 +1,80 @@
+:root {
+  --bg: #f5f5f8;
+  --bg-soft: #ffffff;
+  --text: #2c2c3a;
+  --text-muted: #6b6b8f;
+  --sidebar-bg: #ffffff;
+  --sidebar-text: #3b3b5a;
+  --accent: #4f46e5;
+  --accent-soft: #ece9ff;
+}
+
+[data-theme="dark"] {
+  --bg: #0f0f14;
+  --bg-soft: #1a1a22;
+  --text: #e8e8f0;
+  --text-muted: #bbb;
+  --sidebar-bg: #161622;
+  --sidebar-text: #ddddff;
+  --accent: #6c63ff;
+  --accent-soft: #2e2b50;
+}
+
+/* System defaults */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Base font scaling */
+html {
+  font-size: 16px; /* default (medium) */
+}
+
+/* Font size variants */
+html[data-font-size="small"] {
+  font-size: 14px;
+}
+
+html[data-font-size="medium"] {
+  font-size: 16px;
+}
+
+html[data-font-size="large"] {
+  font-size: 18px;
+}
+
+/* Optional: use rem-based sizing so it all scales nicely */
+body, .page, .input, .btn {
+  font-size: 1rem;
+}
+
+/* ---- App background: respect theme ---- */
+
+/* Make sure layout can fill the viewport */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* Light mode: pastel gradient */
+html:not([data-theme="dark"]) {
+  background: linear-gradient(135deg, #fce7f3, #dbeafe, #e0f2fe);
+}
+
+/* Dark mode: solid dark (or your dark gradient) */
+html[data-theme="dark"] {
+  background: #0d111a; /* or a dark gradient if you want */
+  background-image: none;
+}
+
