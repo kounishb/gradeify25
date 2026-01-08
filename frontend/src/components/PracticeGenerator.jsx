@@ -1,5 +1,7 @@
 // src/components/PracticeGenerator.jsx
 import { useState, useEffect } from "react";
+import { generatePractice } from "../api/manual";
+
 
 const STORAGE_KEY = "gradeify_practice_state_v1";
 
@@ -186,24 +188,15 @@ export default function PracticeGenerator({ isDarkMode = false }) {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/generate-practice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subject,
-          topic,
-          difficulty,
-          numQuestions: Number(numQuestions),
-        }),
+      const data = await generatePractice({
+        subject,
+        topic,
+        difficulty,
+        numQuestions: Number(numQuestions),
       });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to generate practice test");
-      }
-
-      const data = await res.json();
+      
       setTestData(data);
+
     } catch (err) {
       console.error(err);
       setError(err.message || "Something went wrong");
