@@ -82,3 +82,7 @@ export const deleteCategory = (id) =>
 
 export const getSummary = (classId) =>
   request(`/me/classes/${classId}/summary`);
+
+export const generatePractice = (payload) =>
+  request("/api/generate-practice", { method: "POST", body: payload });
+
