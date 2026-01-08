@@ -1,6 +1,12 @@
-const API_BASE = (
-  import.meta?.env?.VITE_API_URL || import.meta?.env?.VITE_API_BASE || ""
-).trim().replace(/\/$/, "") || "http://localhost:3001";
+const fromEnv = (
+  import.meta?.env?.VITE_API_URL ||
+  import.meta?.env?.VITE_API_BASE ||
+  ""
+).trim().replace(/\/$/, "");
+
+// Bulletproof: never fall back to localhost in production
+const API_BASE = fromEnv || (import.meta.env.DEV ? "http://localhost:3001" : "");
+
 
 console.log("VITE_API_URL:", import.meta.env.VITE_API_URL);
 console.log("VITE_API_BASE:", import.meta.env.VITE_API_BASE);
