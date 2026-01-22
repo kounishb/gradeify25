@@ -9,14 +9,6 @@ export default function AuthLogin() {
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // If already logged in, skip login page
-  useEffect(() => {
-    me()
-      .then((res) => {
-        if (res?.user) nav("/manual");
-      })
-      .catch(() => {});
-  }, [nav]);
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -26,50 +18,68 @@ export default function AuthLogin() {
       await login({ username: username.trim(), password });
       nav("/manual");
     } catch (e) {
-      setErr(e.message || "Login failed");
+      setErr(e?.message || "Login failed. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="login-page">
-      <h1 className="title">Gradeify</h1>
-      <p className="subtitle">Track your classes, grades, and study smarter!</p>
+    <div className="app-container">
+      <div className="login-page">
+        <h1 className="title">Gradeify</h1>
+        <p className="subtitle">
+          Practice smarter with learning tools and grade calculations — all in
+          one place.
+        </p>
 
-      <form onSubmit={onSubmit} className="login-form">
-        <div className="form-group">
-          <label>Username</label>
-          <input
-            type="text"
-            placeholder="Enter your username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-          />
-        </div>
+        <form onSubmit={onSubmit} className="login-form">
+          <div className="form-group">
+            <label htmlFor="username">Username</label>
+            <input
+              id="username"
+              type="text"
+              placeholder="Enter your username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              required
+            />
+          </div>
 
-        <div className="form-group">
-          <label>Password</label>
-          <input
-            type="password"
-            placeholder="Enter your password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </div>
+          <div className="form-group">
+            <label htmlFor="password">Password</label>
+            <input
+              id="password"
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+            />
+          </div>
 
-        {err && <p className="error-text">{err}</p>}
+          {err && <p className="error-text">{err}</p>}
 
-        <button disabled={loading}>
-          {loading ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
+          <button type="submit" disabled={loading}>
+            {loading ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
 
-      <p className="switch-link">
-        No account yet? <Link to="/register" className="link">Create one</Link>
-      </p>
+        <p className="switch-link">
+          No account yet?{" "}
+          <Link to="/register" className="link">
+            Create one
+          </Link>
+        </p>
+
+        <p className="switch-link" style={{ marginTop: 10 }}>
+          <Link to="/" className="link" style={{ fontWeight: 700 }}>
+            ← Back to home
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }

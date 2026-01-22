@@ -1,45 +1,138 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap");
 
+/* =========================================================
+   Gradeify Theme (Soft Blue + Slate + White)
+   ========================================================= */
+:root {
+  /* Backgrounds */
+  --bg-main: #f8fafc;   /* slate-50 */
+  --bg-card: #ffffff;
+  --bg-soft: #f1f5f9;   /* slate-100 */
+
+  /* Primary (soft blue) */
+  --primary: #3b82f6;       /* blue-500 */
+  --primary-hover: #2563eb; /* blue-600 */
+  --primary-soft: #dbeafe;  /* blue-100 */
+
+  /* Text */
+  --text-main: #0f172a;  /* slate-900 */
+  --text-muted: #475569; /* slate-600 */
+  --text-soft: #64748b;  /* slate-500 */
+
+  /* Borders */
+  --border: #e2e8f0;      /* slate-200 */
+  --border-strong: #cbd5e1; /* slate-300 */
+
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 12px 28px rgba(15, 23, 42, 0.10);
+
+  /* Radius */
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+}
+
+/* Dark mode overrides */
+:root[data-theme="dark"] {
+  --bg-main: #0b1220;   /* deep slate */
+  --bg-card: #111827;   /* slate-900 */
+  --bg-soft: #0f172a;   /* slate-900-ish */
+
+  --text-main: #e5e7eb; /* slate-200 */
+  --text-muted: #a1a1aa; /* zinc-400 */
+  --text-soft: #94a3b8; /* slate-400 */
+
+  --border: rgba(148, 163, 184, 0.18);
+  --border-strong: rgba(148, 163, 184, 0.28);
+
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+
+/* =========================================================
+   Global base
+   ========================================================= */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: "Nunito", sans-serif;
+  background: var(--bg-main);
+  color: var(--text-main);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Optional: make links look consistent */
+a {
+  color: var(--primary);
+}
+
+a:hover {
+  color: var(--primary-hover);
+}
+
+/* =========================================================
+   Layout helpers
+   ========================================================= */
 .app-container {
   min-height: 100vh;
   display: flex;
   justify-content: center;
   align-items: center;
-  font-family: 'Nunito', sans-serif;
+  font-family: "Nunito", sans-serif;
+  background: var(--bg-main);
 }
 
-/* Card */
+/* Page wrapper for wider screens */
+.page-wide {
+  max-width: 1500px;
+  width: 100%;
+  margin: 8px auto 24px;
+}
+
+/* =========================================================
+   Auth Card (login/register)
+   ========================================================= */
 .login-page {
-  background: #fffdf6;
-  padding: 50px 40px;
-  border-radius: 25px;
-  box-shadow: 0 15px 30px rgba(0, 0, 0, 0.12);
+  background: var(--bg-card);
+  padding: 44px 38px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
   text-align: center;
-  width: 380px;
-  max-width: 90%;
-  color: #333;
+  width: 400px;
+  max-width: 92%;
+  color: var(--text-main);
+  border: 1px solid var(--border);
 }
 
 /* Titles */
 .title {
-  font-size: 2.6rem;
-  font-weight: 700;
-  color: #5a5dff;
-  margin-bottom: 6px;
+  font-size: 2.35rem;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 8px;
+  letter-spacing: -0.02em;
 }
 
 .subtitle {
-  font-size: 1.05rem;
-  font-weight: 500;
-  color: #6b7280;
-  margin-bottom: 28px;
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 26px;
 }
 
-/* Form */
+/* =========================================================
+   Forms
+   ========================================================= */
 .login-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .form-group {
@@ -51,62 +144,75 @@
 }
 
 .form-group label {
-  font-size: 0.95rem;
-  color: #245fb1;
-  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text-soft);
+  font-weight: 700;
 }
 
 .form-group input {
   width: 100%;
   padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  background: #f9fafb;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
   font-size: 1rem;
-  transition: border 0.2s, box-shadow 0.2s;
+  transition: border 0.2s, box-shadow 0.2s, background 0.2s;
+  color: var(--text-main);
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #a5b4fc;
-  box-shadow: 0 0 8px rgba(165, 180, 252, 0.35);
+  border-color: rgba(59, 130, 246, 0.55);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+  background: #ffffff;
 }
 
-/* Button */
+/* =========================================================
+   Buttons (Primary)
+   - You can reuse these across the whole app later.
+   ========================================================= */
 .login-form button {
   width: 100%;
   padding: 12px;
   border-radius: 14px;
-  border: none;
-  background: linear-gradient(90deg, #f9a8d4, #a5b4fc);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: var(--primary);
   color: white;
   font-size: 1.05rem;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease;
+  box-shadow: var(--shadow-sm);
 }
 
 .login-form button:hover {
-  transform: scale(1.03);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.12);
+  background: var(--primary-hover);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
-/* Error + links */
+.login-form button:active {
+  transform: translateY(0px);
+}
+
+/* =========================================================
+   Error + links
+   ========================================================= */
 .error-text {
   color: #ef4444;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   margin-top: -6px;
 }
 
 .switch-link {
   margin-top: 18px;
   font-size: 0.92rem;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .link {
-  color: #6366f1;
-  font-weight: 700;
+  color: var(--primary);
+  font-weight: 800;
   text-decoration: none;
 }
 
@@ -114,15 +220,9 @@
   text-decoration: underline;
 }
 
+/* Small utility */
 .edit-remove {
   display: flex;
-  gap: 10px;    /* adjust to 12px or 16px if you want */
+  gap: 10px;
   align-items: center;
 }
-
-.page-wide {
-  max-width: 1500px;       /* stretch across most of the screen */
-  width: 100%;
-  margin: 8px auto 24px;   /* small top/bottom margin, centered */
-}
-

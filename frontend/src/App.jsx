@@ -2,6 +2,8 @@
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 
+import Landing from "./pages/Landing.jsx"; // ✅ NEW landing page
+
 import AuthLogin from "./pages/AuthLogin.jsx";
 import Register from "./pages/Register.jsx";
 import ManualDashboard from "./pages/ManualDashboard.jsx";
@@ -9,7 +11,6 @@ import SettingsPage from "./pages/Settings.jsx";
 import WelcomePage from "./pages/WelcomePage.jsx";
 import DashboardLayout from "./pages/DashboardLayout.jsx";
 import "katex/dist/katex.min.css";
-
 
 // use the Learn page file we created
 import LearnPage from "./pages/Learn.jsx";
@@ -74,9 +75,9 @@ export default function App() {
   const location = useLocation();
   const [theme, setTheme] = useState("light");
 
-  // Force light mode on /login and /register; otherwise use saved theme.
+  // Force light mode on landing + auth pages; otherwise use saved theme.
   useEffect(() => {
-    const forceLight = ["/login", "/register"].includes(location.pathname);
+    const forceLight = ["/", "/login", "/register"].includes(location.pathname);
     const saved =
       localStorage.getItem("gradeify_theme") === "dark" ? "dark" : "light";
 
@@ -94,8 +95,8 @@ export default function App() {
   return (
     <ErrorBoundary>
       <Routes>
-        {/* auth + landing */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
+        {/* landing + auth */}
+        <Route path="/" element={<Landing />} /> {/* ✅ was Navigate to /login */}
         <Route path="/login" element={<AuthLogin />} />
         <Route path="/register" element={<Register />} />
 
@@ -120,9 +121,9 @@ export default function App() {
         />
 
         {/* catch-all */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />{" "}
+        {/* ✅ send unknowns to landing */}
       </Routes>
     </ErrorBoundary>
   );
 }
-

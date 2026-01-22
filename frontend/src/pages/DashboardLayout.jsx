@@ -1,7 +1,7 @@
 // src/pages/DashboardLayout.jsx
 import { useState, useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { me, logout } from "../api/manual";          // 👈 get current user from API
+import { me, logout } from "../api/manual";
 import "./DashboardLayout.css";
 
 export default function DashboardLayout() {
@@ -12,7 +12,6 @@ export default function DashboardLayout() {
   const isActive = (path) =>
     location.pathname === path ? "nav-link active" : "nav-link";
 
-  // load user on mount
   useEffect(() => {
     me()
       .then((res) => {
@@ -24,30 +23,27 @@ export default function DashboardLayout() {
       });
   }, [navigate]);
 
-
   const handleSignOut = async () => {
-  try {
-    await logout(); // calls POST /auth/logout
-  } catch (e) {
-    // even if it fails, force local sign-out so user isn't stuck
-    console.warn("Logout failed:", e?.message || e);
-  } finally {
-    setCurrentUser(null);
-
-    // optional: clear any stored token you might use anywhere
-    localStorage.removeItem("gradeifyToken");
-
-    navigate("/login", { replace: true });
-  }
-};
-
+    try {
+      await logout();
+    } catch (e) {
+      console.warn("Logout failed:", e?.message || e);
+    } finally {
+      setCurrentUser(null);
+      localStorage.removeItem("gradeifyToken");
+      navigate("/login", { replace: true });
+    }
+  };
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <h1 className="logo">Gradeify</h1>
+        <div className="brand">
+          <h1 className="logo">Gradeify</h1>
+        </div>
 
-        <nav className="nav">
+        {/* IMPORTANT: use side-nav instead of nav to avoid Landing.css .nav collisions */}
+        <nav className="side-nav">
           <Link to="/app" className={isActive("/app")}>
             Welcome
           </Link>
@@ -71,7 +67,7 @@ export default function DashboardLayout() {
           <span className="signed-in">
             {currentUser ? `Signed in as ${currentUser.username}` : ""}
           </span>
-          <button className="signout-btn" onClick={handleSignOut}>
+          <button className="signout-btn" onClick={handleSignOut} type="button">
             Sign out
           </button>
         </header>

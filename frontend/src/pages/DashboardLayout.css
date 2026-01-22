@@ -1,61 +1,115 @@
+/* src/pages/DashboardLayout.css */
+
 .app-shell {
   display: flex;
   min-height: 100vh;
-  background: var(--bg);
-  color: var(--text);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+  background: var(--bg-main);
+  color: var(--text-main);
+  font-family: "Nunito", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
 }
 
 /* Sidebar */
 .sidebar {
-  width: 240px;
-  padding: 24px 20px;
-  background: var(--sidebar-bg);
-  color: var(--sidebar-text);
-  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.04);
+  width: 260px;
+  padding: 22px 18px;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 18px;
+}
+
+/* FORCE sidebar to be dark in dark mode (beats old overrides) */
+:root[data-theme="dark"] .app-shell .sidebar {
+  background: #0b1220 !important;
+  border-right: 1px solid rgba(148, 163, 184, 0.14) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Brand block (matches DashboardLayout.jsx) */
+.brand {
+  padding: 10px 10px 6px;
 }
 
 .logo {
-  font-size: 1.8rem;
-  font-weight: 700;
+  font-size: 1.55rem;
+  font-weight: 900;
   margin: 0;
-  color: var(--sidebar-text);
+  color: var(--text-main);
+  letter-spacing: -0.02em;
 }
 
-/* Nav buttons */
+.tagline {
+  margin-top: 6px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+/* Nav wrapper */
+.side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 6px;
+}
+
+/* Nav links */
 .nav-link {
   display: block;
-  padding: 10px 14px;
-  border-radius: 999px;
+  padding: 10px 12px;
+  border-radius: 14px;
   text-decoration: none;
   font-size: 0.95rem;
-  color: var(--sidebar-text);
+  color: var(--text-muted);
   background: transparent;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.05s ease;
+  border: 1px solid transparent;
+  transition: background 0.15s ease, color 0.15s ease, border 0.15s ease,
+    transform 0.05s ease;
 }
 
 .nav-link:hover {
-  background: var(--accent-soft);
+  background: var(--bg-soft);
+  border-color: var(--border);
+  color: var(--text-main);
   transform: translateY(-1px);
 }
 
+/* Dark mode hover background should not go light */
+:root[data-theme="dark"] .app-shell .sidebar .nav-link:hover {
+  background: rgba(148, 163, 184, 0.08) !important;
+  border-color: rgba(148, 163, 184, 0.14) !important;
+  color: rgba(229, 231, 235, 0.92) !important;
+}
+
+/* Dark mode base link color (prevents washed-out grey) */
+:root[data-theme="dark"] .app-shell .sidebar .nav-link {
+  color: rgba(229, 231, 235, 0.78) !important;
+}
+
 .nav-link.active {
-  background: var(--accent);
-  color: white;
-  font-weight: 600;
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.22);
+  color: var(--text-main);
+  font-weight: 800;
+}
+
+/* Dark mode active state: slightly stronger + guaranteed readable */
+:root[data-theme="dark"] .app-shell .sidebar .nav-link.active {
+  background: rgba(59, 130, 246, 0.18) !important;
+  border-color: rgba(59, 130, 246, 0.28) !important;
+  color: #e5e7eb !important;
 }
 
 /* Main layout */
 .main {
   flex: 1;
-  padding: 8px 24px;
+  padding: 14px 22px;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: var(--bg-main);
 }
 
 /* Top bar */
@@ -63,31 +117,88 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 14px;
+}
+
+:root[data-theme="dark"] .topbar {
+  background: rgba(17, 24, 39, 0.92);
+  border-color: rgba(148, 163, 184, 0.14);
 }
 
 .signed-in {
   font-size: 0.9rem;
   color: var(--text-muted);
+  font-weight: 700;
 }
 
 /* Sign out */
 .signout-btn {
-  padding: 6px 12px;
+  padding: 8px 12px;
   border-radius: 999px;
-  border: none;
+  border: 1px solid rgba(239, 68, 68, 0.25);
   cursor: pointer;
-  background: #ef4444;
-  color: white;
+  background: rgba(239, 68, 68, 0.10);
+  color: #b91c1c;
   font-size: 0.85rem;
+  font-weight: 800;
+  transition: background 0.15s ease, transform 0.05s ease, border 0.15s ease;
+}
+
+:root[data-theme="dark"] .signout-btn {
+  background: rgba(239, 68, 68, 0.10);
+  border-color: rgba(239, 68, 68, 0.30);
+  color: #fecaca;
 }
 
 .signout-btn:hover {
-  opacity: 0.9;
+  background: rgba(239, 68, 68, 0.14);
+  transform: translateY(-1px);
+}
+
+.signout-btn:active {
+  transform: translateY(0px);
 }
 
 /* Outlet area */
 .content {
   flex: 1;
   padding-top: 0;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .sidebar {
+    width: 220px;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  :root[data-theme="dark"] .app-shell .sidebar {
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14) !important;
+  }
+
+  .side-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .nav-link {
+    padding: 10px 12px;
+  }
 }
