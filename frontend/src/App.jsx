@@ -10,6 +10,8 @@ import ManualDashboard from "./pages/ManualDashboard.jsx";
 import SettingsPage from "./pages/Settings.jsx";
 import WelcomePage from "./pages/WelcomePage.jsx";
 import DashboardLayout from "./pages/DashboardLayout.jsx";
+import Review from "./pages/Review";
+
 import "katex/dist/katex.min.css";
 
 // use the Learn page file we created
@@ -110,7 +112,8 @@ export default function App() {
           <Route path="settings" element={<SettingsPage />} />
           {/* educational features */}
           <Route path="learn" element={<LearnPage isDarkMode={isDarkMode} />} />
-          <Route path="tools" element={<ToolsPage />} />
+          <Route path="review" element={<Review />} />
+
         </Route>
 
         {/* backwards compatibility: old routes redirect into new ones */}

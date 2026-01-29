@@ -7,6 +7,30 @@ import { InlineMath, BlockMath } from "react-katex";
 
 const STORAGE_KEY = "gradeify_practice_state_v1";
 
+const SAVED_TESTS_KEY = "gradeify_saved_practice_tests_v1";
+
+function loadSavedTests() {
+  try {
+    const raw = localStorage.getItem(SAVED_TESTS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveTestToStorage(test) {
+  const existing = loadSavedTests();
+
+  // avoid duplicates (same id)
+  if (existing.some((t) => t.id === test.id)) return { ok: false, reason: "duplicate" };
+
+  const next = [test, ...existing].slice(0, 50); // keep newest 50
+  localStorage.setItem(SAVED_TESTS_KEY, JSON.stringify(next));
+  return { ok: true };
+}
+
+
 // Theme-aware styles
 const getSectionCard = (isDark) => ({
   borderRadius: "18px",
@@ -151,6 +175,9 @@ export default function PracticeGenerator({ isDarkMode = false }) {
   const [loading, setLoading] = useState(false);
   const [testData, setTestData] = useState(null);
   const [error, setError] = useState("");
+  const [savedNow, setSavedNow] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
+
 
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [submitted, setSubmitted] = useState(false);
@@ -225,6 +252,9 @@ export default function PracticeGenerator({ isDarkMode = false }) {
     setSubmitted(false);
     setResults(null);
     setLoading(true);
+    setSavedNow(false);
+    setSaveMsg("");
+
 
     try {
       const data = await generatePractice({
@@ -271,6 +301,55 @@ export default function PracticeGenerator({ isDarkMode = false }) {
     });
     setSubmitted(true);
   };
+
+  const handleSaveTest = () => {
+    if (!submitted || !results || !testData?.questions?.length) return;
+
+    // create a stable id for THIS submitted test
+    const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+    // build per-question review data
+    const reviewQuestions = testData.questions.map((q) => {
+      const userAnswer = selectedAnswers[q.id] ?? "";
+      const { normalized: correctNorm, display: correctDisplay } = getCorrectAnswerInfo(q);
+      const isCorrect = normalizeText(userAnswer) === correctNorm && userAnswer !== "";
+
+      return {
+        id: q.id,
+        question: q.question,
+        choices: q.choices ?? [],
+        explanation: q.explanation ?? "",
+        correctDisplay,     // "A"/"B"/... or full text
+        userAnswer,
+        isCorrect,
+      };
+    });
+
+    const payload = {
+      id,
+      createdAt: new Date().toISOString(),
+      meta: {
+        subject: testData.subject,
+        topic: testData.topic,
+        difficulty: testData.difficulty,
+      },
+      score: {
+        correct: results.score,
+        total: results.total,
+        percent: Math.round((results.score / results.total) * 100),
+      },
+      questions: reviewQuestions,
+    };
+
+    const res = saveTestToStorage(payload);
+    if (res.ok) {
+      setSavedNow(true);
+      setSaveMsg("Saved! You can view it in the Review tab.");
+    } else {
+      setSaveMsg("Already saved.");
+    }
+  };
+
 
   const getQuestionResult = (id) =>
     results?.perQuestion?.find((r) => r.id === id) || null;
@@ -425,6 +504,36 @@ export default function PracticeGenerator({ isDarkMode = false }) {
                 <strong>Submit Answers</strong> to see your score.
               </p>
             </div>
+
+                      {submitted && results && (
+            <div
+              style={{
+                marginTop: "10px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "10px",
+              }}
+            >
+              <div style={getSmallText(isDarkMode)}>
+                {saveMsg ? saveMsg : "Want to review this later? Save it."}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSaveTest}
+                disabled={savedNow}
+                style={{
+                  ...primaryButton,
+                  background: savedNow ? "#6b7280" : "#4f46e5",
+                  cursor: savedNow ? "default" : "pointer",
+                }}
+              >
+                {savedNow ? "Saved" : "Save Test"}
+              </button>
+            </div>
+          )}
+
 
             {results && (
               <div style={{ textAlign: "right" }}>

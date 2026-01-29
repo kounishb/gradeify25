@@ -175,6 +175,31 @@ If multiple choice is not appropriate, leave "choices" as an empty array [].
 Do NOT include any text before or after the JSON.
 `;
 }
+
+function buildFlashcardPrompt({ subject, topic, prompt, numCards }) {
+  return `
+You are an expert tutor creating study flashcards.
+
+Create ${numCards} flashcards for:
+- Subject: ${subject}
+- Topic: ${topic}
+- User prompt: ${prompt}
+
+Rules:
+- Return PURE JSON only, no markdown, no extra text.
+- Format must be exactly:
+
+{
+  "cards": [
+    { "term": "string", "definition": "string" }
+  ]
+}
+
+- Terms should be short (1–8 words).
+- Definitions should be clear and student-friendly (1–3 sentences max).
+`;
+}
+
 function safeParseJSON(value) {
   // If the model already gave us an object, just use it
   if (value && typeof value === "object") {
@@ -195,6 +220,67 @@ function safeParseJSON(value) {
     throw new Error("Could not parse JSON");
   }
 }
+
+app.post("/api/generate-flashcards", async (req, res) => {
+  try {
+    const { subject, topic, prompt, numCards } = req.body;
+
+    if (!subject || !topic || !prompt || !numCards) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const n = Math.max(5, Math.min(Number(numCards) || 10, 60));
+
+    const fcPrompt = buildFlashcardPrompt({
+      subject,
+      topic,
+      prompt,
+      numCards: n,
+    });
+
+    const response = await openai.responses.create({
+      model: "gpt-4.1-mini",
+      input: fcPrompt,
+      text: {
+        format: { type: "json_object" },
+      },
+    });
+
+    const content = response.output?.[0]?.content || [];
+    if (!content.length) throw new Error("No content returned from OpenAI");
+
+    const rawText = content
+      .map((part) => part.text || "")
+      .join("\n")
+      .trim();
+
+    console.log("🧾 Flashcards raw text (truncated):", rawText.slice(0, 200));
+
+    const data = safeParseJSON(rawText);
+
+    if (!data || !Array.isArray(data.cards)) {
+      throw new Error("AI response missing a valid cards array");
+    }
+
+    // clean + cap
+    const cards = data.cards
+      .map((c) => ({
+        term: String(c.term ?? "").trim(),
+        definition: String(c.definition ?? "").trim(),
+      }))
+      .filter((c) => c.term && c.definition)
+      .slice(0, n);
+
+    if (!cards.length) {
+      throw new Error("No valid flashcards generated");
+    }
+
+    return res.json({ cards });
+  } catch (err) {
+    console.error("Error generating flashcards:", err);
+    return res.status(500).json({ error: err.message || "Internal server error" });
+  }
+});
 
 
 app.post("/api/generate-practice", async (req, res) => {
@@ -779,6 +865,140 @@ app.delete("/me/grades/:id", requireUser, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ===================== FLASHCARDS (DB) /me/flashcards =====================
+
+// Create a flashcard set + cards
+app.post("/me/flashcard-sets", requireUser, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const { subject, topic, prompt, cards } = req.body || {};
+
+    if (!subject || !topic || !prompt || !Array.isArray(cards) || cards.length === 0) {
+      return res.status(400).json({ error: "Missing subject/topic/prompt or cards[]" });
+    }
+
+    const setId = newId();
+
+    // 1) Insert set
+    const { data: setRow, error: setErr } = await supabase
+      .from("flashcard_sets")
+      .insert({
+        id: setId,
+        user_id: userId,
+        subject: String(subject).trim(),
+        topic: String(topic).trim(),
+        prompt: String(prompt).trim(),
+      })
+      .select()
+      .single();
+
+    if (setErr) {
+      console.error("flashcard_sets insert error:", setErr);
+      return res.status(500).json({ error: "Failed to save flashcard set" });
+    }
+
+    // 2) Insert cards
+    const rows = cards
+      .map((c, idx) => ({
+        id: newId(),
+        set_id: setId,
+        user_id: userId,
+        card_index: idx,
+        term: String(c.term ?? "").trim(),
+        definition: String(c.definition ?? "").trim(),
+      }))
+      .filter((c) => c.term && c.definition);
+
+    if (!rows.length) {
+      // clean up empty set if cards invalid
+      await supabase.from("flashcard_sets").delete().eq("id", setId).eq("user_id", userId);
+      return res.status(400).json({ error: "Cards were empty/invalid" });
+    }
+
+    const { error: cardsErr } = await supabase.from("flashcards").insert(rows);
+    if (cardsErr) {
+      console.error("flashcards insert error:", cardsErr);
+      // cleanup if cards insert fails
+      await supabase.from("flashcard_sets").delete().eq("id", setId).eq("user_id", userId);
+      return res.status(500).json({ error: "Failed to save flashcards" });
+    }
+
+    return res.json({ ok: true, set: setRow });
+  } catch (e) {
+    console.error("POST /me/flashcard-sets error:", e);
+    return res.status(500).json({ error: e.message || "Server error" });
+  }
+});
+
+// List sets (metadata only)
+app.get("/me/flashcard-sets", requireUser, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+
+    const { data, error } = await supabase
+      .from("flashcard_sets")
+      .select("id, subject, topic, prompt, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ ok: true, sets: data });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || "Server error" });
+  }
+});
+
+// Get one set + cards
+app.get("/me/flashcard-sets/:id", requireUser, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const { id } = req.params;
+
+    const { data: setRow, error: setErr } = await supabase
+      .from("flashcard_sets")
+      .select("id, subject, topic, prompt, created_at")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
+
+    if (setErr || !setRow) return res.status(404).json({ error: "Set not found" });
+
+    const { data: cards, error: cardsErr } = await supabase
+      .from("flashcards")
+      .select("term, definition, card_index")
+      .eq("set_id", id)
+      .eq("user_id", userId)
+      .order("card_index", { ascending: true });
+
+    if (cardsErr) return res.status(500).json({ error: cardsErr.message });
+
+    return res.json({ ok: true, set: setRow, cards });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || "Server error" });
+  }
+});
+
+// Delete a set (cascade deletes cards)
+app.delete("/me/flashcard-sets/:id", requireUser, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from("flashcard_sets")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || "Server error" });
+  }
+});
+
+
 /* ------------------------- CATEGORIES (CRUD) ------------------------- */
 
 // List categories
@@ -1058,23 +1278,6 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ ok: false, error: err.message || "Internal Server Error" });
 });
 
-app.post("/auth/logout", (req, res) => {
-  const cookieOptions =
-    process.env.NODE_ENV === "production"
-      ? { httpOnly: true, sameSite: "none", secure: true, path: "/" }
-      : { httpOnly: true, sameSite: "lax", secure: false, path: "/" };
-
-  // Clear cookie even if session is missing
-  res.clearCookie("gradeify.sid", cookieOptions);
-
-  // Destroy server session
-  if (!req.session) return res.json({ ok: true });
-
-  req.session.destroy((err) => {
-    if (err) return res.status(500).json({ ok: false, error: "Failed to logout" });
-    return res.json({ ok: true });
-  });
-});
 
 
 server.listen(PORT, () => console.log(`✅ Backend running on ${PORT} (Socket.IO active)`));

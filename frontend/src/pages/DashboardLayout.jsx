@@ -53,8 +53,8 @@ export default function DashboardLayout() {
           <Link to="/app/learn" className={isActive("/app/learn")}>
             Learn
           </Link>
-          <Link to="/app/tools" className={isActive("/app/tools")}>
-            Tools (soon)
+          <Link to="/app/review" className={isActive("/app/review")}>
+            Review
           </Link>
           <Link to="/app/settings" className={isActive("/app/settings")}>
             Settings
