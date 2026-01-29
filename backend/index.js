@@ -865,6 +865,37 @@ app.delete("/me/grades/:id", requireUser, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post("/me/practice-tests", requireUser, async (req, res) => {
+  try {
+    const { meta, questions, score } = req.body || {};
+
+    if (!meta || !questions || !score) {
+      return res.status(400).json({ error: "Missing test data" });
+    }
+
+    const { data, error } = await supabase
+      .from("practice_tests")
+      .insert({
+        user_id: req.session.userId,
+        meta,
+        questions,
+        score,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ error: "Failed to save test" });
+    }
+
+    res.json({ ok: true, test: data });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 // ===================== FLASHCARDS (DB) /me/flashcards =====================
 
 // Create a flashcard set + cards

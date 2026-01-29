@@ -1,6 +1,6 @@
 // src/components/PracticeGenerator.jsx
 import { useState, useEffect } from "react";
-import { generatePractice } from "../api/manual";
+import { generatePractice, savePracticeTest } from "../api/manual";
 import { InlineMath, BlockMath } from "react-katex";
 
 
@@ -244,6 +244,7 @@ export default function PracticeGenerator({ isDarkMode = false }) {
     results,
   ]);
 
+  
   const handleGenerate = async (e) => {
     e.preventDefault();
     setError("");
@@ -302,53 +303,66 @@ export default function PracticeGenerator({ isDarkMode = false }) {
     setSubmitted(true);
   };
 
-  const handleSaveTest = () => {
-    if (!submitted || !results || !testData?.questions?.length) return;
+ const handleSaveTest = async () => {
+  if (!submitted || !results || !testData?.questions?.length) return;
 
-    // create a stable id for THIS submitted test
-    const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
-    // build per-question review data
-    const reviewQuestions = testData.questions.map((q) => {
-      const userAnswer = selectedAnswers[q.id] ?? "";
-      const { normalized: correctNorm, display: correctDisplay } = getCorrectAnswerInfo(q);
-      const isCorrect = normalizeText(userAnswer) === correctNorm && userAnswer !== "";
+  const reviewQuestions = testData.questions.map((q) => {
+    const userAnswer = selectedAnswers[q.id] ?? "";
+    const { normalized: correctNorm, display: correctDisplay } = getCorrectAnswerInfo(q);
+    const isCorrect = normalizeText(userAnswer) === correctNorm && userAnswer !== "";
 
-      return {
-        id: q.id,
-        question: q.question,
-        choices: q.choices ?? [],
-        explanation: q.explanation ?? "",
-        correctDisplay,     // "A"/"B"/... or full text
-        userAnswer,
-        isCorrect,
-      };
-    });
-
-    const payload = {
-      id,
-      createdAt: new Date().toISOString(),
-      meta: {
-        subject: testData.subject,
-        topic: testData.topic,
-        difficulty: testData.difficulty,
-      },
-      score: {
-        correct: results.score,
-        total: results.total,
-        percent: Math.round((results.score / results.total) * 100),
-      },
-      questions: reviewQuestions,
+    return {
+      id: q.id,
+      question: q.question,
+      choices: q.choices ?? [],
+      explanation: q.explanation ?? "",
+      correctDisplay,
+      userAnswer,
+      isCorrect,
     };
+  });
 
+  const payload = {
+    id,
+    createdAt: new Date().toISOString(),
+    meta: {
+      subject: testData.subject,
+      topic: testData.topic,
+      difficulty: testData.difficulty,
+    },
+    score: {
+      correct: results.score,
+      total: results.total,
+      percent: Math.round((results.score / results.total) * 100),
+    },
+    questions: reviewQuestions,
+  };
+
+  try {
+    // ✅ save to backend (manual.js)
+    await savePracticeTest(payload);
+
+    // optional: also keep local backup
+    saveTestToStorage(payload);
+
+    setSavedNow(true);
+    setSaveMsg("Saved! You can view it in the Review tab.");
+  } catch (e) {
+    console.error("Failed to save practice test:", e);
+
+    // fallback: local save so user doesn't lose it
     const res = saveTestToStorage(payload);
     if (res.ok) {
       setSavedNow(true);
-      setSaveMsg("Saved! You can view it in the Review tab.");
+      setSaveMsg("Saved locally (cloud save failed).");
     } else {
       setSaveMsg("Already saved.");
     }
-  };
+  }
+};
+
 
 
   const getQuestionResult = (id) =>

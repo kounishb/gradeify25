@@ -127,6 +127,12 @@ export const getFlashcardSet = (id) =>
 export const deleteFlashcardSet = (id) =>
   request(`/me/flashcard-sets/${id}`, { method: "DELETE" });
 
+export const savePracticeTest = (payload) =>
+  request("/me/practice-tests", {
+    method: "POST",
+    body: payload,
+  });
+
 
 /* 8) OPTIONAL for later (DB-backed saved practice tests)
 export const savePracticeTest = (payload) =>
