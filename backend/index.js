@@ -48,6 +48,7 @@ const allowedOrigins = new Set(
 // Render/production behind proxy: required for secure cookies
 if (process.env.NODE_ENV === "production") app.set("trust proxy", 1);
 
+const isProduction = process.env.NODE_ENV === "production";
 
 /* ------------------------ HTTP + Socket.IO ------------------------ */
 const server = http.createServer(app);
@@ -97,7 +98,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions)); // IMPORTANT: same config as app.use
 
-
 app.use(
   session({
     name: "gradeify.sid",
@@ -105,9 +105,20 @@ app.use(
     resave: false,
     saveUninitialized: false,
     proxy: true,
-    cookie: process.env.NODE_ENV === "production"
-        ? { httpOnly: true, sameSite: "none", secure: true }
-        : { httpOnly: true, sameSite: "lax", secure: false },
+    rolling: true,
+    cookie: isProduction
+      ? {
+          httpOnly: true,
+          sameSite: "none",
+          secure: true,
+          maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+        }
+      : {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: false,
+          maxAge: 1000 * 60 * 60 * 24 * 7,
+        },
   })
 );
 
@@ -481,8 +492,8 @@ app.get("/whoami", (req, res) => {
 app.get("/debug/set-cookie", (req, res) => {
   res.cookie("gradeify_test", "ok", {
     httpOnly: true,
-    sameSite: isHttpsOrigin ? "none" : "lax",
-    secure: isHttpsOrigin,
+    sameSite: isProduction ? "none" : "lax",
+    secure: isProduction,
   });
   res.json({ ok: true, note: "Set test cookie gradeify_test" });
 });
@@ -555,6 +566,7 @@ app.post("/auth/login", async (req, res) => {
       req.session.save((saveErr) => {
         if (saveErr) return res.status(500).json({ error: "Session save failed" });
         console.log("✅ LOGIN OK", { userId: user.id, sessionId: req.sessionID });
+        console.log("🍪 Session cookie config", req.session.cookie);
         res.json({ ok: true, user: { id: user.id, username: user.username } });
       });
     });
@@ -568,6 +580,7 @@ app.post("/auth/logout", (req, res) => {
   const variants = [
     { path: "/", httpOnly: true, sameSite: "lax", secure: false },
     { path: "/", httpOnly: true, sameSite: "none", secure: true },
+    { path: "/" },
   ];
 
   // Also clear without options (sometimes helps if options mismatch)
