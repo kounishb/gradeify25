@@ -1,4 +1,3 @@
-// src/pages/DashboardLayout.jsx
 import { useState, useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { me, logout } from "../api/manual";
@@ -7,21 +6,51 @@ import "./DashboardLayout.css";
 export default function DashboardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+
   const [currentUser, setCurrentUser] = useState(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
 
   const isActive = (path) =>
     location.pathname === path ? "nav-link active" : "nav-link";
 
   useEffect(() => {
-    me()
-      .then((res) => {
-        if (res?.user) setCurrentUser(res.user);
-        else navigate("/login", { replace: true });
-      })
-      .catch(() => {
+  let cancelled = false;
+
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function checkAuth() {
+    try {
+      let res = await me();
+
+      if (!res?.user) {
+        await wait(400);
+        res = await me();
+      }
+
+      if (cancelled) return;
+
+      if (res?.user) {
+        setCurrentUser(res.user);
+      } else {
         navigate("/login", { replace: true });
-      });
-  }, [navigate]);
+      }
+    } catch (err) {
+      if (!cancelled) {
+        navigate("/login", { replace: true });
+      }
+    } finally {
+      if (!cancelled) {
+        setCheckingAuth(false);
+      }
+    }
+  }
+
+  checkAuth();
+
+  return () => {
+    cancelled = true;
+  };
+}, [navigate]);
 
   const handleSignOut = async () => {
     try {
@@ -35,6 +64,18 @@ export default function DashboardLayout() {
     }
   };
 
+  if (checkingAuth) {
+    return (
+      <div className="app-shell">
+        <main className="main">
+          <div className="content">
+            <p>Loading...</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -42,7 +83,6 @@ export default function DashboardLayout() {
           <h1 className="logo">Gradeify</h1>
         </div>
 
-        {/* IMPORTANT: use side-nav instead of nav to avoid Landing.css .nav collisions */}
         <nav className="side-nav">
           <Link to="/app" className={isActive("/app")}>
             Welcome

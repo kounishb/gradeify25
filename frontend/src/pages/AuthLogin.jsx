@@ -10,19 +10,26 @@ export default function AuthLogin() {
   const [loading, setLoading] = useState(false);
 
 
-  async function onSubmit(e) {
-    e.preventDefault();
-    setErr(null);
-    setLoading(true);
-    try {
-      await login({ username: username.trim(), password });
-      nav("/manual");
-    } catch (e) {
-      setErr(e?.message || "Login failed. Please try again.");
-    } finally {
-      setLoading(false);
+async function onSubmit(e) {
+  e.preventDefault();
+  setErr(null);
+  setLoading(true);
+
+  try {
+    await login({ username: username.trim(), password });
+
+    const meRes = await me();
+    if (!meRes?.user) {
+      throw new Error("Login succeeded, but your session did not persist on this device.");
     }
+
+    nav("/app/classes", { replace: true });
+  } catch (e) {
+    setErr(e?.message || "Login failed. Please try again.");
+  } finally {
+    setLoading(false);
   }
+}
 
   return (
     <div className="app-container">
