@@ -35,11 +35,12 @@ export default function FeedbackForm() {
 
   return (
     <form onSubmit={handleSubmit} className="feedback-form">
-      <h2>Share Feedback</h2>
+      <h3 className="feedback-form-title">Share Feedback</h3>
 
-      <label>
-        Rating
+      <div className="feedback-field">
+        <label htmlFor="rating">Rating</label>
         <select
+          id="rating"
           value={rating}
           onChange={(e) => setRating(Number(e.target.value))}
         >
@@ -49,34 +50,36 @@ export default function FeedbackForm() {
           <option value={2}>2 - Needs work</option>
           <option value={1}>1 - Poor</option>
         </select>
-      </label>
+      </div>
 
-      <label>
-        Your name (optional)
+      <div className="feedback-field">
+        <label htmlFor="name">Your name (optional)</label>
         <input
+          id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g., Sam"
         />
-      </label>
+      </div>
 
-      <label>
-        Message
+      <div className="feedback-field">
+        <label htmlFor="message">Message</label>
         <textarea
+          id="message"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Tell us what you liked or what we should improve..."
           rows={5}
           required
         />
-      </label>
+      </div>
 
-      <button type="submit" disabled={loading}>
+      <button type="submit" className="feedback-submit" disabled={loading}>
         {loading ? "Submitting..." : "Submit Feedback"}
       </button>
 
-      {successMsg && <p>{successMsg}</p>}
-      {errorMsg && <p>{errorMsg}</p>}
+      {successMsg && <p className="feedback-success">{successMsg}</p>}
+      {errorMsg && <p className="feedback-error">{errorMsg}</p>}
     </form>
   );
 }
