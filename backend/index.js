@@ -1336,7 +1336,7 @@ app.post("/api/feedback", async (req, res) => {
         username,
         message: message.trim(),
         rating: rating ?? null,
-        approved: false,
+        approved: true,
       },
     ]);
 
