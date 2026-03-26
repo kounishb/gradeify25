@@ -106,7 +106,7 @@ export default function Landing() {
 
           <PublicFeedback />
 
-          <div className="sectionHead" style={{ marginTop: 40 }}>
+          <div className="sectionHead" style={{ marginTop: 50 }}>
             <h2>Send feedback</h2>
             <p>
               If something’s helpful, tell us — and if something’s annoying,
@@ -114,7 +114,9 @@ export default function Landing() {
             </p>
           </div>
 
-          <FeedbackForm />
+          <div style={{ maxWidth: 600, margin: "0 auto" }}>
+            <FeedbackForm />
+          </div>
         </section>
       </main>
     </div>

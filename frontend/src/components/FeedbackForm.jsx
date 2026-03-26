@@ -7,6 +7,7 @@ export default function FeedbackForm() {
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [name, setName] = useState("");
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -15,10 +16,16 @@ export default function FeedbackForm() {
     setErrorMsg("");
 
     try {
-      await submitFeedback({ message, rating });
+      await submitFeedback({
+        message,
+        rating,
+        username: name.trim(),
+      });
+
       setSuccessMsg("Thanks for your feedback.");
       setMessage("");
       setRating(5);
+      setName("");
     } catch (err) {
       setErrorMsg(err?.message || "Could not submit feedback.");
     } finally {
@@ -32,13 +39,25 @@ export default function FeedbackForm() {
 
       <label>
         Rating
-        <select value={rating} onChange={(e) => setRating(Number(e.target.value))}>
+        <select
+          value={rating}
+          onChange={(e) => setRating(Number(e.target.value))}
+        >
           <option value={5}>5 - Excellent</option>
           <option value={4}>4 - Good</option>
           <option value={3}>3 - Okay</option>
           <option value={2}>2 - Needs work</option>
           <option value={1}>1 - Poor</option>
         </select>
+      </label>
+
+      <label>
+        Your name (optional)
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g., Sam"
+        />
       </label>
 
       <label>

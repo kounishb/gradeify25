@@ -1312,11 +1312,8 @@ app.delete("/groups/:groupId/classes/:id", requireUser, requireGroupMember, asyn
 
 app.post("/api/feedback", async (req, res) => {
   try {
-    const { message, rating } = req.body;
-
-    const sessionUser = req.session?.user || null;
-    const userId = sessionUser?.id || null;
-    const username = sessionUser?.username || "Anonymous";
+    const { message, rating, username } = req.body || {};
+    const userId = req.session?.userId || null;
 
     if (!message || !message.trim()) {
       return res.status(400).json({ error: "Feedback message is required." });
@@ -1326,16 +1323,22 @@ app.post("/api/feedback", async (req, res) => {
       return res.status(400).json({ error: "Feedback is too short." });
     }
 
-    if (rating != null && (!Number.isInteger(rating) || rating < 1 || rating > 5)) {
+    const numericRating = rating == null ? null : Number(rating);
+    if (
+      numericRating != null &&
+      (!Number.isInteger(numericRating) || numericRating < 1 || numericRating > 5)
+    ) {
       return res.status(400).json({ error: "Rating must be an integer from 1 to 5." });
     }
+
+    const finalUsername = username?.trim() || "Anonymous";
 
     const { error } = await supabase.from("feedback").insert([
       {
         user_id: userId,
-        username,
+        username: finalUsername,
         message: message.trim(),
-        rating: rating ?? null,
+        rating: numericRating,
         approved: true,
       },
     ]);
@@ -1358,6 +1361,7 @@ app.get("/api/feedback/public", async (req, res) => {
       .from("feedback")
       .select("id, username, message, rating, created_at")
       .eq("approved", true)
+      .gte("rating", 4)
       .order("created_at", { ascending: false })
       .limit(12);
 

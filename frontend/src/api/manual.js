@@ -133,14 +133,14 @@ export const savePracticeTest = (payload) =>
     body: payload,
   });
 
-export async function submitFeedback({ message, rating }) {
+export async function submitFeedback({ message, rating, username}) {
   const res = await fetch(`${API_BASE}/api/feedback`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     credentials: "include",
-    body: JSON.stringify({ message, rating }),
+    body: JSON.stringify({ message, rating, username }),
   });
 
   const data = await res.json();
