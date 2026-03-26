@@ -1,32 +1,11 @@
 // src/pages/Landing.jsx
 import { Link } from "react-router-dom";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import "./Landing.css";
+import FeedbackForm from "../components/FeedbackForm.jsx";
+import PublicFeedback from "../components/PublicFeedback.jsx";
 
 export default function Landing() {
-  const [feedback, setFeedback] = useState({
-    name: "",
-    message: "",
-    rating: "5",
-  });
-  const [sent, setSent] = useState(false);
-
-  const canSend = useMemo(() => {
-    return feedback.message.trim().length > 0;
-  }, [feedback.message]);
-
-  function onSubmit(e) {
-    e.preventDefault();
-    if (!canSend) return;
-
-    // Later: send to backend / supabase
-    console.log("Gradeify feedback:", feedback);
-
-    setSent(true);
-    setFeedback({ name: "", message: "", rating: "5" });
-    window.setTimeout(() => setSent(false), 3500);
-  }
-
   return (
     <div className="landing">
       <header className="nav">
@@ -121,6 +100,13 @@ export default function Landing() {
         {/* FEEDBACK */}
         <section id="feedback" className="section">
           <div className="sectionHead">
+            <h2>What students are saying</h2>
+            <p>Real feedback from Gradeify users.</p>
+          </div>
+
+          <PublicFeedback />
+
+          <div className="sectionHead" style={{ marginTop: 40 }}>
             <h2>Send feedback</h2>
             <p>
               If something’s helpful, tell us — and if something’s annoying,
@@ -128,74 +114,7 @@ export default function Landing() {
             </p>
           </div>
 
-          <form className="feedbackForm" onSubmit={onSubmit}>
-            <div className="row">
-              <label>
-                Your name (optional)
-                <input
-                  value={feedback.name}
-                  onChange={(e) =>
-                    setFeedback((f) => ({ ...f, name: e.target.value }))
-                  }
-                  placeholder="e.g., Sam"
-                />
-              </label>
-
-              <label>
-                Rating
-                <select
-                  value={feedback.rating}
-                  onChange={(e) =>
-                    setFeedback((f) => ({ ...f, rating: e.target.value }))
-                  }
-                >
-                  <option value="5">5 - Loved it</option>
-                  <option value="4">4 - Really good</option>
-                  <option value="3">3 - It’s okay</option>
-                  <option value="2">2 - Needs work</option>
-                  <option value="1">1 - Not great</option>
-                </select>
-              </label>
-            </div>
-
-            <label>
-              Message
-              <textarea
-                value={feedback.message}
-                onChange={(e) =>
-                  setFeedback((f) => ({ ...f, message: e.target.value }))
-                }
-                placeholder="What should we keep? What should we change?"
-                required
-              />
-            </label>
-
-            <button className="btnPrimary" type="submit" disabled={!canSend}>
-              Submit feedback →
-            </button>
-
-            {sent && (
-              <div
-                className="note"
-                style={{
-                  marginTop: 10,
-                  background: "rgba(59, 130, 246, 0.12)",
-                  border: "1px solid rgba(59, 130, 246, 0.18)",
-                  borderRadius: 12,
-                  padding: 10,
-                  color: "var(--text-main)",
-                  fontWeight: 800,
-                }}
-              >
-                Thanks — feedback sent!
-              </div>
-            )}
-
-            <div className="note">
-              Next step: save this to Supabase and display the best comments on
-              the homepage.
-            </div>
-          </form>
+          <FeedbackForm />
         </section>
       </main>
     </div>

@@ -18,6 +18,7 @@ import {
 } from "../api/manual";
 import "./ui.css";
 import BsdStudentVueImport from "../components/BsdStudentVueImport.jsx";
+import FeedbackForm from "../components/FeedbackForm.jsx";
 
 /* ------------ Helpers ------------ */
 
@@ -733,6 +734,11 @@ export default function ManualDashboard() {
             </div>
           </>
         )}
+      </section>
+
+      <section className="card">
+        <div className="card-title">Share Feedback</div>
+        <FeedbackForm />
       </section>
     </div>
   );

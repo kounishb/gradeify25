@@ -133,6 +133,31 @@ export const savePracticeTest = (payload) =>
     body: payload,
   });
 
+export async function submitFeedback({ message, rating }) {
+  const res = await fetch(`${API_BASE}/api/feedback`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ message, rating }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to submit feedback.");
+  return data;
+}
+
+export async function getPublicFeedback() {
+  const res = await fetch(`${API_BASE}/api/feedback/public`, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to load feedback.");
+  return data;
+}
 
 /* 8) OPTIONAL for later (DB-backed saved practice tests)
 export const savePracticeTest = (payload) =>

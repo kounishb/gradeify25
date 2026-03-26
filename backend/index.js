@@ -1310,6 +1310,102 @@ app.delete("/groups/:groupId/classes/:id", requireUser, requireGroupMember, asyn
   res.json({ ok: true });
 });
 
+app.post("/api/feedback", async (req, res) => {
+  try {
+    const { message, rating } = req.body;
+
+    const sessionUser = req.session?.user || null;
+    const userId = sessionUser?.id || null;
+    const username = sessionUser?.username || "Anonymous";
+
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: "Feedback message is required." });
+    }
+
+    if (message.trim().length < 3) {
+      return res.status(400).json({ error: "Feedback is too short." });
+    }
+
+    if (rating != null && (!Number.isInteger(rating) || rating < 1 || rating > 5)) {
+      return res.status(400).json({ error: "Rating must be an integer from 1 to 5." });
+    }
+
+    const { error } = await supabase.from("feedback").insert([
+      {
+        user_id: userId,
+        username,
+        message: message.trim(),
+        rating: rating ?? null,
+        approved: false,
+      },
+    ]);
+
+    if (error) {
+      console.error("Supabase insert error:", error);
+      return res.status(500).json({ error: "Failed to save feedback." });
+    }
+
+    return res.json({ success: true, message: "Feedback submitted successfully." });
+  } catch (err) {
+    console.error("POST /api/feedback error:", err);
+    return res.status(500).json({ error: "Server error submitting feedback." });
+  }
+});
+
+app.get("/api/feedback/public", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("feedback")
+      .select("id, username, message, rating, created_at")
+      .eq("approved", true)
+      .order("created_at", { ascending: false })
+      .limit(12);
+
+    if (error) {
+      console.error("Supabase fetch error:", error);
+      return res.status(500).json({ error: "Failed to fetch feedback." });
+    }
+
+    return res.json({ feedback: data || [] });
+  } catch (err) {
+    console.error("GET /api/feedback/public error:", err);
+    return res.status(500).json({ error: "Server error fetching feedback." });
+  }
+});
+
+app.patch("/api/feedback/:id/approve", async (req, res) => {
+  try {
+    const feedbackId = req.params.id;
+
+    const sessionUser = req.session?.user || null;
+
+    if (!sessionUser) {
+      return res.status(401).json({ error: "Unauthorized." });
+    }
+
+    // OPTIONAL:
+    // Replace this with your real admin check
+    if (sessionUser.username !== "admin") {
+      return res.status(403).json({ error: "Forbidden." });
+    }
+
+    const { error } = await supabase
+      .from("feedback")
+      .update({ approved: true })
+      .eq("id", feedbackId);
+
+    if (error) {
+      console.error("Supabase approve error:", error);
+      return res.status(500).json({ error: "Failed to approve feedback." });
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("PATCH /api/feedback/:id/approve error:", err);
+    return res.status(500).json({ error: "Server error approving feedback." });
+  }
+});
+
 // --- start server ---
 const PORT = process.env.PORT || 3001;
 app.use((err, req, res, next) => {
