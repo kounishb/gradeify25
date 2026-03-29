@@ -1,7 +1,13 @@
 // src/components/FlashcardGenerator.jsx
 import { useMemo, useState, useEffect } from "react";
 import { InlineMath, BlockMath } from "react-katex";
-import { generateFlashcards, saveFlashcardSet } from "../api/manual";
+import {
+  generateFlashcards,
+  saveFlashcardSet,
+  listClasses,
+  listGrades,
+  listCategories,
+} from "../api/manual";
 
 const getSectionCard = (isDark) => ({
   borderRadius: "18px",
@@ -230,11 +236,13 @@ function FlashcardViewer({ cards, isDarkMode }) {
   );
 }
 
-export default function FlashcardGenerator({ isDarkMode = false }) {
+export default function FlashcardGenerator({ isDarkMode = false, selectedClassId = null }) {
   const [subject, setSubject] = useState("");
   const [topic, setTopic] = useState("");
   const [numCards, setNumCards] = useState(10);
   const [prompt, setPrompt] = useState("");
+  const [selectedClassName, setSelectedClassName] = useState("");
+  const [useSelectedClass, setUseSelectedClass] = useState(true);
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -247,6 +255,54 @@ export default function FlashcardGenerator({ isDarkMode = false }) {
     return "Example: Make flashcards for the electromagnetic spectrum (radio → gamma). Include frequency/wavelength trends and one real-world example for each.";
   }, []);
 
+  useEffect(() => {
+    async function loadSelectedClassData() {
+      if (!selectedClassId) return;
+
+      try {
+        const clsRes = await listClasses();
+        const classList = clsRes.classes || [];
+        const selected = classList.find((c) => c.id === selectedClassId);
+
+        if (selected) {
+          setSelectedClassName(selected.name || "");
+          setSubject((prev) => prev || selected.name || "");
+        }
+
+        const gradesRes = await listGrades(selectedClassId);
+        const categoriesRes = await listCategories(selectedClassId);
+
+        const grades = gradesRes.grades || [];
+        const categories = categoriesRes.categories || [];
+
+        const categoryNames = categories.map((c) => c.name).filter(Boolean);
+        const assignmentTitles = grades.map((g) => g.title).filter(Boolean);
+
+        const autoTopic = [
+          categoryNames.length ? `Categories: ${categoryNames.join(", ")}` : "",
+          assignmentTitles.length
+            ? `Assignments/topics: ${assignmentTitles.slice(0, 15).join(", ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(". ");
+
+        if (autoTopic) {
+          setTopic((prev) => prev || autoTopic);
+          setPrompt(
+            (prev) =>
+              prev ||
+              `Make flashcards based on this class content. Focus on the most important concepts, vocabulary, and likely test topics. ${autoTopic}`
+          );
+        }
+      } catch (err) {
+        console.error("Failed to load selected class data", err);
+      }
+    }
+
+    loadSelectedClassData();
+  }, [selectedClassId]);
+
   const handleGenerate = async (e) => {
     e.preventDefault();
     setError("");
@@ -254,10 +310,14 @@ export default function FlashcardGenerator({ isDarkMode = false }) {
     setCards([]);
 
     try {
+      const finalSubject = useSelectedClass && selectedClassName ? selectedClassName : subject;
+      const finalTopic = topic;
+      const finalPrompt = prompt.trim();
+
       const data = await generateFlashcards({
-        subject,
-        topic,
-        prompt: prompt.trim(),
+        subject: finalSubject,
+        topic: finalTopic,
+        prompt: finalPrompt,
         numCards: Number(numCards),
       });
 
@@ -297,7 +357,7 @@ export default function FlashcardGenerator({ isDarkMode = false }) {
 
     try {
       await saveFlashcardSet({
-        subject: subject.trim(),
+        subject: (useSelectedClass && selectedClassName ? selectedClassName : subject).trim(),
         topic: topic.trim(),
         prompt: prompt.trim(),
         cards: cards.map(({ term, definition }) => ({
@@ -321,6 +381,12 @@ export default function FlashcardGenerator({ isDarkMode = false }) {
         <h2 style={{ fontSize: 18, fontWeight: 900, marginBottom: 8, color: isDarkMode ? "#e5e7eb" : "#111827" }}>
           Flashcard Generator
         </h2>
+
+        {selectedClassId && (
+  <div style={{ marginBottom: 10, ...subtleText(isDarkMode) }}>
+    Using the class selected in your dashboard{selectedClassName ? `: ${selectedClassName}` : ""}.
+  </div>
+)}
 
         <form onSubmit={handleGenerate} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12 }}>

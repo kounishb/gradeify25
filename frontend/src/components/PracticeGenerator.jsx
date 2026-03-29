@@ -1,12 +1,15 @@
 // src/components/PracticeGenerator.jsx
 import { useState, useEffect } from "react";
-import { generatePractice, savePracticeTest } from "../api/manual";
+import {
+  generatePractice,
+  savePracticeTest,
+  listClasses,
+  listGrades,
+  listCategories,
+} from "../api/manual";
 import { InlineMath, BlockMath } from "react-katex";
 
-
-
 const STORAGE_KEY = "gradeify_practice_state_v1";
-
 const SAVED_TESTS_KEY = "gradeify_saved_practice_tests_v1";
 
 function loadSavedTests() {
@@ -22,16 +25,15 @@ function loadSavedTests() {
 function saveTestToStorage(test) {
   const existing = loadSavedTests();
 
-  // avoid duplicates (same id)
-  if (existing.some((t) => t.id === test.id)) return { ok: false, reason: "duplicate" };
+  if (existing.some((t) => t.id === test.id)) {
+    return { ok: false, reason: "duplicate" };
+  }
 
-  const next = [test, ...existing].slice(0, 50); // keep newest 50
+  const next = [test, ...existing].slice(0, 50);
   localStorage.setItem(SAVED_TESTS_KEY, JSON.stringify(next));
   return { ok: true };
 }
 
-
-// Theme-aware styles
 const getSectionCard = (isDark) => ({
   borderRadius: "18px",
   border: `1px solid ${isDark ? "#374151" : "#e5e7eb"}`,
@@ -88,7 +90,6 @@ const getQuestionCard = (isDark) => ({
 
 const OPTION_LETTERS = ["a", "b", "c", "d", "e", "f"];
 
-// Normalize for comparison: lowercase & strip non-alphanumerics
 function normalizeText(value) {
   return String(value ?? "")
     .toLowerCase()
@@ -100,7 +101,6 @@ function renderMath(text) {
   const parts = [];
   let last = 0;
 
-  // matches \( ... \) OR \[ ... \]
   const re = /\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]/g;
   let m;
 
@@ -117,10 +117,11 @@ function renderMath(text) {
 
   if (last < str.length) parts.push({ type: "text", value: str.slice(last) });
 
-  // If no \( \) or \[ \] wrappers but it still looks like LaTeX, render as inline math
   const hasWrappers = parts.some((p) => p.type !== "text");
   const looksLikeLatex =
-    /\\(int|frac|sqrt|sum|prod|left|right|cdot|times|pi|ln|log|sin|cos|tan|arctan|\^|_)/.test(str);
+    /\\(int|frac|sqrt|sum|prod|left|right|cdot|times|pi|ln|log|sin|cos|tan|arctan|\^|_)/.test(
+      str
+    );
 
   if (!hasWrappers && looksLikeLatex) return <InlineMath math={str} />;
 
@@ -131,7 +132,6 @@ function renderMath(text) {
   });
 }
 
-
 function getCorrectAnswerInfo(q) {
   const raw = String(q.answer ?? "").trim();
   if (!raw) {
@@ -140,7 +140,6 @@ function getCorrectAnswerInfo(q) {
 
   const first = raw[0].toLowerCase();
 
-  // handle "B", "b", "B.", "b)", "B: P = I^2R", etc.
   const looksLikeLetter =
     OPTION_LETTERS.includes(first) &&
     (raw.length === 1 ||
@@ -155,19 +154,20 @@ function getCorrectAnswerInfo(q) {
 
     return {
       normalized: normalizeText(choiceText ?? first),
-      display: first.toUpperCase(),   // <-- only show "A", "B", "C", etc.
+      display: first.toUpperCase(),
     };
-
   }
 
-  // Otherwise treat the answer as the full text
   return {
     normalized: normalizeText(raw),
     display: raw,
   };
 }
 
-export default function PracticeGenerator({ isDarkMode = false }) {
+export default function PracticeGenerator({
+  isDarkMode = false,
+  selectedClassId = null,
+}) {
   const [subject, setSubject] = useState("");
   const [topic, setTopic] = useState("");
   const [difficulty, setDifficulty] = useState("medium");
@@ -178,19 +178,19 @@ export default function PracticeGenerator({ isDarkMode = false }) {
   const [savedNow, setSavedNow] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
 
-
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [submitted, setSubmitted] = useState(false);
   const [results, setResults] = useState(null);
 
-  // Restore from localStorage on mount
+  const [selectedClassName, setSelectedClassName] = useState("");
+  const [useSelectedClass, setUseSelectedClass] = useState(true);
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const saved = JSON.parse(raw);
 
-      // If submitted previously, do NOT restore the test — clear it.
       if (saved.submitted === true) {
         localStorage.removeItem(STORAGE_KEY);
         return;
@@ -199,7 +199,9 @@ export default function PracticeGenerator({ isDarkMode = false }) {
       if (saved.subject) setSubject(saved.subject);
       if (saved.topic) setTopic(saved.topic);
       if (saved.difficulty) setDifficulty(saved.difficulty);
-      if (typeof saved.numQuestions === "number") setNumQuestions(saved.numQuestions);
+      if (typeof saved.numQuestions === "number") {
+        setNumQuestions(saved.numQuestions);
+      }
 
       if (saved.testData) setTestData(saved.testData);
       if (saved.selectedAnswers) setSelectedAnswers(saved.selectedAnswers);
@@ -210,9 +212,7 @@ export default function PracticeGenerator({ isDarkMode = false }) {
     }
   }, []);
 
-  // Save to localStorage whenever state changes
   useEffect(() => {
-    // If the test is finished, remove it instead of saving it.
     if (submitted === true) {
       localStorage.removeItem(STORAGE_KEY);
       return;
@@ -244,7 +244,49 @@ export default function PracticeGenerator({ isDarkMode = false }) {
     results,
   ]);
 
-  
+  useEffect(() => {
+    async function loadSelectedClassData() {
+      if (!selectedClassId) return;
+
+      try {
+        const clsRes = await listClasses();
+        const classList = clsRes.classes || [];
+        const selected = classList.find((c) => c.id === selectedClassId);
+
+        if (selected) {
+          setSelectedClassName(selected.name || "");
+          setSubject((prev) => prev || selected.name || "");
+        }
+
+        const gradesRes = await listGrades(selectedClassId);
+        const categoriesRes = await listCategories(selectedClassId);
+
+        const grades = gradesRes.grades || [];
+        const categories = categoriesRes.categories || [];
+
+        const categoryNames = categories.map((c) => c.name).filter(Boolean);
+        const assignmentTitles = grades.map((g) => g.title).filter(Boolean);
+
+        const autoTopic = [
+          categoryNames.length ? `Categories: ${categoryNames.join(", ")}` : "",
+          assignmentTitles.length
+            ? `Assignments/topics: ${assignmentTitles.slice(0, 15).join(", ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(". ");
+
+        if (autoTopic) {
+          setTopic((prev) => prev || autoTopic);
+        }
+      } catch (err) {
+        console.error("Failed to load selected class data", err);
+      }
+    }
+
+    loadSelectedClassData();
+  }, [selectedClassId]);
+
   const handleGenerate = async (e) => {
     e.preventDefault();
     setError("");
@@ -256,17 +298,18 @@ export default function PracticeGenerator({ isDarkMode = false }) {
     setSavedNow(false);
     setSaveMsg("");
 
-
     try {
+      const finalSubject =
+        useSelectedClass && selectedClassName ? selectedClassName : subject;
+
       const data = await generatePractice({
-        subject,
+        subject: finalSubject,
         topic,
         difficulty,
         numQuestions: Number(numQuestions),
       });
-      
-      setTestData(data);
 
+      setTestData(data);
     } catch (err) {
       console.error(err);
       setError(err.message || "Something went wrong");
@@ -303,74 +346,68 @@ export default function PracticeGenerator({ isDarkMode = false }) {
     setSubmitted(true);
   };
 
- const handleSaveTest = async () => {
-  if (!submitted || !results || !testData?.questions?.length) return;
+  const handleSaveTest = async () => {
+    if (!submitted || !results || !testData?.questions?.length) return;
 
-  const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
-  const reviewQuestions = testData.questions.map((q) => {
-    const userAnswer = selectedAnswers[q.id] ?? "";
-    const { normalized: correctNorm, display: correctDisplay } = getCorrectAnswerInfo(q);
-    const isCorrect = normalizeText(userAnswer) === correctNorm && userAnswer !== "";
+    const reviewQuestions = testData.questions.map((q) => {
+      const userAnswer = selectedAnswers[q.id] ?? "";
+      const { normalized: correctNorm, display: correctDisplay } =
+        getCorrectAnswerInfo(q);
+      const isCorrect = normalizeText(userAnswer) === correctNorm && userAnswer !== "";
 
-    return {
-      id: q.id,
-      question: q.question,
-      choices: q.choices ?? [],
-      explanation: q.explanation ?? "",
-      correctDisplay,
-      userAnswer,
-      isCorrect,
+      return {
+        id: q.id,
+        question: q.question,
+        choices: q.choices ?? [],
+        explanation: q.explanation ?? "",
+        correctDisplay,
+        userAnswer,
+        isCorrect,
+      };
+    });
+
+    const payload = {
+      id,
+      createdAt: new Date().toISOString(),
+      meta: {
+        subject: testData.subject,
+        topic: testData.topic,
+        difficulty: testData.difficulty,
+      },
+      score: {
+        correct: results.score,
+        total: results.total,
+        percent: Math.round((results.score / results.total) * 100),
+      },
+      questions: reviewQuestions,
     };
-  });
 
-  const payload = {
-    id,
-    createdAt: new Date().toISOString(),
-    meta: {
-      subject: testData.subject,
-      topic: testData.topic,
-      difficulty: testData.difficulty,
-    },
-    score: {
-      correct: results.score,
-      total: results.total,
-      percent: Math.round((results.score / results.total) * 100),
-    },
-    questions: reviewQuestions,
-  };
+    try {
+      await savePracticeTest(payload);
+      saveTestToStorage(payload);
 
-  try {
-    // ✅ save to backend (manual.js)
-    await savePracticeTest(payload);
-
-    // optional: also keep local backup
-    saveTestToStorage(payload);
-
-    setSavedNow(true);
-    setSaveMsg("Saved! You can view it in the Review tab.");
-  } catch (e) {
-    console.error("Failed to save practice test:", e);
-
-    // fallback: local save so user doesn't lose it
-    const res = saveTestToStorage(payload);
-    if (res.ok) {
       setSavedNow(true);
-      setSaveMsg("Saved locally (cloud save failed).");
-    } else {
-      setSaveMsg("Already saved.");
+      setSaveMsg("Saved! You can view it in the Review tab.");
+    } catch (e) {
+      console.error("Failed to save practice test:", e);
+
+      const res = saveTestToStorage(payload);
+      if (res.ok) {
+        setSavedNow(true);
+        setSaveMsg("Saved locally (cloud save failed).");
+      } else {
+        setSaveMsg("Already saved.");
+      }
     }
-  }
-};
-
-
+  };
 
   const getQuestionResult = (id) =>
     results?.perQuestion?.find((r) => r.id === id) || null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      {/* Generator card */}
       <section style={getSectionCard(isDarkMode)}>
         <h2
           style={{
@@ -383,11 +420,36 @@ export default function PracticeGenerator({ isDarkMode = false }) {
           AI Practice Test Generator
         </h2>
 
+        {selectedClassId && (
+          <div style={{ marginBottom: "10px", ...getSmallText(isDarkMode) }}>
+            Using the class selected in your dashboard
+            {selectedClassName ? `: ${selectedClassName}` : ""}.
+          </div>
+        )}
+
+        {selectedClassId && (
+          <label
+            style={{
+              ...getSmallText(isDarkMode),
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              marginBottom: "12px",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={useSelectedClass}
+              onChange={(e) => setUseSelectedClass(e.target.checked)}
+            />
+            Use selected class from dashboard
+          </label>
+        )}
+
         <form
           onSubmit={handleGenerate}
           style={{ display: "flex", flexDirection: "column", gap: "12px" }}
         >
-          {/* subject & topic */}
           <div
             style={{
               display: "grid",
@@ -417,7 +479,6 @@ export default function PracticeGenerator({ isDarkMode = false }) {
             </div>
           </div>
 
-          {/* difficulty / number / button */}
           <div
             style={{
               display: "grid",
@@ -485,7 +546,6 @@ export default function PracticeGenerator({ isDarkMode = false }) {
         )}
       </section>
 
-      {/* Quiz card */}
       {testData && (
         <section
           style={{
@@ -514,15 +574,34 @@ export default function PracticeGenerator({ isDarkMode = false }) {
                 {testData.subject} – {testData.topic} ({testData.difficulty})
               </h3>
               <p style={getSmallText(isDarkMode)}>
-                Select your answers, then click{" "}
-                <strong>Submit Answers</strong> to see your score.
+                Select your answers, then click <strong>Submit Answers</strong> to
+                see your score.
               </p>
             </div>
 
-                      {submitted && results && (
+            {results && (
+              <div style={{ textAlign: "right" }}>
+                <div
+                  style={{
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    color: isDarkMode ? "#e5e7eb" : "#111827",
+                  }}
+                >
+                  Score: {results.score} / {results.total}
+                </div>
+                <div style={getSmallText(isDarkMode)}>
+                  {Math.round((results.score / results.total) * 100)}%
+                </div>
+              </div>
+            )}
+          </div>
+
+          {submitted && results && (
             <div
               style={{
                 marginTop: "10px",
+                marginBottom: "12px",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
@@ -547,25 +626,6 @@ export default function PracticeGenerator({ isDarkMode = false }) {
               </button>
             </div>
           )}
-
-
-            {results && (
-              <div style={{ textAlign: "right" }}>
-                <div
-                  style={{
-                    fontSize: "14px",
-                    fontWeight: 600,
-                    color: isDarkMode ? "#e5e7eb" : "#111827",
-                  }}
-                >
-                  Score: {results.score} / {results.total}
-                </div>
-                <div style={getSmallText(isDarkMode)}>
-                  {Math.round((results.score / results.total) * 100)}%
-                </div>
-              </div>
-            )}
-          </div>
 
           <ol
             style={{
@@ -621,7 +681,6 @@ export default function PracticeGenerator({ isDarkMode = false }) {
                       )}
                     </div>
 
-                    {/* choices or free response */}
                     {q.choices && q.choices.length > 0 ? (
                       <div
                         style={{
@@ -650,7 +709,9 @@ export default function PracticeGenerator({ isDarkMode = false }) {
                               checked={userAnswer === choice}
                               onChange={() => handleChoiceChange(q.id, choice)}
                             />
-                            <span style={{ display: "inline-block" }}>{renderMath(choice)}</span>
+                            <span style={{ display: "inline-block" }}>
+                              {renderMath(choice)}
+                            </span>
                           </label>
                         ))}
                       </div>
@@ -660,13 +721,10 @@ export default function PracticeGenerator({ isDarkMode = false }) {
                         style={{ ...inputStyle, marginTop: "4px" }}
                         value={userAnswer || ""}
                         disabled={submitted}
-                        onChange={(e) =>
-                          handleChoiceChange(q.id, e.target.value)
-                        }
+                        onChange={(e) => handleChoiceChange(q.id, e.target.value)}
                       />
                     )}
 
-                    {/* explanation after submit */}
                     {submitted && (
                       <div
                         style={{

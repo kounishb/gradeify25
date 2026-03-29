@@ -49,19 +49,42 @@ const backBtn = (isDark) => ({
   cursor: "pointer",
 });
 
+const selectedClassBox = (isDark) => ({
+  marginBottom: 18,
+  padding: "12px 16px",
+  borderRadius: 16,
+  border: `1px solid ${isDark ? "#374151" : "#e5e7eb"}`,
+  background: isDark ? "#111827" : "#f9fafb",
+  color: isDark ? "#e5e7eb" : "#111827",
+});
+
 export default function LearnPage({ isDarkMode = false }) {
   const [mode, setMode] = useState(null); // "test" | "flashcards" | null
 
+  const selectedClassId = localStorage.getItem("selectedClassId");
+
   return (
     <div style={pageWrap}>
-      <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 12 }}>
+      <div
+        style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 12 }}
+      >
         <h1 style={headerStyle(isDarkMode)}>Learn</h1>
         {mode && (
-          <button type="button" onClick={() => setMode(null)} style={backBtn(isDarkMode)}>
+          <button
+            type="button"
+            onClick={() => setMode(null)}
+            style={backBtn(isDarkMode)}
+          >
             ← Back
           </button>
         )}
       </div>
+
+      {selectedClassId && (
+        <div style={selectedClassBox(isDarkMode)}>
+          Using your selected class from the dashboard.
+        </div>
+      )}
 
       {!mode ? (
         <>
@@ -77,10 +100,21 @@ export default function LearnPage({ isDarkMode = false }) {
               onClick={() => setMode("test")}
               onKeyDown={(e) => e.key === "Enter" && setMode("test")}
             >
-              <div style={{ fontSize: 34, fontWeight: 900, color: isDarkMode ? "#e5e7eb" : "#111827" }}>
+              <div
+                style={{
+                  fontSize: 34,
+                  fontWeight: 900,
+                  color: isDarkMode ? "#e5e7eb" : "#111827",
+                }}
+              >
                 Test
               </div>
-              <div style={{ fontSize: 14, color: isDarkMode ? "#9ca3af" : "#6b7280" }}>
+              <div
+                style={{
+                  fontSize: 14,
+                  color: isDarkMode ? "#9ca3af" : "#6b7280",
+                }}
+              >
                 Generate a practice test, answer questions, and get your score.
               </div>
             </div>
@@ -92,19 +126,36 @@ export default function LearnPage({ isDarkMode = false }) {
               onClick={() => setMode("flashcards")}
               onKeyDown={(e) => e.key === "Enter" && setMode("flashcards")}
             >
-              <div style={{ fontSize: 34, fontWeight: 900, color: isDarkMode ? "#e5e7eb" : "#111827" }}>
+              <div
+                style={{
+                  fontSize: 34,
+                  fontWeight: 900,
+                  color: isDarkMode ? "#e5e7eb" : "#111827",
+                }}
+              >
                 Flashcards
               </div>
-              <div style={{ fontSize: 14, color: isDarkMode ? "#9ca3af" : "#6b7280" }}>
+              <div
+                style={{
+                  fontSize: 14,
+                  color: isDarkMode ? "#9ca3af" : "#6b7280",
+                }}
+              >
                 Generate Quizlet-style cards: flip, shuffle, and swap front side.
               </div>
             </div>
           </div>
         </>
       ) : mode === "test" ? (
-        <PracticeGenerator isDarkMode={isDarkMode} />
+        <PracticeGenerator
+          isDarkMode={isDarkMode}
+          selectedClassId={selectedClassId}
+        />
       ) : (
-        <FlashcardGenerator isDarkMode={isDarkMode} />
+        <FlashcardGenerator
+          isDarkMode={isDarkMode}
+          selectedClassId={selectedClassId}
+        />
       )}
     </div>
   );

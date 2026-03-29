@@ -69,7 +69,9 @@ export default function ManualDashboard() {
 
   const [user, setUser] = useState(null);
   const [classes, setClasses] = useState([]);
-  const [sel, setSel] = useState(null);
+  const [selId, setSelId] = useState(() => {
+    return localStorage.getItem("selectedClassId") || null;
+  });
 
   const [grades, setGrades] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -153,7 +155,7 @@ export default function ManualDashboard() {
   }
 
   function currentClassId() {
-    return sel?.id || classes[0]?.id || null;
+    return selId || classes[0]?.id || null;
   }
 
   /* ------------ Initial load: user + classes ------------ */
@@ -173,6 +175,18 @@ export default function ManualDashboard() {
         const cls = await listClasses();
         const classList = cls.classes || [];
         setClasses(classList);
+
+        if (classList.length) {
+          const savedId = localStorage.getItem("selectedClassId");
+          const validSaved = savedId && classList.some((c) => c.id === savedId);
+
+          if (validSaved) {
+            setSelId(savedId);
+          } else {
+            setSelId(classList[0].id);
+          }
+        }
+
         await recomputeGpa(classList);
       } catch (e) {
         setErr(e.message);
@@ -181,6 +195,16 @@ export default function ManualDashboard() {
       }
     })();
   }, [nav]);
+
+  /* ------------ Persist selected class ------------ */
+
+  useEffect(() => {
+    if (selId) {
+      localStorage.setItem("selectedClassId", selId);
+    } else {
+      localStorage.removeItem("selectedClassId");
+    }
+  }, [selId]);
 
   /* ------------ Load class data (grades + categories + summary) ------------ */
 
@@ -200,22 +224,32 @@ export default function ManualDashboard() {
     const id = currentClassId();
     if (id) refreshClassData(id).catch((e) => setErr(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [classes, sel?.id]);
+  }, [classes, selId]);
 
   /* ------------ Class handlers ------------ */
 
   async function onAddClass(e) {
     e.preventDefault();
     setErr(null);
+
     const res = await createClass({
       name: cn.trim(),
       period: cp ? Number(cp) : null,
       teacher: ct.trim() || null,
     });
+
     const cls = await listClasses();
     const classList = cls.classes || [];
     setClasses(classList);
-    setSel(res.class);
+
+    if (res?.class?.id) {
+      setSelId(res.class.id);
+    }
+
+    setCn("");
+    setCp("");
+    setCt("");
+
     await recomputeGpa(classList);
   }
 
@@ -224,10 +258,19 @@ export default function ManualDashboard() {
     const cls = await listClasses();
     const classList = cls.classes || [];
     setClasses(classList);
-    setSel(null);
-    setGrades([]);
-    setCategories([]);
-    setSummary(null);
+
+    if (selId === id) {
+      const nextSelectedId = classList[0]?.id || null;
+      setSelId(nextSelectedId);
+    }
+
+    if (!classList.length) {
+      setSelId(null);
+      setGrades([]);
+      setCategories([]);
+      setSummary(null);
+    }
+
     await recomputeGpa(classList);
   }
 
@@ -265,36 +308,34 @@ export default function ManualDashboard() {
 
   // Called by BsdStudentVueImport
   async function handleImportedGrades(rows) {
-  const id = currentClassId();
-  if (!id || !rows.length) return;
+    const id = currentClassId();
+    if (!id || !rows.length) return;
 
-  setErr(null);
+    setErr(null);
 
-  for (const row of rows) {
-    // Expect row.category to already match StudentVUE's category string,
-    // and you have created categories with the same names in Gradeify.
-    let categoryName = null;
+    for (const row of rows) {
+      let categoryName = null;
 
-    if (row.category) {
-      const match = categories.find(
-        (c) => c.name.toLowerCase() === row.category.toLowerCase()
-      );
-      if (match) {
-        categoryName = match.name;
+      if (row.category) {
+        const match = categories.find(
+          (c) => c.name.toLowerCase() === row.category.toLowerCase()
+        );
+        if (match) {
+          categoryName = match.name;
+        }
       }
+
+      await createGrade(id, {
+        title: row.title,
+        points_earned: row.points_earned,
+        points_possible: row.points_possible,
+        category: categoryName || inferCategoryFromTitle(row.title),
+      });
     }
 
-    await createGrade(id, {
-      title: row.title,
-      points_earned: row.points_earned,
-      points_possible: row.points_possible,
-      category: categoryName, // null if there's no matching category yet
-    });
+    await refreshClassData(id);
+    await recomputeGpa();
   }
-
-  await refreshClassData(id);
-  await recomputeGpa();
-}
 
   async function onRemoveGrade(id) {
     await deleteGrade(id);
@@ -304,28 +345,27 @@ export default function ManualDashboard() {
   }
 
   async function onClearAllGrades() {
-  const id = currentClassId();
-  if (!id) return;
-  if (!grades.length) return;
+    const id = currentClassId();
+    if (!id) return;
+    if (!grades.length) return;
 
-  const ok = window.confirm(
-    "Are you sure you want to delete ALL grades for this class? This cannot be undone."
-  );
-  if (!ok) return;
+    const ok = window.confirm(
+      "Are you sure you want to delete ALL grades for this class? This cannot be undone."
+    );
+    if (!ok) return;
 
-  setErr(null);
+    setErr(null);
 
-  // Delete each grade for the selected class
-  for (const g of grades) {
-    try {
-      await deleteGrade(g.id);
-    } catch (e) {
-      console.error("Failed to delete grade", g.id, e);
+    for (const g of grades) {
+      try {
+        await deleteGrade(g.id);
+      } catch (e) {
+        console.error("Failed to delete grade", g.id, e);
+      }
     }
-  }
 
-  await refreshClassData(id);
-  await recomputeGpa();
+    await refreshClassData(id);
+    await recomputeGpa();
   }
 
   /* ------------ Category handlers ------------ */
@@ -371,7 +411,7 @@ export default function ManualDashboard() {
   /* ------------ Derived values ------------ */
 
   const cid = currentClassId();
-  const selectedClass = cid && classes.find((c) => c.id === cid);
+  const selectedClass = cid ? classes.find((c) => c.id === cid) : null;
   const sumWeights = summary?.sumWeights || 0;
   const overall = summary?.overallPercent;
   const overallLetter =
@@ -385,7 +425,6 @@ export default function ManualDashboard() {
 
   return (
     <div className="page">
-
       {err && <div className="alert">{err}</div>}
 
       {/* Classes + GPA */}
@@ -395,8 +434,8 @@ export default function ManualDashboard() {
           {classes.map((c) => (
             <button
               key={c.id}
-              onClick={() => setSel(c)}
-              className={`pill ${sel?.id === c.id ? "active" : ""}`}
+              onClick={() => setSelId(c.id)}
+              className={`pill ${selId === c.id ? "active" : ""}`}
               title={c.teacher || ""}
             >
               {c.period ? `${c.period}. ` : ""}
@@ -485,11 +524,7 @@ export default function ManualDashboard() {
                     style={{ width: `${Math.min(sumWeights, 100)}%` }}
                   />
                 </div>
-                <div
-                  className={`muted ${
-                    sumWeights === 100 ? "ok" : ""
-                  }`}
-                >
+                <div className={`muted ${sumWeights === 100 ? "ok" : ""}`}>
                   Total weights: {sumWeights}%{" "}
                   {sumWeights !== 100 &&
                     "(They’ll be normalized until you hit 100%)"}
@@ -546,11 +581,7 @@ export default function ManualDashboard() {
                   <div>{c.weight_percent}%</div>
                   <div>{c.earned}</div>
                   <div>{c.possible}</div>
-                  <div>
-                    {c.percent != null
-                      ? c.percent.toFixed(1) + "%"
-                      : "—"}
-                  </div>
+                  <div>{c.percent != null ? c.percent.toFixed(1) + "%" : "—"}</div>
                 </div>
               ))}
             </div>
@@ -611,7 +642,6 @@ export default function ManualDashboard() {
               <button className="btn">Add grade</button>
             </form>
 
-            {/* BSD StudentVUE import (per selected class) */}
             <BsdStudentVueImport onImported={handleImportedGrades} />
 
             {grades.length > 0 && (
@@ -651,32 +681,24 @@ export default function ManualDashboard() {
                           <input
                             className="input small"
                             value={editTitle}
-                            onChange={(e) =>
-                              setEditTitle(e.target.value)
-                            }
+                            onChange={(e) => setEditTitle(e.target.value)}
                           />
                           <input
                             className="input small"
                             value={editEarned}
-                            onChange={(e) =>
-                              setEditEarned(e.target.value)
-                            }
+                            onChange={(e) => setEditEarned(e.target.value)}
                             inputMode="decimal"
                           />
                           <input
                             className="input small"
                             value={editPossible}
-                            onChange={(e) =>
-                              setEditPossible(e.target.value)
-                            }
+                            onChange={(e) => setEditPossible(e.target.value)}
                             inputMode="decimal"
                           />
                           <select
                             className="input small"
                             value={editCategory}
-                            onChange={(e) =>
-                              setEditCategory(e.target.value)
-                            }
+                            onChange={(e) => setEditCategory(e.target.value)}
                           >
                             <option value="">— Category —</option>
                             {categories.map((c) => (
@@ -694,9 +716,7 @@ export default function ManualDashboard() {
                             </button>
                             <button
                               className="link-danger"
-                              onClick={() =>
-                                setEditingGrade(null)
-                              }
+                              onClick={() => setEditingGrade(null)}
                             >
                               Cancel
                             </button>
@@ -718,9 +738,7 @@ export default function ManualDashboard() {
                             </button>
                             <button
                               className="link-danger"
-                              onClick={() =>
-                                onRemoveGrade(g.id)
-                              }
+                              onClick={() => onRemoveGrade(g.id)}
                             >
                               Remove
                             </button>
