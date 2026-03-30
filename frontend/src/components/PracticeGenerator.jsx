@@ -301,6 +301,12 @@ export default function PracticeGenerator({
     try {
       const finalSubject =
         useSelectedClass && selectedClassName ? selectedClassName : subject;
+        
+        if (!useSelectedClass && !subject.trim()) {
+  setError("Please enter a subject.");
+  setLoading(false);
+  return;
+}
 
       const data = await generatePractice({
         subject: finalSubject,
@@ -457,16 +463,23 @@ export default function PracticeGenerator({
               gap: "12px",
             }}
           >
-            <div>
-              <label style={labelStyle}>Subject (e.g., AP Calculus BC)</label>
-              <input
-                type="text"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                style={inputStyle}
-                required
-              />
-            </div>
+            {useSelectedClass && selectedClassName && (
+  <div style={{ marginBottom: "8px", fontWeight: 600 }}>
+    Subject: {selectedClassName}
+  </div>
+)}
+            {!(useSelectedClass && selectedClassName) && (
+              <div>
+                <label style={labelStyle}>Subject (e.g., AP Calculus BC)</label>
+                <input
+                  type="text"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  style={inputStyle}
+                  required
+                />
+              </div>
+            )}
             <div>
               <label style={labelStyle}>Topic (e.g., parametrics)</label>
               <input
