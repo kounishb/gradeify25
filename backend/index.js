@@ -228,7 +228,8 @@ Approve feedback only if it is:
 
 A high star rating alone is NOT enough to approve it.
 
-Be reasonably strict. If the message is vague, nonsense, joke spam, or not actually useful as a public testimonial, reject it.
+Approve short positive feedback if it is clearly about Gradeify or studying and does not contain spam, abuse, nonsense, or unsafe content.
+Reject only if the message is clearly inappropriate, irrelevant, spam, nonsense, or abusive.
 
 Return PURE JSON only in exactly one of these forms:
 
