@@ -211,6 +211,84 @@ Rules:
 `;
 }
 
+function buildFeedbackModerationPrompt({ message, rating, username }) {
+  return `
+You are moderating public testimonials for a student app called Gradeify.
+
+Your job is to decide whether a feedback message should be shown publicly on the landing page.
+
+Approve feedback only if it is:
+- genuine and written like real user feedback
+- relevant to Gradeify or its features
+- understandable and coherent
+- not spam, nonsense, trolling, or random text
+- not abusive, hateful, sexual, threatening, or harassing
+- not a personal attack
+- not obviously fake or misleading promotion
+
+A high star rating alone is NOT enough to approve it.
+
+Be reasonably strict. If the message is vague, nonsense, joke spam, or not actually useful as a public testimonial, reject it.
+
+Return PURE JSON only in exactly one of these forms:
+
+{
+  "approve": true,
+  "reason": "short explanation",
+  "label": "approved"
+}
+
+or
+
+{
+  "approve": false,
+  "reason": "short explanation",
+  "label": "rejected"
+}
+
+Feedback to review:
+- username: ${JSON.stringify(username || "Anonymous")}
+- rating: ${JSON.stringify(rating)}
+- message: ${JSON.stringify(message)}
+`;
+}
+
+async function moderateFeedbackWithAI({ message, rating, username }) {
+  const prompt = buildFeedbackModerationPrompt({
+    message,
+    rating,
+    username,
+  });
+
+  const response = await openai.responses.create({
+    model: "gpt-4.1-mini",
+    input: prompt,
+    text: {
+      format: { type: "json_object" },
+    },
+  });
+
+  const content = response.output?.[0]?.content || [];
+  if (!content.length) {
+    throw new Error("No content returned from OpenAI moderation");
+  }
+
+  const rawText = content
+    .map((part) => part.text || "")
+    .join("\n")
+    .trim();
+
+  console.log("🛡️ Moderation raw text:", rawText.slice(0, 200));
+
+  const data = safeParseJSON(rawText);
+
+  return {
+    approve: Boolean(data?.approve),
+    reason: String(data?.reason || "").trim() || "No reason provided",
+    label: String(data?.label || "").trim() || (data?.approve ? "approved" : "rejected"),
+  };
+}
+
 function safeParseJSON(value) {
   // If the model already gave us an object, just use it
   if (value && typeof value === "object") {
@@ -1319,11 +1397,14 @@ app.post("/api/feedback", async (req, res) => {
       return res.status(400).json({ error: "Feedback message is required." });
     }
 
-    if (message.trim().length < 3) {
+    const cleanMessage = message.trim();
+
+    if (cleanMessage.length < 3) {
       return res.status(400).json({ error: "Feedback is too short." });
     }
 
     const numericRating = rating == null ? null : Number(rating);
+
     if (
       numericRating != null &&
       (!Number.isInteger(numericRating) || numericRating < 1 || numericRating > 5)
@@ -1333,13 +1414,38 @@ app.post("/api/feedback", async (req, res) => {
 
     const finalUsername = username?.trim() || "Anonymous";
 
+    let approved = false;
+    let moderation_reason = "Rating below public threshold.";
+    let moderation_label = "rejected";
+
+    if (numericRating >= 4) {
+      try {
+        const moderation = await moderateFeedbackWithAI({
+          message: cleanMessage,
+          rating: numericRating,
+          username: finalUsername,
+        });
+
+        approved = moderation.approve;
+        moderation_reason = moderation.reason;
+        moderation_label = moderation.label;
+      } catch (aiErr) {
+        console.error("Feedback moderation AI error:", aiErr);
+        approved = false;
+        moderation_reason = "AI moderation failed.";
+        moderation_label = "rejected";
+      }
+    }
+
     const { error } = await supabase.from("feedback").insert([
       {
         user_id: userId,
         username: finalUsername,
-        message: message.trim(),
+        message: cleanMessage,
         rating: numericRating,
-        approved: true,
+        approved,
+        moderation_reason,
+        moderation_label,
       },
     ]);
 
@@ -1348,7 +1454,11 @@ app.post("/api/feedback", async (req, res) => {
       return res.status(500).json({ error: "Failed to save feedback." });
     }
 
-    return res.json({ success: true, message: "Feedback submitted successfully." });
+    return res.json({
+      success: true,
+      message: "Feedback submitted successfully.",
+      approved,
+    });
   } catch (err) {
     console.error("POST /api/feedback error:", err);
     return res.status(500).json({ error: "Server error submitting feedback." });
