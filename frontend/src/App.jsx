@@ -106,21 +106,13 @@ export default function App() {
 
         {/* main app dashboard */}
         <Route path="/app" element={<DashboardLayout />}>
-          {/* default: welcome page */}
           <Route index element={<WelcomePage />} />
-          {/* classes = your ManualDashboard */}
           <Route path="classes" element={<ManualDashboard />} />
-          {/* settings inside dashboard */}
           <Route path="settings" element={<SettingsPage />} />
-          {/* educational features */}
           <Route path="learn" element={<LearnPage isDarkMode={isDarkMode} />} />
           <Route path="review" element={<Review />} />
-
+          <Route path="groups" element={<Groups />} />
         </Route>
-
-        <Route element={<DashboardLayout />}>
-  <Route path="/groups" element={<Groups />} />
-</Route>
 
         {/* backwards compatibility: old routes redirect into new ones */}
         <Route path="/manual" element={<Navigate to="/app/classes" replace />} />
