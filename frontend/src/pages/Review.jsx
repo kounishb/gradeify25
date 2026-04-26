@@ -6,6 +6,7 @@ import {
   getFlashcardSet,
   deleteFlashcardSet,
 } from "../api/manual";
+import ShareMaterialModal from "../components/ShareMaterialModal";
 
 const SAVED_TESTS_KEY = "gradeify_saved_practice_tests_v1";
 
@@ -59,6 +60,10 @@ function renderMath(text) {
 
 export default function Review() {
   const [tab, setTab] = useState("tests"); // "tests" | "flashcards"
+
+  /* -------------------- Share modal state -------------------- */
+  const [shareItem, setShareItem] = useState(null);
+  const [shareType, setShareType] = useState(null);
 
   /* -------------------- Tests state (existing) -------------------- */
   const [tests, setTests] = useState([]);
@@ -146,6 +151,16 @@ export default function Review() {
     }
   };
 
+  const handleOpenShare = (item, type) => {
+    setShareItem(item);
+    setShareType(type);
+  };
+
+  const handleCloseShare = () => {
+    setShareItem(null);
+    setShareType(null);
+  };
+
   const formatDate = (iso) => {
     try {
       return new Date(iso).toLocaleString();
@@ -163,6 +178,30 @@ export default function Review() {
     cursor: "pointer",
     fontSize: 13,
   });
+
+  const shareBtnStyle = {
+    border: "1px solid #c7d2fe",
+    background: "#eef2ff",
+    color: "#3730a3",
+    padding: "8px 12px",
+    borderRadius: "999px",
+    cursor: "pointer",
+    height: "36px",
+    fontWeight: 700,
+    fontSize: "13px",
+  };
+
+  const deleteBtnStyle = {
+    border: "1px solid #fecaca",
+    background: "#fee2e2",
+    color: "#b91c1c",
+    padding: "8px 12px",
+    borderRadius: "999px",
+    cursor: "pointer",
+    height: "36px",
+    fontWeight: 700,
+    fontSize: "13px",
+  };
 
   return (
     <div>
@@ -253,23 +292,23 @@ export default function Review() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteTest(selectedTest.id)}
-                    style={{
-                      border: "1px solid #fecaca",
-                      background: "#fee2e2",
-                      color: "#b91c1c",
-                      padding: "8px 12px",
-                      borderRadius: "999px",
-                      cursor: "pointer",
-                      height: "36px",
-                      fontWeight: 700,
-                      fontSize: "13px",
-                    }}
-                  >
-                    Delete
-                  </button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenShare(selectedTest, "practice_test")}
+                      style={shareBtnStyle}
+                    >
+                      Share
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTest(selectedTest.id)}
+                      style={deleteBtnStyle}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
 
                 <hr style={{ margin: "12px 0", border: "none", borderTop: "1px solid #e5e7eb" }} />
@@ -406,23 +445,23 @@ export default function Review() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteSet(selectedSet.set.id)}
-                    style={{
-                      border: "1px solid #fecaca",
-                      background: "#fee2e2",
-                      color: "#b91c1c",
-                      padding: "8px 12px",
-                      borderRadius: "999px",
-                      cursor: "pointer",
-                      height: "36px",
-                      fontWeight: 700,
-                      fontSize: "13px",
-                    }}
-                  >
-                    Delete
-                  </button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenShare(selectedSet.set, "flashcards")}
+                      style={shareBtnStyle}
+                    >
+                      Share
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSet(selectedSet.set.id)}
+                      style={deleteBtnStyle}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
 
                 <hr style={{ margin: "12px 0", border: "none", borderTop: "1px solid #e5e7eb" }} />
@@ -450,6 +489,14 @@ export default function Review() {
             )}
           </section>
         </div>
+      )}
+
+      {shareItem && shareType && (
+        <ShareMaterialModal
+          item={shareItem}
+          type={shareType}
+          onClose={handleCloseShare}
+        />
       )}
     </div>
   );

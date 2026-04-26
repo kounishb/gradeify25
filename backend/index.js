@@ -11,6 +11,7 @@ import { supabase, newId } from "./db.js";
 import OpenAI from "openai";
 import StudentVue from "studentvue";
 import jwt from "jsonwebtoken";
+import groupsRouter from "./routes/groups.js";
 
 
 dotenv.config();
@@ -64,6 +65,7 @@ const io = new SocketIOServer(server, {
   },
 });
 
+app.use("/api/groups", groupsRouter({ supabase }));
 
 /* -------------------------- middleware -------------------------- */
 app.use(

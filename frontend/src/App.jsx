@@ -12,6 +12,8 @@ import WelcomePage from "./pages/WelcomePage.jsx";
 import DashboardLayout from "./pages/DashboardLayout.jsx";
 import Review from "./pages/Review";
 
+import Groups from "./pages/Groups";
+
 import "katex/dist/katex.min.css";
 
 // use the Learn page file we created
@@ -115,6 +117,10 @@ export default function App() {
           <Route path="review" element={<Review />} />
 
         </Route>
+
+        <Route element={<DashboardLayout />}>
+  <Route path="/groups" element={<Groups />} />
+</Route>
 
         {/* backwards compatibility: old routes redirect into new ones */}
         <Route path="/manual" element={<Navigate to="/app/classes" replace />} />
