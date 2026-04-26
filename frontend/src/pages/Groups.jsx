@@ -6,23 +6,43 @@ export default function Groups() {
   const [groups, setGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [newGroupName, setNewGroupName] = useState("");
+  const [error, setError] = useState("");
 
   async function loadGroups() {
-    const data = await getGroups();
-    setGroups(data.groups || []);
+    try {
+      setError("");
+      const data = await getGroups();
+      console.log("Loaded groups:", data);
+      setGroups(data.groups || []);
+    } catch (err) {
+      console.error("Failed to load groups:", err);
+      setError(err.message || "Failed to load groups");
+    }
   }
 
   async function handleCreateGroup(e) {
     e.preventDefault();
 
+    console.log("Create clicked:", newGroupName);
+
     if (!newGroupName.trim()) return;
 
-    const data = await createGroup(newGroupName);
-    setNewGroupName("");
+    try {
+      setError("");
+      const data = await createGroup(newGroupName);
+      console.log("Create group response:", data);
 
-    if (data.group) {
-      setGroups((prev) => [...prev, data.group]);
-      setSelectedGroup(data.group);
+      setNewGroupName("");
+
+      if (data.group) {
+        setGroups((prev) => [...prev, data.group]);
+        setSelectedGroup(data.group);
+      } else {
+        setError("Group was not returned from backend.");
+      }
+    } catch (err) {
+      console.error("Create group failed:", err);
+      setError(err.message || "Failed to create group");
     }
   }
 
@@ -44,12 +64,19 @@ export default function Groups() {
           <button type="submit">Create</button>
         </form>
 
-        <div>
+        {error && (
+          <p style={{ color: "#b91c1c", fontSize: 13, marginTop: 8 }}>
+            {error}
+          </p>
+        )}
+
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
           {groups.map((group) => (
             <button
               key={group.id}
               onClick={() => setSelectedGroup(group)}
               className={selectedGroup?.id === group.id ? "active" : ""}
+              type="button"
             >
               {group.name}
             </button>

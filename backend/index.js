@@ -65,8 +65,6 @@ const io = new SocketIOServer(server, {
   },
 });
 
-app.use("/api/groups", groupsRouter({ supabase }));
-
 /* -------------------------- middleware -------------------------- */
 app.use(
   helmet({
@@ -123,6 +121,8 @@ app.use(
         },
   })
 );
+
+app.use("/api/groups", groupsRouter({ supabase }));
 
 function requireUser(req, res, next) {
   if (!req.session?.userId) return res.status(401).json({ error: "Not logged in" });

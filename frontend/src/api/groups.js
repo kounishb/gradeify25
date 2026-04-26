@@ -1,10 +1,20 @@
 const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
+async function parseRes(res) {
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.error || `Request failed with status ${res.status}`);
+  }
+
+  return data;
+}
+
 export async function getGroups() {
   const res = await fetch(`${API}/api/groups`, {
     credentials: "include",
   });
-  return res.json();
+  return parseRes(res);
 }
 
 export async function createGroup(name) {
@@ -14,14 +24,14 @@ export async function createGroup(name) {
     credentials: "include",
     body: JSON.stringify({ name }),
   });
-  return res.json();
+  return parseRes(res);
 }
 
 export async function getMessages(groupId) {
   const res = await fetch(`${API}/api/groups/${groupId}/messages`, {
     credentials: "include",
   });
-  return res.json();
+  return parseRes(res);
 }
 
 export async function sendMessage(groupId, payload) {
@@ -31,5 +41,5 @@ export async function sendMessage(groupId, payload) {
     credentials: "include",
     body: JSON.stringify(payload),
   });
-  return res.json();
+  return parseRes(res);
 }
