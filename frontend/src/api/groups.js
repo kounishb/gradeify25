@@ -1,4 +1,5 @@
 const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
+console.log("Groups API base:", API);
 
 async function parseRes(res) {
   const data = await res.json().catch(() => ({}));
@@ -43,3 +44,4 @@ export async function sendMessage(groupId, payload) {
   });
   return parseRes(res);
 }
+
