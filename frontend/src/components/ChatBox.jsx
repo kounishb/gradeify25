@@ -24,7 +24,6 @@ export default function ChatBox({ group }) {
     });
 
     if (data.message) {
-      setMessages((prev) => [...prev, data.message]);
       setText("");
     }
   }
@@ -32,13 +31,27 @@ export default function ChatBox({ group }) {
   useEffect(() => {
   if (!group?.id) return;
 
-  loadMessages();
+  let isMounted = true;
 
-  const interval = setInterval(() => {
-    loadMessages();
-  }, 2000); // refresh every 2 seconds
+  async function fetchMessages() {
+    try {
+      const data = await getMessages(group.id);
+      if (isMounted) {
+        setMessages(data.messages || []);
+      }
+    } catch (err) {
+      console.error("Polling failed:", err);
+    }
+  }
 
-  return () => clearInterval(interval);
+  fetchMessages(); // initial load
+
+  const interval = setInterval(fetchMessages, 2000);
+
+  return () => {
+    isMounted = false;
+    clearInterval(interval);
+  };
 }, [group.id]);
 
 useEffect(() => {
