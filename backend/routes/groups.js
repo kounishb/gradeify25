@@ -53,6 +53,8 @@ export default function groupsRouter({ supabase }) {
     res.json({ group });
   });
 
+  
+
   router.post("/:groupId/join", async (req, res) => {
     const userId = req.session.userId;
     const { groupId } = req.params;
@@ -84,6 +86,27 @@ export default function groupsRouter({ supabase }) {
       users: (data || []).filter((u) => u.id !== userId),
     });
   });
+
+  router.get("/users/search", async (req, res) => {
+  const userId = req.session.userId;
+  const query = req.query.q || "";
+
+  if (!query.trim()) {
+    return res.json({ users: [] });
+  }
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, username, display_name")
+    .or(`username.ilike.%${query}%,display_name.ilike.%${query}%`)
+    .limit(10);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({
+    users: (data || []).filter((u) => u.id !== userId),
+  });
+});
 
   router.get("/:groupId/members", async (req, res) => {
     const userId = req.session.userId;
