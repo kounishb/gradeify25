@@ -68,3 +68,11 @@ export async function addGroupMember(groupId, userId) {
   });
   return parseRes(res);
 }
+
+export async function deleteGroup(groupId) {
+  const res = await fetch(`${API}/api/groups/${groupId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  return parseRes(res);
+}

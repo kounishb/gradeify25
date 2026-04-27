@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getGroups, createGroup } from "../api/groups";
+import { getGroups, createGroup, deleteGroup } from "../api/groups";
 import ChatBox from "../components/ChatBox";
 import AddPeopleModal from "../components/AddPeopleModal";
 
@@ -14,51 +14,42 @@ export default function Groups() {
     try {
       setError("");
       const data = await getGroups();
-      console.log("Loaded groups:", data);
       setGroups(data.groups || []);
     } catch (err) {
-      console.error("Failed to load groups:", err);
       setError(err.message || "Failed to load groups");
     }
   }
-  <button
-  type="button"
-  onClick={async () => {
-    await fetch(`${API}/groups/${selectedGroup.id}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
-
-    setSelectedGroup(null);
-    loadGroups();
-  }}
->
-  Delete Group
-</button>
 
   async function handleCreateGroup(e) {
     e.preventDefault();
-
-    console.log("Create clicked:", newGroupName);
 
     if (!newGroupName.trim()) return;
 
     try {
       setError("");
       const data = await createGroup(newGroupName);
-      console.log("Create group response:", data);
-
       setNewGroupName("");
 
       if (data.group) {
         setGroups((prev) => [...prev, data.group]);
         setSelectedGroup(data.group);
-      } else {
-        setError("Group was not returned from backend.");
       }
     } catch (err) {
-      console.error("Create group failed:", err);
       setError(err.message || "Failed to create group");
+    }
+  }
+
+  async function handleDeleteGroup() {
+    if (!selectedGroup) return;
+
+    try {
+      setError("");
+      await deleteGroup(selectedGroup.id);
+      setSelectedGroup(null);
+      setShowAddPeople(false);
+      await loadGroups();
+    } catch (err) {
+      setError(err.message || "Failed to delete group");
     }
   }
 
@@ -102,26 +93,35 @@ export default function Groups() {
 
       <div className="groups-main">
         {selectedGroup ? (
-  <>
-    <div className="groups-header">
-      <h2>{selectedGroup.name}</h2>
-      <button type="button" onClick={() => setShowAddPeople(true)}>
-        Add People
-      </button>
-    </div>
+          <>
+            <div className="groups-header">
+              <h2>{selectedGroup.name}</h2>
 
-    <ChatBox group={selectedGroup} />
-  </>
-) : (
-  <p>Select or create a group to start chatting.</p>
-)}
+              <button type="button" onClick={() => setShowAddPeople(true)}>
+                Add People
+              </button>
+
+              <button type="button" onClick={handleDeleteGroup}>
+                Delete Group
+              </button>
+            </div>
+
+            <ChatBox group={selectedGroup} />
+          </>
+        ) : (
+          <p>Select or create a group to start chatting.</p>
+        )}
       </div>
+
       {showAddPeople && selectedGroup && (
-  <AddPeopleModal
-    group={selectedGroup}
-    onClose={() => setShowAddPeople(false)}
-  />
-)}
+        <AddPeopleModal
+          group={selectedGroup}
+          onClose={() => {
+            setShowAddPeople(false);
+            loadGroups();
+          }}
+        />
+      )}
     </div>
   );
 }
