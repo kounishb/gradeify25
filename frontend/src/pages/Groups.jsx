@@ -88,10 +88,19 @@ export default function Groups() {
 
       <div className="groups-main">
         {selectedGroup ? (
-          <ChatBox group={selectedGroup} />
-        ) : (
-          <p>Select or create a group to start chatting.</p>
-        )}
+  <>
+    <div className="groups-header">
+      <h2>{selectedGroup.name}</h2>
+      <button type="button" onClick={() => setShowAddPeople(true)}>
+        Add People
+      </button>
+    </div>
+
+    <ChatBox group={selectedGroup} />
+  </>
+) : (
+  <p>Select or create a group to start chatting.</p>
+)}
       </div>
       {showAddPeople && selectedGroup && (
   <AddPeopleModal
