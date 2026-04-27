@@ -21,6 +21,20 @@ export default function Groups() {
       setError(err.message || "Failed to load groups");
     }
   }
+  <button
+  type="button"
+  onClick={async () => {
+    await fetch(`${API}/groups/${selectedGroup.id}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+
+    setSelectedGroup(null);
+    loadGroups();
+  }}
+>
+  Delete Group
+</button>
 
   async function handleCreateGroup(e) {
     e.preventDefault();
