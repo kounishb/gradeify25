@@ -3,6 +3,8 @@ import { getGroups, createGroup, deleteGroup } from "../api/groups";
 import ChatBox from "../components/ChatBox";
 import AddPeopleModal from "../components/AddPeopleModal";
 
+const LAST_GROUP_KEY = "gradeify_last_group_id";
+
 export default function Groups() {
   const [groups, setGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
@@ -14,7 +16,25 @@ export default function Groups() {
     try {
       setError("");
       const data = await getGroups();
-      setGroups(data.groups || []);
+      const loadedGroups = data.groups || [];
+
+      setGroups(loadedGroups);
+
+      const lastGroupId = localStorage.getItem(LAST_GROUP_KEY);
+
+      if (lastGroupId) {
+        const lastGroup = loadedGroups.find((g) => g.id === lastGroupId);
+
+        if (lastGroup) {
+          setSelectedGroup(lastGroup);
+        } else {
+          localStorage.removeItem(LAST_GROUP_KEY);
+          setSelectedGroup(null);
+        }
+      } else if (loadedGroups.length > 0 && !selectedGroup) {
+        setSelectedGroup(loadedGroups[0]);
+        localStorage.setItem(LAST_GROUP_KEY, loadedGroups[0].id);
+      }
     } catch (err) {
       setError(err.message || "Failed to load groups");
     }
@@ -33,6 +53,7 @@ export default function Groups() {
       if (data.group) {
         setGroups((prev) => [...prev, data.group]);
         setSelectedGroup(data.group);
+        localStorage.setItem(LAST_GROUP_KEY, data.group.id);
       }
     } catch (err) {
       setError(err.message || "Failed to create group");
@@ -45,12 +66,20 @@ export default function Groups() {
     try {
       setError("");
       await deleteGroup(selectedGroup.id);
+
+      localStorage.removeItem(LAST_GROUP_KEY);
       setSelectedGroup(null);
       setShowAddPeople(false);
+
       await loadGroups();
     } catch (err) {
       setError(err.message || "Failed to delete group");
     }
+  }
+
+  function handleSelectGroup(group) {
+    setSelectedGroup(group);
+    localStorage.setItem(LAST_GROUP_KEY, group.id);
   }
 
   useEffect(() => {
@@ -77,11 +106,18 @@ export default function Groups() {
           </p>
         )}
 
-        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div
+          style={{
+            marginTop: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
           {groups.map((group) => (
             <button
               key={group.id}
-              onClick={() => setSelectedGroup(group)}
+              onClick={() => handleSelectGroup(group)}
               className={selectedGroup?.id === group.id ? "active" : ""}
               type="button"
             >

@@ -8,12 +8,20 @@ export default function ChatBox({ group }) {
   const bottomRef = useRef(null);
 
   async function handleSend(e) {
-    e.preventDefault();
-    if (!text.trim()) return;
+  e.preventDefault();
 
-    await sendMessage(group.id, { message: text });
-    setText("");
-  }
+  if (!text.trim()) return;
+
+  await sendMessage(group.id, {
+    message: text,
+  });
+
+  setText("");
+
+  setTimeout(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, 100);
+}
 
   useEffect(() => {
     async function getMe() {
@@ -57,9 +65,6 @@ export default function ChatBox({ group }) {
     };
   }, [group.id]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   return (
     <div className="chat-box">

@@ -1,47 +1,60 @@
 import { useEffect, useMemo, useState } from "react";
-import { addGroupMember, getAllUsers, getGroupMembers } from "../api/groups";
+import { addGroupMember, getGroupMembers, searchUsers } from "../api/groups";
 
 export default function AddPeopleModal({ group, onClose }) {
   const [users, setUsers] = useState([]);
   const [members, setMembers] = useState([]);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  async function load() {
+  async function loadMembers() {
     try {
       setError("");
-
-      const [usersData, membersData] = await Promise.all([
-        getAllUsers(),
-        getGroupMembers(group.id),
-      ]);
-
-      setUsers(usersData.users || []);
+      const membersData = await getGroupMembers(group.id);
       setMembers(membersData.members || []);
     } catch (err) {
-      setError(err.message || "Failed to load users");
+      setError(err.message || "Failed to load members");
     }
   }
 
   useEffect(() => {
-    load();
+    loadMembers();
   }, [group.id]);
+
+  useEffect(() => {
+    const timeout = setTimeout(async () => {
+      try {
+        setError("");
+
+        if (!search.trim()) {
+          setUsers([]);
+          return;
+        }
+
+        setLoading(true);
+        const data = await searchUsers(search.trim());
+        setUsers(data.users || []);
+      } catch (err) {
+        setError(err.message || "Search failed");
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeout);
+  }, [search]);
 
   const memberIds = useMemo(
     () => new Set(members.map((m) => m.user_id)),
     [members]
   );
 
-  const filteredUsers = users.filter((u) => {
-    const label = `${u.username || ""} ${u.display_name || ""}`.toLowerCase();
-    return label.includes(search.toLowerCase());
-  });
-
   async function handleAdd(userId) {
     try {
       setError("");
       await addGroupMember(group.id, userId);
-      await load();
+      await loadMembers();
     } catch (err) {
       setError(err.message || "Failed to add user");
     }
@@ -75,13 +88,13 @@ export default function AddPeopleModal({ group, onClose }) {
         </h2>
 
         <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 12 }}>
-          Add classmates to {group.name}.
+          Type a classmate&apos;s username or name to add them to {group.name}.
         </p>
 
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search users..."
+          placeholder="Type username or name..."
           style={{
             width: "100%",
             border: "1px solid #e5e7eb",
@@ -98,12 +111,18 @@ export default function AddPeopleModal({ group, onClose }) {
         )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {filteredUsers.length === 0 ? (
+          {!search.trim() ? (
             <p style={{ fontSize: 13, color: "#6b7280" }}>
-              No users found.
+              Start typing to search for users.
+            </p>
+          ) : loading ? (
+            <p style={{ fontSize: 13, color: "#6b7280" }}>Searching...</p>
+          ) : users.length === 0 ? (
+            <p style={{ fontSize: 13, color: "#6b7280" }}>
+              No matching users found.
             </p>
           ) : (
-            filteredUsers.map((user) => {
+            users.map((user) => {
               const alreadyMember = memberIds.has(user.id);
 
               return (

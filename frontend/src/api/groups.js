@@ -1,5 +1,4 @@
 const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
-console.log("Groups API base:", API);
 
 async function parseRes(res) {
   const data = await res.json().catch(() => ({}));
@@ -28,6 +27,14 @@ export async function createGroup(name) {
   return parseRes(res);
 }
 
+export async function deleteGroup(groupId) {
+  const res = await fetch(`${API}/api/groups/${groupId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  return parseRes(res);
+}
+
 export async function getMessages(groupId) {
   const res = await fetch(`${API}/api/groups/${groupId}/messages`, {
     credentials: "include",
@@ -41,13 +48,6 @@ export async function sendMessage(groupId, payload) {
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify(payload),
-  });
-  return parseRes(res);
-}
-
-export async function getAllUsers() {
-  const res = await fetch(`${API}/api/groups/users/all`, {
-    credentials: "include",
   });
   return parseRes(res);
 }
@@ -69,10 +69,12 @@ export async function addGroupMember(groupId, userId) {
   return parseRes(res);
 }
 
-export async function deleteGroup(groupId) {
-  const res = await fetch(`${API}/api/groups/${groupId}`, {
-    method: "DELETE",
-    credentials: "include",
-  });
+export async function searchUsers(query) {
+  const res = await fetch(
+    `${API}/api/groups/users/search?q=${encodeURIComponent(query)}`,
+    {
+      credentials: "include",
+    }
+  );
   return parseRes(res);
 }
