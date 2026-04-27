@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { getMessages, sendMessage } from "../api/groups";
 
+import { useEffect, useRef, useState } from "react";
+
+const bottomRef = useRef(null);
+
 export default function ChatBox({ group }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
@@ -26,8 +30,20 @@ export default function ChatBox({ group }) {
   }
 
   useEffect(() => {
+  if (!group?.id) return;
+
+  loadMessages();
+
+  const interval = setInterval(() => {
     loadMessages();
-  }, [group.id]);
+  }, 2000); // refresh every 2 seconds
+
+  return () => clearInterval(interval);
+}, [group.id]);
+
+useEffect(() => {
+  bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+}, [messages]);
 
   return (
     <div className="chat-box">
@@ -56,6 +72,8 @@ export default function ChatBox({ group }) {
             )}
           </div>
         ))}
+
+        <div ref={bottomRef} />
       </div>
 
       <form onSubmit={handleSend} className="chat-input-row">
