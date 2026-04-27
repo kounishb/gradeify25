@@ -4,19 +4,33 @@ import { getMessages, sendMessage } from "../api/groups";
 export default function ChatBox({ group }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
+  const [currentUserId, setCurrentUserId] = useState(null);
   const bottomRef = useRef(null);
 
   async function handleSend(e) {
     e.preventDefault();
-
     if (!text.trim()) return;
 
-    await sendMessage(group.id, {
-      message: text,
-    });
-
+    await sendMessage(group.id, { message: text });
     setText("");
   }
+
+  useEffect(() => {
+    async function getMe() {
+      try {
+        const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
+        const res = await fetch(`${API}/auth/me`, {
+          credentials: "include",
+        });
+        const data = await res.json();
+        setCurrentUserId(data.user?.id);
+      } catch (err) {
+        console.error("Failed to get current user:", err);
+      }
+    }
+
+    getMe();
+  }, []);
 
   useEffect(() => {
     if (!group?.id) return;
@@ -25,10 +39,7 @@ export default function ChatBox({ group }) {
 
     async function fetchMessages() {
       try {
-        console.log("Polling messages...");
-
         const data = await getMessages(group.id);
-
         if (isMounted) {
           setMessages(data.messages || []);
         }
@@ -38,7 +49,6 @@ export default function ChatBox({ group }) {
     }
 
     fetchMessages();
-
     const interval = setInterval(fetchMessages, 2000);
 
     return () => {
@@ -53,31 +63,49 @@ export default function ChatBox({ group }) {
 
   return (
     <div className="chat-box">
-      <h2>{group.name}</h2>
+      <div className="chat-top">
+        <div>
+          <h2>{group.name}</h2>
+          <p>Group chat</p>
+        </div>
+      </div>
 
       <div className="chat-messages">
-        {messages.map((msg) => (
-          <div key={msg.id} className="chat-message">
-            <div className="chat-author">
-              {msg.users?.display_name || msg.users?.username || "User"}
-            </div>
+        {messages.map((msg) => {
+          const isMe = msg.user_id === currentUserId;
 
-            {msg.message && <p>{msg.message}</p>}
+          return (
+            <div
+              key={msg.id}
+              className={`chat-message-row ${isMe ? "mine" : "theirs"}`}
+            >
+              <div className="chat-bubble-wrap">
+                {!isMe && (
+                  <div className="chat-author">
+                    {msg.users?.display_name || msg.users?.username || "User"}
+                  </div>
+                )}
 
-            {msg.shared_type && (
-              <div className="shared-card">
-                <strong>
-                  Shared{" "}
-                  {msg.shared_type === "practice_test"
-                    ? "Practice Test"
-                    : "Flashcards"}
-                </strong>
-                <p>ID: {msg.shared_item_id}</p>
-                <button type="button">Open</button>
+                <div className={`chat-bubble ${isMe ? "mine" : "theirs"}`}>
+                  {msg.message && <p>{msg.message}</p>}
+
+                  {msg.shared_type && (
+                    <div className="shared-card">
+                      <strong>
+                        Shared{" "}
+                        {msg.shared_type === "practice_test"
+                          ? "Practice Test"
+                          : "Flashcards"}
+                      </strong>
+                      <p>ID: {msg.shared_item_id}</p>
+                      <button type="button">Open</button>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
-        ))}
+            </div>
+          );
+        })}
 
         <div ref={bottomRef} />
       </div>
@@ -86,7 +114,7 @@ export default function ChatBox({ group }) {
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Send a message..."
+          placeholder={`Message ${group.name}...`}
         />
         <button type="submit">Send</button>
       </form>
