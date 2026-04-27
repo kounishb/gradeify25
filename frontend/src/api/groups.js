@@ -45,3 +45,26 @@ export async function sendMessage(groupId, payload) {
   return parseRes(res);
 }
 
+export async function getAllUsers() {
+  const res = await fetch(`${API}/api/groups/users/all`, {
+    credentials: "include",
+  });
+  return parseRes(res);
+}
+
+export async function getGroupMembers(groupId) {
+  const res = await fetch(`${API}/api/groups/${groupId}/members`, {
+    credentials: "include",
+  });
+  return parseRes(res);
+}
+
+export async function addGroupMember(groupId, userId) {
+  const res = await fetch(`${API}/api/groups/${groupId}/members`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ user_id: userId }),
+  });
+  return parseRes(res);
+}

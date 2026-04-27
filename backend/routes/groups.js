@@ -151,5 +151,80 @@ router.post("/:groupId/messages", async (req, res) => {
   res.json({ message: data });
 });
 
+router.get("/users/all", async (req, res) => {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, username, display_name")
+    .order("username", { ascending: true });
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({
+    users: (data || []).filter((u) => u.id !== req.userId),
+  });
+});
+
+router.get("/:groupId/members", async (req, res) => {
+  const userId = req.userId;
+  const { groupId } = req.params;
+
+  const { data: membership } = await supabase
+    .from("group_members")
+    .select("id")
+    .eq("group_id", groupId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!membership) {
+    return res.status(403).json({ error: "You are not in this group" });
+  }
+
+  const { data, error } = await supabase
+    .from("group_members")
+    .select("id, user_id, users(id, username, display_name)")
+    .eq("group_id", groupId);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({ members: data || [] });
+});
+
+router.post("/:groupId/members", async (req, res) => {
+  const userId = req.userId;
+  const { groupId } = req.params;
+  const { user_id } = req.body;
+
+  const { data: membership } = await supabase
+    .from("group_members")
+    .select("id")
+    .eq("group_id", groupId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!membership) {
+    return res.status(403).json({ error: "You are not in this group" });
+  }
+
+  if (!user_id) {
+    return res.status(400).json({ error: "Missing user_id" });
+  }
+
+  const { data, error } = await supabase
+    .from("group_members")
+    .upsert(
+      {
+        group_id: groupId,
+        user_id,
+      },
+      { onConflict: "group_id,user_id" }
+    )
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({ member: data });
+});
+
   return router;
 }

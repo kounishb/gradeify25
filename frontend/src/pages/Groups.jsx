@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { getGroups, createGroup } from "../api/groups";
 import ChatBox from "../components/ChatBox";
+import AddPeopleModal from "../components/AddPeopleModal";
 
 export default function Groups() {
   const [groups, setGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [newGroupName, setNewGroupName] = useState("");
   const [error, setError] = useState("");
+  const [showAddPeople, setShowAddPeople] = useState(false);
 
   async function loadGroups() {
     try {
@@ -91,6 +93,12 @@ export default function Groups() {
           <p>Select or create a group to start chatting.</p>
         )}
       </div>
+      {showAddPeople && selectedGroup && (
+  <AddPeopleModal
+    group={selectedGroup}
+    onClose={() => setShowAddPeople(false)}
+  />
+)}
     </div>
   );
 }
