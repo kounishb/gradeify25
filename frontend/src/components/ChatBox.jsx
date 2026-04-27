@@ -1,62 +1,55 @@
-import { useEffect, useState } from "react";
-import { getMessages, sendMessage } from "../api/groups";
-
 import { useEffect, useRef, useState } from "react";
-
-const bottomRef = useRef(null);
+import { getMessages, sendMessage } from "../api/groups";
 
 export default function ChatBox({ group }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
-
-  async function loadMessages() {
-    const data = await getMessages(group.id);
-    setMessages(data.messages || []);
-  }
+  const bottomRef = useRef(null);
 
   async function handleSend(e) {
     e.preventDefault();
 
     if (!text.trim()) return;
 
-    const data = await sendMessage(group.id, {
+    await sendMessage(group.id, {
       message: text,
     });
 
-    if (data.message) {
-      setText("");
-    }
+    setText("");
   }
 
   useEffect(() => {
-  if (!group?.id) return;
+    if (!group?.id) return;
 
-  let isMounted = true;
+    let isMounted = true;
 
-  async function fetchMessages() {
-    try {
-      const data = await getMessages(group.id);
-      if (isMounted) {
-        setMessages(data.messages || []);
+    async function fetchMessages() {
+      try {
+        console.log("Polling messages...");
+
+        const data = await getMessages(group.id);
+
+        if (isMounted) {
+          setMessages(data.messages || []);
+        }
+      } catch (err) {
+        console.error("Polling failed:", err);
       }
-    } catch (err) {
-      console.error("Polling failed:", err);
     }
-  }
 
-  fetchMessages(); // initial load
+    fetchMessages();
 
-  const interval = setInterval(fetchMessages, 2000);
+    const interval = setInterval(fetchMessages, 2000);
 
-  return () => {
-    isMounted = false;
-    clearInterval(interval);
-  };
-}, [group.id]);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [group.id]);
 
-useEffect(() => {
-  bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-}, [messages]);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   return (
     <div className="chat-box">
@@ -80,7 +73,7 @@ useEffect(() => {
                     : "Flashcards"}
                 </strong>
                 <p>ID: {msg.shared_item_id}</p>
-                <button>Open</button>
+                <button type="button">Open</button>
               </div>
             )}
           </div>
