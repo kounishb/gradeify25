@@ -6,6 +6,7 @@ export default function ChatBox({ group }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [currentUserId, setCurrentUserId] = useState(null);
+
   const bottomRef = useRef(null);
   const navigate = useNavigate();
 
@@ -15,7 +16,7 @@ export default function ChatBox({ group }) {
     if (!text.trim()) return;
 
     await sendMessage(group.id, {
-      message: text,
+      message: text.trim(),
     });
 
     setText("");
@@ -26,7 +27,12 @@ export default function ChatBox({ group }) {
   }
 
   function handleOpenShared(msg) {
-    navigate("/app/review", {
+    if (!msg.shared_type || !msg.shared_item_id) {
+      console.error("Missing shared item data:", msg);
+      return;
+    }
+
+    navigate(`/app/review?type=${msg.shared_type}&id=${msg.shared_item_id}`, {
       state: {
         sharedType: msg.shared_type,
         sharedItemId: msg.shared_item_id,
@@ -38,11 +44,13 @@ export default function ChatBox({ group }) {
     async function getMe() {
       try {
         const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
+
         const res = await fetch(`${API}/auth/me`, {
           credentials: "include",
         });
+
         const data = await res.json();
-        setCurrentUserId(data.user?.id);
+        setCurrentUserId(data.user?.id || null);
       } catch (err) {
         console.error("Failed to get current user:", err);
       }
@@ -59,6 +67,7 @@ export default function ChatBox({ group }) {
     async function fetchMessages() {
       try {
         const data = await getMessages(group.id);
+
         if (isMounted) {
           setMessages(data.messages || []);
         }
@@ -68,13 +77,14 @@ export default function ChatBox({ group }) {
     }
 
     fetchMessages();
+
     const interval = setInterval(fetchMessages, 2000);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [group.id]);
+  }, [group?.id]);
 
   return (
     <div className="chat-box">
@@ -104,7 +114,7 @@ export default function ChatBox({ group }) {
                 <div className={`chat-bubble ${isMe ? "mine" : "theirs"}`}>
                   {msg.message && <p>{msg.message}</p>}
 
-                  {msg.shared_type && (
+                  {msg.shared_type && msg.shared_item_id && (
                     <div className="shared-card">
                       <strong>
                         Shared{" "}
@@ -136,6 +146,7 @@ export default function ChatBox({ group }) {
           onChange={(e) => setText(e.target.value)}
           placeholder={`Message ${group.name}...`}
         />
+
         <button type="submit">Send</button>
       </form>
     </div>
