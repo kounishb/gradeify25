@@ -1074,30 +1074,71 @@ app.get("/me/flashcard-sets", requireUser, async (req, res) => {
 });
 
 // Get one set + cards
+// Allows owner OR users in a group where this set was shared
 app.get("/me/flashcard-sets/:id", requireUser, async (req, res) => {
   try {
     const userId = req.session.userId;
     const { id } = req.params;
 
+    // 1. Get the flashcard set
     const { data: setRow, error: setErr } = await supabase
       .from("flashcard_sets")
-      .select("id, subject, topic, prompt, created_at")
+      .select("id, user_id, subject, topic, prompt, created_at")
       .eq("id", id)
-      .eq("user_id", userId)
-      .single();
+      .maybeSingle();
 
-    if (setErr || !setRow) return res.status(404).json({ error: "Set not found" });
+    if (setErr) return res.status(500).json({ error: setErr.message });
+    if (!setRow) return res.status(404).json({ error: "Set not found" });
 
+    // 2. Owner can access
+    let hasAccess = setRow.user_id === userId;
+
+    // 3. If not owner, check whether this set was shared in one of user's groups
+    if (!hasAccess) {
+      const { data: userGroups, error: groupErr } = await supabase
+        .from("group_members")
+        .select("group_id")
+        .eq("user_id", userId);
+
+      if (groupErr) return res.status(500).json({ error: groupErr.message });
+
+      const groupIds = (userGroups || []).map((g) => g.group_id);
+
+      if (groupIds.length > 0) {
+        const { data: sharedMessage, error: sharedErr } = await supabase
+          .from("chat_messages")
+          .select("id")
+          .eq("shared_type", "flashcards")
+          .eq("shared_item_id", id)
+          .in("group_id", groupIds)
+          .maybeSingle();
+
+        if (sharedErr) return res.status(500).json({ error: sharedErr.message });
+
+        hasAccess = !!sharedMessage;
+      }
+    }
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        error: "You do not have access to this flashcard set",
+      });
+    }
+
+    // 4. Fetch cards WITHOUT requiring user_id to match current user
     const { data: cards, error: cardsErr } = await supabase
       .from("flashcards")
       .select("term, definition, card_index")
       .eq("set_id", id)
-      .eq("user_id", userId)
       .order("card_index", { ascending: true });
 
     if (cardsErr) return res.status(500).json({ error: cardsErr.message });
 
-    return res.json({ ok: true, set: setRow, cards });
+    return res.json({
+      ok: true,
+      set: setRow,
+      cards: cards || [],
+    });
   } catch (e) {
     return res.status(500).json({ error: e.message || "Server error" });
   }
