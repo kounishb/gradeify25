@@ -7,6 +7,7 @@ import {
   deleteFlashcardSet,
 } from "../api/manual";
 import ShareMaterialModal from "../components/ShareMaterialModal";
+import { useLocation } from "react-router-dom";
 
 const SAVED_TESTS_KEY = "gradeify_saved_practice_tests_v1";
 
@@ -59,6 +60,7 @@ function renderMath(text) {
 }
 
 export default function Review() {
+  const location = useLocation();
   const [tab, setTab] = useState("tests"); // "tests" | "flashcards"
 
   /* -------------------- Share modal state -------------------- */
@@ -104,6 +106,28 @@ export default function Review() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  useEffect(() => {
+  const params = new URLSearchParams(location.search);
+
+  const sharedType =
+    location.state?.sharedType || params.get("type");
+
+  const sharedItemId =
+    location.state?.sharedItemId || params.get("id");
+
+  if (!sharedType || !sharedItemId) return;
+
+  if (sharedType === "flashcards") {
+    setTab("flashcards");
+    setSelectedSetId(sharedItemId);
+  }
+
+  if (sharedType === "practice_test") {
+    setTab("tests");
+    setSelectedTestId(sharedItemId);
+  }
+}, [location]);
 
   // load selected set detail
   useEffect(() => {
