@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { getMessages, sendMessage } from "../api/groups";
 
 export default function ChatBox({ group }) {
@@ -6,22 +7,32 @@ export default function ChatBox({ group }) {
   const [text, setText] = useState("");
   const [currentUserId, setCurrentUserId] = useState(null);
   const bottomRef = useRef(null);
+  const navigate = useNavigate();
 
   async function handleSend(e) {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!text.trim()) return;
+    if (!text.trim()) return;
 
-  await sendMessage(group.id, {
-    message: text,
-  });
+    await sendMessage(group.id, {
+      message: text,
+    });
 
-  setText("");
+    setText("");
 
-  setTimeout(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, 100);
-}
+    setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  }
+
+  function handleOpenShared(msg) {
+    navigate("/app/review", {
+      state: {
+        sharedType: msg.shared_type,
+        sharedItemId: msg.shared_item_id,
+      },
+    });
+  }
 
   useEffect(() => {
     async function getMe() {
@@ -65,7 +76,6 @@ export default function ChatBox({ group }) {
     };
   }, [group.id]);
 
-
   return (
     <div className="chat-box">
       <div className="chat-top">
@@ -102,8 +112,13 @@ export default function ChatBox({ group }) {
                           ? "Practice Test"
                           : "Flashcards"}
                       </strong>
-                      <p>ID: {msg.shared_item_id}</p>
-                      <button type="button">Open</button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenShared(msg)}
+                      >
+                        Open
+                      </button>
                     </div>
                   )}
                 </div>
