@@ -51,3 +51,15 @@
   max-width: 100%;
   max-height: 100%;
 }
+
+.cube-card:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+  background: #f8fafc;
+}
+
+.cube-card:fullscreen .animcube-box {
+  width: 100vw;
+  height: 100vh;
+}

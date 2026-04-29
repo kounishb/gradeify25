@@ -3,16 +3,16 @@ import "./RubiksCube.css";
 
 export default function RubiksCube() {
   const cubeRef = useRef(null);
-  const [scrambleText, setScrambleText] = useState("");
+  const cardRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   function generateScramble() {
     const moves = ["R", "L", "U", "D", "F", "B"];
     const modifiers = ["", "'", "2"];
-
     let scramble = "";
     let lastMove = "";
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 25; i++) {
       let move = moves[Math.floor(Math.random() * moves.length)];
 
       while (move === lastMove) {
@@ -27,28 +27,29 @@ export default function RubiksCube() {
     return scramble.trim();
   }
 
-  function loadCube(move = "") {
-    if (window.AnimCube3 && cubeRef.current) {
-      cubeRef.current.innerHTML = "";
+  function loadCube(move = "", autoPlay = false) {
+    if (!window.AnimCube3 || !cubeRef.current) return;
 
-      window.AnimCube3(
-        "id=gradeifyCube" +
-          "&bgcolor=f8fafc" +
-          "&butbgcolor=2563eb" +
-          "&colorscheme=wyorgb" +
-          "&buttonheight=25" +
-          "&movetext=1" +
-          "&snap=1" +
-          "&edit=1" +
-          `&move=${encodeURIComponent(move)}`
-      );
-    }
+    cubeRef.current.innerHTML = "";
+
+    window.AnimCube3(
+      "id=gradeifyCube" +
+        "&bgcolor=f8fafc" +
+        "&butbgcolor=2563eb" +
+        "&colorscheme=wyorgb" +
+        "&buttonheight=25" +
+        "&movetext=1" +
+        "&snap=1" +
+        "&edit=1" +
+        "&speed=8" +
+        "&doublespeed=12" +
+        `&move=${encodeURIComponent(move)}` +
+        (autoPlay ? "&initmove=0" : "")
+    );
   }
 
   useEffect(() => {
     const existing = document.querySelector("script[data-animcube]");
-
-    window.loadGradeifyCube = loadCube;
 
     if (existing) {
       loadCube();
@@ -67,15 +68,38 @@ export default function RubiksCube() {
     document.body.appendChild(script);
   }, []);
 
+  useEffect(() => {
+    function handleFullscreenChange() {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    }
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
   function handleScramble() {
     const scramble = generateScramble();
-    setScrambleText(scramble);
-    loadCube(scramble);
+
+    // This reloads the cube with a random move sequence and auto-plays it,
+    // so the cube visibly scrambles itself instead of only showing text.
+    loadCube(scramble, true);
   }
 
   function handleReset() {
-    setScrambleText("");
     loadCube("");
+  }
+
+  async function toggleFullscreen() {
+    try {
+      if (!document.fullscreenElement) {
+        await cardRef.current?.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      console.error("Fullscreen failed:", err);
+    }
   }
 
   return (
@@ -98,16 +122,14 @@ export default function RubiksCube() {
           <button type="button" className="secondary" onClick={handleReset}>
             Reset
           </button>
+
+          <button type="button" className="secondary" onClick={toggleFullscreen}>
+            {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+          </button>
         </div>
       </div>
 
-      {scrambleText && (
-        <div className="scramble-box">
-          <strong>Scramble:</strong> {scrambleText}
-        </div>
-      )}
-
-      <div className="cube-card">
+      <div className="cube-card" ref={cardRef}>
         <div id="gradeifyCube" ref={cubeRef} className="animcube-box" />
       </div>
     </div>
