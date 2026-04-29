@@ -989,6 +989,99 @@ app.post("/me/practice-tests", requireUser, async (req, res) => {
   }
 });
 
+// List saved practice tests
+app.get("/me/practice-tests", requireUser, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+
+    const { data, error } = await supabase
+      .from("practice_tests")
+      .select("id, meta, score, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({ ok: true, tests: data || [] });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Server error" });
+  }
+});
+
+// Get one practice test
+// Allows owner OR users in a group where this test was shared
+app.get("/me/practice-tests/:id", requireUser, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const { id } = req.params;
+
+    const { data: testRow, error: testErr } = await supabase
+      .from("practice_tests")
+      .select("id, user_id, meta, questions, score, created_at")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (testErr) return res.status(500).json({ error: testErr.message });
+    if (!testRow) return res.status(404).json({ error: "Test not found" });
+
+    let hasAccess = testRow.user_id === userId;
+
+    if (!hasAccess) {
+      const { data: userGroups, error: groupErr } = await supabase
+        .from("group_members")
+        .select("group_id")
+        .eq("user_id", userId);
+
+      if (groupErr) return res.status(500).json({ error: groupErr.message });
+
+      const groupIds = (userGroups || []).map((g) => g.group_id);
+
+      if (groupIds.length > 0) {
+        const { data: sharedMessages, error: sharedErr } = await supabase
+          .from("chat_messages")
+          .select("id")
+          .eq("shared_type", "practice_test")
+          .eq("shared_item_id", id)
+          .in("group_id", groupIds)
+          .limit(1);
+
+        if (sharedErr) return res.status(500).json({ error: sharedErr.message });
+
+        hasAccess = Array.isArray(sharedMessages) && sharedMessages.length > 0;
+      }
+    }
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        error: "You do not have access to this practice test",
+      });
+    }
+
+    res.json({ ok: true, test: testRow });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Server error" });
+  }
+});
+
+// Delete a practice test
+app.delete("/me/practice-tests/:id", requireUser, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from("practice_tests")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Server error" });
+  }
+});
 
 // ===================== FLASHCARDS (DB) /me/flashcards =====================
 

@@ -5,29 +5,56 @@ import {
   listFlashcardSets,
   getFlashcardSet,
   deleteFlashcardSet,
+  listPracticeTests,
+  getPracticeTest,
+  deletePracticeTest,
 } from "../api/manual";
 import ShareMaterialModal from "../components/ShareMaterialModal";
 import { useLocation } from "react-router-dom";
 
-const SAVED_TESTS_KEY = "gradeify_saved_practice_tests_v1";
+useEffect(() => {
+  if (tab !== "tests") return;
 
-/* -------------------- LocalStorage tests helpers (unchanged) -------------------- */
-function loadSavedTests() {
-  try {
-    const raw = localStorage.getItem(SAVED_TESTS_KEY);
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
+  async function loadTests() {
+    try {
+      const data = await listPracticeTests();
+      const arr = Array.isArray(data.tests) ? data.tests : [];
+      setTests(arr);
+
+      if (arr.length && !selectedTestId) {
+        setSelectedTestId(arr[0].id);
+      }
+    } catch (e) {
+      console.error("Failed to load practice tests:", e);
+    }
   }
-}
 
-function deleteSavedTest(id) {
-  const all = loadSavedTests();
-  const next = all.filter((t) => t.id !== id);
-  localStorage.setItem(SAVED_TESTS_KEY, JSON.stringify(next));
-  return next;
-}
+  loadTests();
+}, [tab]);
+
+useEffect(() => {
+  if (tab !== "tests") return;
+  if (!selectedTestId) return;
+
+  async function loadSelectedTest() {
+    try {
+      const data = await getPracticeTest(selectedTestId);
+      setSelectedTestId(data.test.id);
+
+      setTests((prev) => {
+        const exists = prev.some((t) => t.id === data.test.id);
+        if (exists) {
+          return prev.map((t) => (t.id === data.test.id ? data.test : t));
+        }
+        return [data.test, ...prev];
+      });
+    } catch (e) {
+      console.error("Failed to load selected practice test:", e);
+    }
+  }
+
+  loadSelectedTest();
+}, [tab, selectedTestId]);
 
 /* -------------------- Math renderer (unchanged) -------------------- */
 function renderMath(text) {
@@ -153,10 +180,19 @@ export default function Review() {
     [tests, selectedTestId]
   );
 
-  const handleDeleteTest = (id) => {
-    const next = deleteSavedTest(id);
-    setTests(next);
-    if (selectedTestId === id) setSelectedTestId(next[0]?.id ?? null);
+  const handleDeleteTest = async (id) => {
+    try {
+      await deletePracticeTest(id);
+
+      const next = tests.filter((t) => t.id !== id);
+      setTests(next);
+
+      if (selectedTestId === id) {
+        setSelectedTestId(next[0]?.id ?? null);
+      }
+    } catch (e) {
+      console.error("Failed to delete practice test:", e);
+    }
   };
 
   const handleDeleteSet = async (id) => {

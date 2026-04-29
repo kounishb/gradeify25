@@ -133,6 +133,15 @@ export const savePracticeTest = (payload) =>
     body: payload,
   });
 
+export const listPracticeTests = () =>
+  request("/me/practice-tests");
+
+export const getPracticeTest = (id) =>
+  request(`/me/practice-tests/${id}`);
+
+export const deletePracticeTest = (id) =>
+  request(`/me/practice-tests/${id}`, { method: "DELETE" });
+
 export async function submitFeedback({ message, rating, username}) {
   const res = await fetch(`${API_BASE}/api/feedback`, {
     method: "POST",
