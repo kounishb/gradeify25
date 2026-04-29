@@ -12,7 +12,49 @@ import {
 import ShareMaterialModal from "../components/ShareMaterialModal";
 import { useLocation } from "react-router-dom";
 
-useEffect(() => {
+/* -------------------- Math renderer (unchanged) -------------------- */
+function renderMath(text) {
+  const str = String(text ?? "");
+  const parts = [];
+  let last = 0;
+
+  const re = /\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]/g;
+  let m;
+
+  while ((m = re.exec(str)) !== null) {
+    if (m.index > last) parts.push({ type: "text", value: str.slice(last, m.index) });
+    if (m[1] != null) parts.push({ type: "inline", value: m[1] });
+    else parts.push({ type: "block", value: m[2] });
+    last = re.lastIndex;
+  }
+  if (last < str.length) parts.push({ type: "text", value: str.slice(last) });
+
+  const hasWrappers = parts.some((p) => p.type !== "text");
+  const looksLikeLatex =
+    /\\(int|frac|sqrt|sum|prod|left|right|cdot|times|pi|ln|log|sin|cos|tan|arctan|\^|_)/.test(str);
+
+  if (!hasWrappers && looksLikeLatex) return <InlineMath math={str} />;
+
+  return parts.map((p, i) => {
+    if (p.type === "text") return <span key={i}>{p.value}</span>;
+    if (p.type === "inline") return <InlineMath key={i} math={p.value} />;
+    return <BlockMath key={i} math={p.value} />;
+  });
+}
+
+export default function Review() {
+  const location = useLocation();
+  const [tab, setTab] = useState("tests"); // "tests" | "flashcards"
+
+  /* -------------------- Share modal state -------------------- */
+  const [shareItem, setShareItem] = useState(null);
+  const [shareType, setShareType] = useState(null);
+
+  /* -------------------- Tests state (existing) -------------------- */
+  const [tests, setTests] = useState([]);
+  const [selectedTestId, setSelectedTestId] = useState(null);
+
+  useEffect(() => {
   if (tab !== "tests") return;
 
   async function loadTests() {
@@ -56,62 +98,12 @@ useEffect(() => {
   loadSelectedTest();
 }, [tab, selectedTestId]);
 
-/* -------------------- Math renderer (unchanged) -------------------- */
-function renderMath(text) {
-  const str = String(text ?? "");
-  const parts = [];
-  let last = 0;
-
-  const re = /\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]/g;
-  let m;
-
-  while ((m = re.exec(str)) !== null) {
-    if (m.index > last) parts.push({ type: "text", value: str.slice(last, m.index) });
-    if (m[1] != null) parts.push({ type: "inline", value: m[1] });
-    else parts.push({ type: "block", value: m[2] });
-    last = re.lastIndex;
-  }
-  if (last < str.length) parts.push({ type: "text", value: str.slice(last) });
-
-  const hasWrappers = parts.some((p) => p.type !== "text");
-  const looksLikeLatex =
-    /\\(int|frac|sqrt|sum|prod|left|right|cdot|times|pi|ln|log|sin|cos|tan|arctan|\^|_)/.test(str);
-
-  if (!hasWrappers && looksLikeLatex) return <InlineMath math={str} />;
-
-  return parts.map((p, i) => {
-    if (p.type === "text") return <span key={i}>{p.value}</span>;
-    if (p.type === "inline") return <InlineMath key={i} math={p.value} />;
-    return <BlockMath key={i} math={p.value} />;
-  });
-}
-
-export default function Review() {
-  const location = useLocation();
-  const [tab, setTab] = useState("tests"); // "tests" | "flashcards"
-
-  /* -------------------- Share modal state -------------------- */
-  const [shareItem, setShareItem] = useState(null);
-  const [shareType, setShareType] = useState(null);
-
-  /* -------------------- Tests state (existing) -------------------- */
-  const [tests, setTests] = useState([]);
-  const [selectedTestId, setSelectedTestId] = useState(null);
-
   /* -------------------- Flashcards state (DB) -------------------- */
   const [sets, setSets] = useState([]);
   const [selectedSetId, setSelectedSetId] = useState(null);
   const [selectedSet, setSelectedSet] = useState(null); // { set, cards }
   const [fcLoading, setFcLoading] = useState(false);
   const [fcError, setFcError] = useState("");
-
-  useEffect(() => {
-    // load tests once
-    const t = loadSavedTests();
-    setTests(t);
-    if (t.length && !selectedTestId) setSelectedTestId(t[0].id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // load flashcard sets when switching to flashcards tab
   useEffect(() => {
