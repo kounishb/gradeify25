@@ -1,48 +1,42 @@
-import { useEffect, useRef, useState } from "react";
-import "cubing/twisty";
+import { useEffect, useRef } from "react";
 import "./RubiksCube.css";
 
-const SCRAMBLES = [
-  "R U R' U' F R U R' U' F'",
-  "L U2 R' D2 R U' R' D2 R2",
-  "F R U R' U' F' U R U' R'",
-  "R2 D2 B2 U' L2 F2 R2 D B2",
-  "U R2 F B R B2 R U2 L B2",
-];
-
 export default function RubiksCube() {
-  const playerRef = useRef(null);
-  const [alg, setAlg] = useState("");
-  const [currentScramble, setCurrentScramble] = useState("");
+  const cubeRef = useRef(null);
 
   useEffect(() => {
-    const player = playerRef.current;
-    if (!player) return;
+    const existing = document.querySelector("script[data-animcube]");
+    const loadCube = () => {
+      if (window.AnimCube3 && cubeRef.current) {
+        cubeRef.current.innerHTML = "";
+        window.AnimCube3(
+          "id=gradeifyCube" +
+            "&bgcolor=f8fafc" +
+            "&butbgcolor=2563eb" +
+            "&colorscheme=wyorgb" +
+            "&buttonheight=25" +
+            "&movetext=1" +
+            "&snap=1" +
+            "&supercube=0" +
+            "&edit=1" +
+            "&initrevmove=#" +
+            "&move="
+        );
+      }
+    };
 
-    player.puzzle = "3x3x3";
-    player.background = "none";
-    player.controlPanel = "bottom-row";
-    player.visualization = "3D";
-    player.experimentalStickering = "full";
-  }, []);
-
-  function applyAlg(nextAlg) {
-    setAlg(nextAlg);
-    if (playerRef.current) {
-      playerRef.current.alg = nextAlg;
+    if (existing) {
+      loadCube();
+      return;
     }
-  }
 
-  function scrambleCube() {
-    const random = SCRAMBLES[Math.floor(Math.random() * SCRAMBLES.length)];
-    setCurrentScramble(random);
-    applyAlg(random);
-  }
-
-  function resetCube() {
-    setCurrentScramble("");
-    applyAlg("");
-  }
+    const script = document.createElement("script");
+    script.src = "/AnimCube3.js";
+    script.async = true;
+    script.dataset.animcube = "true";
+    script.onload = loadCube;
+    document.body.appendChild(script);
+  }, []);
 
   return (
     <div className="cube-page">
@@ -51,28 +45,14 @@ export default function RubiksCube() {
           <p className="cube-kicker">Gradeify Games</p>
           <h1>Virtual Rubik’s Cube</h1>
           <p>
-            Drag the cube with your mouse or touchscreen. Use the controls below
-            to play, pause, scramble, or reset.
+            Drag a layer with your finger or mouse to turn it. Drag outside the
+            cube to rotate the whole cube.
           </p>
-        </div>
-
-        <div className="cube-actions">
-          <button type="button" onClick={scrambleCube}>
-            Scramble
-          </button>
-          <button type="button" onClick={resetCube} className="secondary">
-            Reset
-          </button>
         </div>
       </div>
 
       <div className="cube-card">
-        <twisty-player ref={playerRef} alg={alg}></twisty-player>
-      </div>
-
-      <div className="cube-info">
-        <h2>Current scramble</h2>
-        <p>{currentScramble || "No scramble yet. Click Scramble to start."}</p>
+        <div id="gradeifyCube" ref={cubeRef} className="animcube-box" />
       </div>
     </div>
   );
