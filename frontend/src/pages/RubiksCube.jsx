@@ -40,9 +40,9 @@ export default function RubiksCube() {
 
         // 👇 SMOOTH / LESS SENSITIVE SETTINGS
         "&drag=4" +        // requires more finger movement (BIGGEST FIX)
-        "&snap=4" +        // stronger snapping (less jitter)
+        "&snap=5" +        // stronger snapping (less jitter)
         "&speed=4" +       // slower, smoother turns
-        "&doublespeed=8" + // smoother double turns
+        "&doublespeed=6" + // smoother double turns
         "&perspective=1200" + // softer 3D feel
 
         // 👇 GENERAL SETTINGS
