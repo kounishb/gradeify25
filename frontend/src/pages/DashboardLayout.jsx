@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { me, logout } from "../api/manual";
 import "./DashboardLayout.css";
 
+
 export default function DashboardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -97,8 +98,11 @@ export default function DashboardLayout() {
             Review
           </Link>
           <Link to="/app/groups" className={isActive("/app/groups")}>
-  Groups
-</Link>
+            Groups
+          </Link>
+          <Link to="/app/cube" className={isActive("/app/cube")}>
+            Cube
+          </Link>
           <Link to="/app/settings" className={isActive("/app/settings")}>
             Settings
           </Link>

@@ -19,6 +19,8 @@ import "katex/dist/katex.min.css";
 // use the Learn page file we created
 import LearnPage from "./pages/Learn.jsx";
 
+import RubiksCube from "./pages/RubiksCube.jsx";
+
 import "./App.css";
 
 /* ---------------- ErrorBoundary ---------------- */
@@ -112,6 +114,7 @@ export default function App() {
           <Route path="learn" element={<LearnPage isDarkMode={isDarkMode} />} />
           <Route path="review" element={<Review />} />
           <Route path="groups" element={<Groups />} />
+          <Route path="cube" element={<RubiksCube />} />
         </Route>
 
         {/* backwards compatibility: old routes redirect into new ones */}
