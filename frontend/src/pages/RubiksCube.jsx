@@ -39,9 +39,9 @@ export default function RubiksCube() {
         "&colorscheme=wygbro" +
 
         // 👇 SMOOTH / LESS SENSITIVE SETTINGS
-        "&drag=3" +        // requires more finger movement (BIGGEST FIX)
-        "&snap=3" +        // stronger snapping (less jitter)
-        "&speed=5" +       // slower, smoother turns
+        "&drag=4" +        // requires more finger movement (BIGGEST FIX)
+        "&snap=5" +        // stronger snapping (less jitter)
+        "&speed=4" +       // slower, smoother turns
         "&doublespeed=8" + // smoother double turns
         "&perspective=800" + // softer 3D feel
 
