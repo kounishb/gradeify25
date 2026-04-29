@@ -1105,17 +1105,17 @@ app.get("/me/flashcard-sets/:id", requireUser, async (req, res) => {
       const groupIds = (userGroups || []).map((g) => g.group_id);
 
       if (groupIds.length > 0) {
-        const { data: sharedMessage, error: sharedErr } = await supabase
+        const { data: sharedMessages, error: sharedErr } = await supabase
           .from("chat_messages")
           .select("id")
           .eq("shared_type", "flashcards")
           .eq("shared_item_id", id)
           .in("group_id", groupIds)
-          .maybeSingle();
+          .limit(1);
 
         if (sharedErr) return res.status(500).json({ error: sharedErr.message });
 
-        hasAccess = !!sharedMessage;
+        hasAccess = Array.isArray(sharedMessages) && sharedMessages.length > 0;
       }
     }
 
