@@ -36,15 +36,22 @@ export default function RubiksCube() {
       "id=gradeifyCube" +
         "&bgcolor=f8fafc" +
         "&butbgcolor=2563eb" +
-        "&colorscheme=wyorgb" +
-        "&buttonheight=25" +
-        "&movetext=1" +
-        "&snap=1" +
+        "&colorscheme=wygbro" +
+
+        // 👇 SMOOTH / LESS SENSITIVE SETTINGS
+        "&drag=3" +        // requires more finger movement (BIGGEST FIX)
+        "&snap=3" +        // stronger snapping (less jitter)
+        "&speed=5" +       // slower, smoother turns
+        "&doublespeed=8" + // smoother double turns
+        "&perspective=800" + // softer 3D feel
+
+        // 👇 GENERAL SETTINGS
         "&edit=1" +
-        "&speed=8" +
-        "&doublespeed=12" +
+        "&movetext=0" +
+        "&buttonheight=25" +
+
         `&move=${encodeURIComponent(move)}` +
-        (autoPlay ? "&initmove=0" : "")
+        (autoPlay ? "&initmove=1" : "")
     );
   }
 
