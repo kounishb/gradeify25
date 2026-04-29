@@ -31,7 +31,7 @@ export default function RubiksCube() {
     }
 
     const script = document.createElement("script");
-    script.src = "/AnimCube3.js";
+    script.src = `${import.meta.env.BASE_URL}AnimCube3.js`;
     script.async = true;
     script.dataset.animcube = "true";
     script.onload = loadCube;
