@@ -26,7 +26,7 @@
 
 .cube-header p {
   margin-top: 8px;
-  max-width: 620px;
+  max-width: 650px;
   color: #64748b;
 }
 
@@ -44,6 +44,13 @@
   color: white;
   font-weight: 700;
   cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.cube-actions button:hover,
+.control-grid button:hover {
+  transform: translateY(-1px);
+  opacity: 0.92;
 }
 
 .cube-actions .secondary {
@@ -53,94 +60,110 @@
 
 .cube-layout {
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) 320px;
+  grid-template-columns: minmax(320px, 1fr) 330px;
   gap: 28px;
   align-items: center;
 }
 
 .cube-stage {
-  height: 460px;
+  height: 500px;
   display: flex;
   align-items: center;
   justify-content: center;
-  perspective: 900px;
+  perspective: 1000px;
   background: linear-gradient(135deg, #eff6ff, #f8fafc);
   border: 1px solid #e2e8f0;
   border-radius: 24px;
   overflow: hidden;
+  touch-action: none;
 }
 
-.rubiks-cube {
-  width: 210px;
-  height: 210px;
+.cube-world {
+  width: 216px;
+  height: 216px;
   position: relative;
   transform-style: preserve-3d;
-  transition: transform 0.25s ease;
+  transition: transform 0.2s ease;
 }
 
-.cube-face {
+.cubie {
   position: absolute;
-  width: 210px;
-  height: 210px;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  padding: 8px;
-  background: #111827;
-  border-radius: 14px;
+  left: 72px;
+  top: 72px;
+  width: 68px;
+  height: 68px;
+  transform-style: preserve-3d;
+  transition: transform 0.22s ease;
 }
 
-.front {
-  transform: translateZ(105px);
-}
-
-.back {
-  transform: rotateY(180deg) translateZ(105px);
-}
-
-.right {
-  transform: rotateY(90deg) translateZ(105px);
-}
-
-.left {
-  transform: rotateY(-90deg) translateZ(105px);
-}
-
-.top {
-  transform: rotateX(90deg) translateZ(105px);
-}
-
-.bottom {
-  transform: rotateX(-90deg) translateZ(105px);
-}
-
-.sticker {
+.cubie::before,
+.cubie::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #0f172a;
   border-radius: 8px;
-  border: 2px solid rgba(15, 23, 42, 0.2);
+  transform: translateZ(-34px);
 }
 
-.green {
-  background: #22c55e;
+.cubie-sticker {
+  position: absolute;
+  width: 62px;
+  height: 62px;
+  left: 3px;
+  top: 3px;
+  border-radius: 9px;
+  border: 3px solid #0f172a;
+  box-shadow: inset 0 -4px 0 rgba(15, 23, 42, 0.18);
+  backface-visibility: hidden;
 }
 
-.blue {
-  background: #3b82f6;
+.face-F {
+  transform: translateZ(35px);
 }
 
-.red {
-  background: #ef4444;
+.face-B {
+  transform: rotateY(180deg) translateZ(35px);
 }
 
-.orange {
-  background: #f97316;
+.face-R {
+  transform: rotateY(90deg) translateZ(35px);
 }
 
-.white {
+.face-L {
+  transform: rotateY(-90deg) translateZ(35px);
+}
+
+.face-U {
+  transform: rotateX(90deg) translateZ(35px);
+}
+
+.face-D {
+  transform: rotateX(-90deg) translateZ(35px);
+}
+
+.sticker-white {
   background: #f8fafc;
 }
 
-.yellow {
+.sticker-yellow {
   background: #facc15;
+}
+
+.sticker-green {
+  background: #22c55e;
+}
+
+.sticker-blue {
+  background: #3b82f6;
+}
+
+.sticker-red {
+  background: #ff3b3b;
+}
+
+.sticker-orange {
+  background: #fb923c;
 }
 
 .cube-panel {
@@ -159,7 +182,12 @@
 .control-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+
+.control-grid.inverse button {
+  background: #475569;
 }
 
 .hint {
@@ -169,57 +197,30 @@
 }
 
 .move-history {
-  min-height: 48px;
+  min-height: 52px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 14px;
   padding: 12px;
   font-weight: 700;
   color: #334155;
+  line-height: 1.6;
 }
 
 @media (max-width: 850px) {
-  .cube-header,
-  .cube-layout {
-    grid-template-columns: 1fr;
+  .cube-header {
     flex-direction: column;
   }
 
+  .cube-layout {
+    grid-template-columns: 1fr;
+  }
+
   .cube-stage {
-    height: 360px;
+    height: 390px;
   }
 
-  .rubiks-cube {
-    width: 160px;
-    height: 160px;
-  }
-
-  .cube-face {
-    width: 160px;
-    height: 160px;
-  }
-
-  .front {
-    transform: translateZ(80px);
-  }
-
-  .back {
-    transform: rotateY(180deg) translateZ(80px);
-  }
-
-  .right {
-    transform: rotateY(90deg) translateZ(80px);
-  }
-
-  .left {
-    transform: rotateY(-90deg) translateZ(80px);
-  }
-
-  .top {
-    transform: rotateX(90deg) translateZ(80px);
-  }
-
-  .bottom {
-    transform: rotateX(-90deg) translateZ(80px);
+  .cube-world {
+    transform: scale(0.78);
   }
 }
