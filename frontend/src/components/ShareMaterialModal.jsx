@@ -22,6 +22,9 @@ export default function ShareMaterialModal({ item, type, onClose }) {
 
   async function handleShare(groupId) {
     try {
+      console.log("SHARING ITEM:", item);
+console.log("SHARING ID:", item?.id);
+console.log("SHARING TYPE:", type);
       await sendMessage(groupId, {
         message: `Shared ${
           type === "practice_test" ? "a practice test" : "flashcards"
