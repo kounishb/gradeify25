@@ -420,53 +420,6 @@ useEffect(() => {
     ))}
   </ol>
 )}
-
-                <ol style={{ paddingLeft: "18px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                  {(selectedTest.questions || []).map((q, idx) => (
-                    <li key={q.id || idx}>
-                      <div
-                        style={{
-                          border: `1px solid ${q.isCorrect ? "#86efac" : "#fca5a5"}`,
-                          background: q.isCorrect ? "#ecfdf5" : "#fef2f2",
-                          borderRadius: "14px",
-                          padding: "12px",
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: "10px" }}>
-                          <div style={{ fontSize: "14px", fontWeight: 700, color: "#111827" }}>
-                            {renderMath(q.question)}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              fontWeight: 800,
-                              color: q.isCorrect ? "#166534" : "#b91c1c",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {q.isCorrect ? "Correct" : "Incorrect"}
-                          </div>
-                        </div>
-
-                        <div style={{ marginTop: "8px", fontSize: "13px", color: "#111827" }}>
-                          <div>
-                            <strong>Your answer:</strong>{" "}
-                            {q.userAnswer ? renderMath(q.userAnswer) : <span style={{ color: "#6b7280" }}>No answer</span>}
-                          </div>
-                          <div style={{ marginTop: "4px" }}>
-                            <strong>Correct answer:</strong> {renderMath(q.correctDisplay)}
-                          </div>
-
-                          {q.explanation ? (
-                            <div style={{ marginTop: "6px" }}>
-                              <strong>Explanation:</strong> {renderMath(q.explanation)}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
               </>
             )}
           </section>
@@ -514,7 +467,7 @@ useEffect(() => {
                         {s.subject} — {s.topic}
                       </div>
                       <div style={{ fontSize: "12px", color: "#6b7280" }}>
-                        {formatDate(t.created_at || t.createdAt)}
+                        {formatDate(s.created_at || s.createdAt)}
                       </div>
                     </button>
                   );
