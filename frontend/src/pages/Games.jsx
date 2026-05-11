@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import TowerDefenseGame from "../components/games/TowerDefenseGame";
+import FlashcardDash from "../components/games/FlashcardDash";
 import "../styles/Games.css";
 
 function normalizeFlashcards(cards = []) {
@@ -15,6 +16,13 @@ function normalizeFlashcards(cards = []) {
         question: `What does "${term}" mean?`,
         correctAnswer: definition,
         sourceTerm: term,
+        answers: [
+          definition,
+          "A related but incorrect answer",
+          "An unrelated concept",
+          "None of the above",
+        ],
+        correct: 0,
       };
     })
     .filter((q) => q.question && q.correctAnswer);
@@ -37,12 +45,25 @@ function normalizePracticeQuestions(questions = []) {
         choices = [];
       }
 
+      if (choices.length === 0 && correctAnswer) {
+        choices = [
+          correctAnswer,
+          "A related but incorrect answer",
+          "An unrelated concept",
+          "None of the above",
+        ];
+      }
+
+      const correctIndex = choices.findIndex((choice) => choice === correctAnswer);
+
       return {
         id: q.id || `practice-${index}`,
         type: "practice",
         question: questionText,
         correctAnswer,
         choices,
+        answers: choices,
+        correct: correctIndex >= 0 ? correctIndex : 0,
       };
     })
     .filter((q) => q.question && q.correctAnswer);
@@ -142,6 +163,13 @@ const demoQuestions = [
       "Survival of the most physically powerful organism",
       "The creation of new species through isolation",
     ],
+    answers: [
+      "A change in allele frequency due to random chance",
+      "Movement of alleles between populations",
+      "Survival of the most physically powerful organism",
+      "The creation of new species through isolation",
+    ],
+    correct: 0,
   },
   {
     id: "demo-2",
@@ -154,6 +182,13 @@ const demoQuestions = [
       "A mutation that always helps survival",
       "The splitting of sister chromatids",
     ],
+    answers: [
+      "Random change in allele frequency",
+      "Movement of alleles between populations",
+      "A mutation that always helps survival",
+      "The splitting of sister chromatids",
+    ],
+    correct: 1,
   },
   {
     id: "demo-3",
@@ -161,6 +196,8 @@ const demoQuestions = [
     question: "What does natural selection act on?",
     correctAnswer: "Phenotypes",
     choices: ["Phenotypes", "Only recessive alleles", "Only DNA directly", "Only gametes"],
+    answers: ["Phenotypes", "Only recessive alleles", "Only DNA directly", "Only gametes"],
+    correct: 0,
   },
   {
     id: "demo-4",
@@ -173,13 +210,20 @@ const demoQuestions = [
       "A chromosome found only in gametes",
       "A chromosome with no centromere",
     ],
+    answers: [
+      "Two identical copies made during S phase",
+      "A chromosome pair with the same genes, one from each parent",
+      "A chromosome found only in gametes",
+      "A chromosome with no centromere",
+    ],
+    correct: 1,
   },
 ];
 
 export default function Games() {
   const location = useLocation();
   const [selectedSetId, setSelectedSetId] = useState("demo");
-  const [gameStarted, setGameStarted] = useState(false);
+  const [activeGame, setActiveGame] = useState(null);
 
   const routeQuestions = useMemo(() => {
     const state = location.state || {};
@@ -224,13 +268,23 @@ export default function Games() {
     ];
   }, [routeQuestions]);
 
-  const selectedSet = studySets.find((set) => set.id === selectedSetId) || studySets[0];
+  const selectedSet =
+    studySets.find((set) => set.id === selectedSetId) || studySets[0];
 
-  if (gameStarted) {
+  if (activeGame === "study-siege") {
     return (
       <TowerDefenseGame
         studySet={selectedSet}
-        onExit={() => setGameStarted(false)}
+        onExit={() => setActiveGame(null)}
+      />
+    );
+  }
+
+  if (activeGame === "flashcard-dash") {
+    return (
+      <FlashcardDash
+        studySet={selectedSet}
+        onExit={() => setActiveGame(null)}
       />
     );
   }
@@ -240,10 +294,11 @@ export default function Games() {
       <div className="games-hero">
         <div>
           <p className="games-eyebrow">Gradeify Games</p>
-          <h1>Turn studying into strategy.</h1>
+          <h1>Turn studying into gameplay.</h1>
           <p>
-            Start with a tower defense game where flashcards and practice test
-            questions become the way you earn coins, build towers, and survive waves.
+            Pick a study set, then choose a game. Your flashcards and practice
+            questions become the way you earn rewards, survive longer, and keep
+            progressing.
           </p>
         </div>
       </div>
@@ -259,8 +314,9 @@ export default function Games() {
           </div>
 
           <p className="game-description">
-            Answer questions correctly to earn coins. Use those coins to place towers,
-            upgrade your defense, and stop enemies before they reach your base.
+            Answer questions correctly to earn coins. Use those coins to place
+            towers, upgrade your defense, and stop enemies before they reach
+            your base.
           </p>
 
           <div className="study-set-picker">
@@ -294,26 +350,69 @@ export default function Games() {
 
           <button
             className="start-game-btn"
-            onClick={() => setGameStarted(true)}
+            onClick={() => setActiveGame("study-siege")}
           >
             Start Study Siege
           </button>
         </div>
 
-        <div className="game-card locked-game-card">
-          <span className="game-pill muted">Coming Soon</span>
-          <h2>Flashcard Dash</h2>
-          <p>
-            A fast-paced runner game where answering questions gives boosts,
-            shields, and extra lives.
+        <div className="game-card featured-game-card">
+          <div className="game-card-top">
+            <div>
+              <p className="game-label">New Game</p>
+              <h2>Flashcard Dash</h2>
+            </div>
+            <span className="game-pill">Runner</span>
+          </div>
+
+          <p className="game-description">
+            A Subway Surfers-style study runner. Dodge obstacles, collect coins,
+            grab flashcards, and answer questions to keep your streak alive.
           </p>
+
+          <div className="study-set-picker">
+            <label>Choose study material</label>
+            <select
+              value={selectedSetId}
+              onChange={(e) => setSelectedSetId(e.target.value)}
+            >
+              {studySets.map((set) => (
+                <option key={set.id} value={set.id}>
+                  {set.title} · {set.questions.length} questions
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="game-details-row">
+            <div>
+              <strong>{selectedSet?.questions.length || 0}</strong>
+              <span>Questions</span>
+            </div>
+            <div>
+              <strong>3</strong>
+              <span>Lanes</span>
+            </div>
+            <div>
+              <strong>∞</strong>
+              <span>Run</span>
+            </div>
+          </div>
+
+          <button
+            className="start-game-btn"
+            onClick={() => setActiveGame("flashcard-dash")}
+          >
+            Start Flashcard Dash
+          </button>
         </div>
 
         <div className="game-card locked-game-card">
           <span className="game-pill muted">Coming Soon</span>
           <h2>Quiz Dungeon</h2>
           <p>
-            A 2D dungeon crawler where correct answers deal damage and unlock rooms.
+            A 2D dungeon crawler where correct answers deal damage and unlock
+            rooms.
           </p>
         </div>
       </div>
