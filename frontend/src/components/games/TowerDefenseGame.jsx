@@ -134,7 +134,7 @@ const TOWER_TYPES = {
   nuke: {
     name: "Nuke",
     icon: "☢️",
-    cost: 340,
+    cost: 600,
     damage: 235,
     range: 9999,
     fireRate: 0,
@@ -143,22 +143,26 @@ const TOWER_TYPES = {
     upgradeText: ["Drop once to damage every enemy on the map."],
   },
   chain: {
-    name: "Chainshot",
+    name: "Damian",
     icon: "🧨",
-    cost: 275,
+    cost: 250,
     damage: 28,
     range: 128,
     fireRate: 1220,
     knockback: 18,
     explodeDelay: 720,
-    explosionRadius: 54,
+    explosionRadius: 60,
     chainDamage: 25,
-    description: "Every third hit chains explosions",
+    superEvery: 10,
+    superRadius: 9999,
+    superPull: 0.42,
+    superDuration: 1150,
+    description: "Every third hit chains explosions; every tenth shot groups enemies",
     upgradeText: [
-      "Slow shots. Every third shot marks enemies to explode.",
-      "Bigger chain blast and stronger knockback.",
-      "Faster reload and larger chain radius.",
-      "Huge chain reactions through packed enemies.",
+      "Every 3rd shot marks enemies to explode. Every 10th shot pulls enemies together.",
+      "Bigger chain blast, stronger knockback, and stronger pull.",
+      "Faster reload, larger chain radius, and longer pull duration.",
+      "Huge chain reactions through packed enemies with a powerful super pull.",
     ],
   },
 };
@@ -228,6 +232,7 @@ function getTowerStats(tower) {
     multiShot: 1, burnDps: 0, burnDuration: 0, chain: 0, tankPierce: false, execute: false,
     buffDamage: base.buffDamage || 1, buffRange: base.buffRange || 1, buffFireRate: base.buffFireRate || 1,
     knockback: base.knockback || 0, explodeDelay: base.explodeDelay || 0, explosionRadius: base.explosionRadius || 0, chainDamage: base.chainDamage || 0,
+    superEvery: base.superEvery || 0, superRadius: base.superRadius || 0, superPull: base.superPull || 0, superDuration: base.superDuration || 0,
   };
   if (tower.type === "basic") { if (level >= 3) stats.multiShot = 2; if (level >= 4) stats.tankPierce = true; }
   if (tower.type === "freeze") {
@@ -274,6 +279,8 @@ function getTowerStats(tower) {
     stats.explodeDelay = Math.max(480, base.explodeDelay - (level - 1) * 55);
     stats.explosionRadius = base.explosionRadius + (level - 1) * 12;
     stats.chainDamage = base.chainDamage * (1 + (level - 1) * 0.3);
+    stats.superPull = base.superPull + (level - 1) * 0.08;
+    stats.superDuration = base.superDuration + (level - 1) * 140;
   }
   return stats;
 }
@@ -1332,7 +1339,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     clearAutoWaveTimer();
     const initialGame = {
       coins: 150, baseHealth: 18, wave: 1, score: 0, gameOver: false,
-      towers: [], enemies: [], bullets: [], beams: [], explosions: [], damagePopups: [],
+      towers: [], enemies: [], bullets: [], beams: [], explosions: [], vortices: [], damagePopups: [],
       waveInProgress: false, enemiesToSpawn: 0, enemiesSpawned: 0,
       lastSpawnTime: 0, nextWaveReady: true, lastFrame: performance.now(),
     };
@@ -1403,6 +1410,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       if (enemy.burnUntil > now) enemy.hp -= enemy.burnDps * (delta / 1000);
       moveEnemy(enemy, delta, now);
     });
+    updateVortices(game, now, delta);
     const reached = game.enemies.filter(e => e.reachedBase);
     if (reached.length > 0) {
       game.baseHealth -= reached.reduce((t, e) => t + (e.type === "boss" ? 3 : e.type === "tank" ? 2 : 1), 0);
@@ -1526,6 +1534,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       const isMortar = tower.type === "splash";
       const nextShotCount = (tower.shotCount || 0) + 1 + index;
       const isChainPowerShot = tower.type === "chain" && nextShotCount % 3 === 0;
+      const isChainSuperShot = tower.type === "chain" && stats.superEvery && nextShotCount % stats.superEvery === 0;
       game.bullets.push({
         id: `bullet-${Date.now()}-${Math.random()}`,
         x: tower.x, y: tower.y, startX: tower.x, startY: tower.y,
@@ -1536,10 +1545,14 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         slowDuration: stats.slowDuration || 0, burnDps: stats.burnDps || 0,
         burnDuration: stats.burnDuration || 0, tankPierce: stats.tankPierce, execute: stats.execute,
         specialChain: isChainPowerShot,
+        specialSuper: isChainSuperShot,
         knockback: isChainPowerShot ? stats.knockback : 0,
         explodeDelay: isChainPowerShot ? stats.explodeDelay : 0,
         explosionRadius: isChainPowerShot ? stats.explosionRadius : 0,
         chainDamage: isChainPowerShot ? stats.chainDamage : 0,
+        superPull: isChainSuperShot ? stats.superPull : 0,
+        superRadius: isChainSuperShot ? stats.superRadius : 0,
+        superDuration: isChainSuperShot ? stats.superDuration : 0,
         mode: isMortar ? "arc" : "direct", startTime: now,
         duration: isMortar ? 680 : 0, arcHeight: isMortar ? 105 + tower.level * 16 : 0,
       });
@@ -1572,6 +1585,9 @@ export default function TowerDefenseGame({ studySet, onExit }) {
           if (bullet.specialChain) {
             knockbackEnemy(target, bullet.knockback || 0);
             markEnemyToExplode(game, target, tower, now, bullet, 0);
+          }
+          if (bullet.specialSuper) {
+            triggerChainSuper(game, target, tower, now, bullet);
           }
           if (bullet.slowDuration > 0) { target.slowUntil = now + bullet.slowDuration; target.slowAmount = bullet.slowAmount; }
           if (bullet.burnDuration > 0) { target.burnUntil = now + bullet.burnDuration; target.burnDps = bullet.burnDps; }
@@ -1610,8 +1626,14 @@ export default function TowerDefenseGame({ studySet, onExit }) {
 
   function markEnemyToExplode(game, enemy, tower, now, source, depth = 0) {
     if (!enemy || enemy.hp <= 0) return;
-    if (enemy.explodeAt && enemy.explodeAt > now && (enemy.explodeChainDepth || 0) <= depth) return;
-    enemy.explodeAt = now + (source.explodeDelay || 700);
+
+    // If already primed, keep the sooner explosion instead of resetting the timer backward.
+    // After the enemy explodes, it can be marked again, so two healthy enemies beside
+    // each other can theoretically bounce the chain forever.
+    const nextExplodeAt = now + (source.explodeDelay || 700);
+    if (enemy.explodePrimed && enemy.explodeAt && enemy.explodeAt <= nextExplodeAt) return;
+
+    enemy.explodeAt = nextExplodeAt;
     enemy.explodeRadius = source.explosionRadius || 54;
     enemy.explodeDamage = source.chainDamage || source.damage || 22;
     enemy.explodeSourceTowerId = tower?.id || source.towerId || null;
@@ -1651,11 +1673,11 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       if (dist > radius) return;
       const falloff = Math.max(0.62, 1 - dist / Math.max(1, radius) * 0.28);
       applyDamage(game, other, damage * falloff, tower, now, { type: "chain", silent: other.id === enemy.id });
-      if (other.id !== enemy.id && depth < 4) {
+      if (other.id !== enemy.id) {
         markEnemyToExplode(game, other, tower, now, {
           explodeDelay: 520,
-          explosionRadius: Math.max(40, radius * 0.86),
-          chainDamage: damage * 0.72,
+          explosionRadius: radius,
+          chainDamage: Math.max(10, damage * 0.9),
         }, depth + 1);
       }
     });
@@ -1667,6 +1689,62 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         triggerChainExplosion(game, enemy, now);
       }
     });
+  }
+
+  function triggerChainSuper(game, target, tower, now, source) {
+    if (!target || !game.enemies.length) return;
+    const radius = source.superRadius || 9999;
+    const life = source.superDuration || 1100;
+    const pull = source.superPull || 0.42;
+    game.vortices.push({
+      id: `vortex-${Date.now()}-${Math.random()}`,
+      x: target.x,
+      y: target.y,
+      radius,
+      pull,
+      life,
+      maxLife: life,
+      sourceTowerId: tower?.id || source.towerId || null,
+    });
+    game.explosions.push({
+      id: `explosion-vortex-start-${Date.now()}-${Math.random()}`,
+      x: target.x,
+      y: target.y,
+      radius: 88,
+      life: 300,
+      maxLife: 300,
+      type: "vortex",
+    });
+    game.damagePopups.push({
+      id: `popup-super-${Date.now()}-${Math.random()}`,
+      x: target.x,
+      y: target.y - target.radius - 22,
+      text: "SUPER PULL",
+      life: 850,
+      color: "#ffca28",
+    });
+  }
+
+  function updateVortices(game, now, delta) {
+    if (!game.vortices?.length) return;
+    game.vortices.forEach(vortex => {
+      const pullStep = vortex.pull * (delta / 16);
+      game.enemies.forEach(enemy => {
+        if (enemy.hp <= 0 || enemy.reachedBase) return;
+        const dx = vortex.x - enemy.x;
+        const dy = vortex.y - enemy.y;
+        const dist = Math.max(1, Math.hypot(dx, dy));
+        if (dist > vortex.radius) return;
+        const strength = Math.max(0.18, 1 - dist / Math.max(1, vortex.radius));
+        const maxMove = Math.min(dist, 7.5 * pullStep * strength);
+        enemy.x += (dx / dist) * maxMove;
+        enemy.y += (dy / dist) * maxMove;
+        enemy.slowUntil = Math.max(enemy.slowUntil || 0, now + 90);
+        enemy.slowAmount = Math.min(enemy.slowAmount || 1, 0.72);
+      });
+      vortex.life -= delta;
+    });
+    game.vortices = game.vortices.filter(v => v.life > 0);
   }
 
   function detonateNuke(game, point, now = performance.now()) {
@@ -1736,6 +1814,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     drawBase(ctx);
     drawTowers(ctx, game);
     drawPlacementPreview(ctx);
+    drawVortices(ctx, game, now);
     drawEnemies(ctx, game, now);
     drawBullets(ctx, game);
     drawBeams(ctx, game);
@@ -2594,18 +2673,25 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         ctx.translate(bullet.x, bullet.y);
         ctx.rotate(rot);
         const chainG = ctx.createLinearGradient(-10, 0, 12, 0);
-        chainG.addColorStop(0, bullet.specialChain ? "#fff176" : "#ffcc80");
-        chainG.addColorStop(0.5, bullet.specialChain ? "#ff5722" : "#ef6c00");
-        chainG.addColorStop(1, bullet.specialChain ? "#b71c1c" : "#8a2f00");
+        chainG.addColorStop(0, bullet.specialSuper ? "#ffffff" : bullet.specialChain ? "#fff176" : "#ffcc80");
+        chainG.addColorStop(0.5, bullet.specialSuper ? "#ffca28" : bullet.specialChain ? "#ff5722" : "#ef6c00");
+        chainG.addColorStop(1, bullet.specialSuper ? "#b71c1c" : bullet.specialChain ? "#b71c1c" : "#8a2f00");
         ctx.fillStyle = chainG;
-        ctx.strokeStyle = bullet.specialChain ? "#fff9c4" : "#5f1515";
-        ctx.lineWidth = bullet.specialChain ? 2 : 1.2;
-        ctx.shadowColor = bullet.specialChain ? "#ff5722" : "#ef6c00";
-        ctx.shadowBlur = bullet.specialChain ? 14 : 7;
+        ctx.strokeStyle = bullet.specialSuper || bullet.specialChain ? "#fff9c4" : "#5f1515";
+        ctx.lineWidth = bullet.specialSuper ? 2.5 : bullet.specialChain ? 2 : 1.2;
+        ctx.shadowColor = bullet.specialSuper ? "#ffca28" : bullet.specialChain ? "#ff5722" : "#ef6c00";
+        ctx.shadowBlur = bullet.specialSuper ? 20 : bullet.specialChain ? 14 : 7;
         ctx.beginPath();
         ctx.roundRect(-9, -4.5, 18, 9, 5);
         ctx.fill();
         ctx.stroke();
+        if (bullet.specialSuper) {
+          ctx.strokeStyle = "rgba(255,249,196,0.95)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(0, 0, 13, 0, Math.PI * 2);
+          ctx.stroke();
+        }
         if (bullet.specialChain) {
           ctx.strokeStyle = "#fff176";
           ctx.lineWidth = 1.4;
@@ -2658,6 +2744,46 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     });
   }
 
+  function drawVortices(ctx, game, now) {
+    if (!game.vortices?.length) return;
+    game.vortices.forEach(vortex => {
+      const progress = 1 - vortex.life / vortex.maxLife;
+      const alpha = Math.max(0, vortex.life / vortex.maxLife);
+      const pulse = 1 + Math.sin(now * 0.014) * 0.08;
+      const visualRadius = Math.min(155, 60 + progress * 95) * pulse;
+      ctx.save();
+      ctx.translate(vortex.x, vortex.y);
+      ctx.rotate(now * 0.006);
+      ctx.globalAlpha = alpha * 0.55;
+      const vg = ctx.createRadialGradient(0, 0, 8, 0, 0, visualRadius);
+      vg.addColorStop(0, "rgba(255,249,196,0.95)");
+      vg.addColorStop(0.28, "rgba(255,112,67,0.42)");
+      vg.addColorStop(0.7, "rgba(183,28,28,0.18)");
+      vg.addColorStop(1, "rgba(183,28,28,0)");
+      ctx.fillStyle = vg;
+      ctx.beginPath();
+      ctx.arc(0, 0, visualRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,202,40,0.9)";
+      ctx.lineWidth = 4;
+      ctx.setLineDash([12, 10]);
+      ctx.lineDashOffset = -now * 0.08;
+      ctx.beginPath();
+      ctx.arc(0, 0, visualRadius * 0.7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = "rgba(255,112,67,0.85)";
+      ctx.lineWidth = 3;
+      for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, visualRadius * 0.42, a, a + Math.PI * 0.55);
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+  }
+
   function drawExplosions(ctx, game) {
     game.explosions.forEach(explosion => {
       const progress = 1 - explosion.life / explosion.maxLife;
@@ -2665,8 +2791,8 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       const alpha = Math.max(0, explosion.life / explosion.maxLife);
       ctx.save();
       // Dirt/smoke cloud
-      ctx.globalAlpha = alpha * (explosion.type === "nuke" ? 0.25 : 0.4);
-      ctx.fillStyle = explosion.type === "chain" ? "#ff7043" : explosion.type === "nuke" ? "#fff176" : "#8d6e63";
+      ctx.globalAlpha = alpha * (explosion.type === "nuke" ? 0.25 : explosion.type === "vortex" ? 0.34 : 0.4);
+      ctx.fillStyle = explosion.type === "chain" || explosion.type === "vortex" ? "#ff7043" : explosion.type === "nuke" ? "#fff176" : "#8d6e63";
       ctx.beginPath();
       ctx.arc(explosion.x, explosion.y, radius * 1.1, 0, Math.PI * 2);
       ctx.fill();
@@ -2678,6 +2804,11 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         fg.addColorStop(0.22, "#fff176");
         fg.addColorStop(0.55, "#ff9800");
         fg.addColorStop(1, "rgba(255,255,120,0)");
+      } else if (explosion.type === "vortex") {
+        fg.addColorStop(0, "#fff9c4");
+        fg.addColorStop(0.3, "#ffca28");
+        fg.addColorStop(0.72, "#ff7043");
+        fg.addColorStop(1, "rgba(183,28,28,0)");
       } else if (explosion.type === "chain") {
         fg.addColorStop(0, "#fff9c4");
         fg.addColorStop(0.28, "#ff7043");
@@ -2695,7 +2826,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       ctx.fill();
       // Shockwave ring
       ctx.globalAlpha = alpha * (explosion.type === "nuke" ? 0.85 : 0.5);
-      ctx.strokeStyle = explosion.type === "chain" ? "#ff7043" : explosion.type === "nuke" ? "#fff176" : "#ff9800";
+      ctx.strokeStyle = explosion.type === "chain" || explosion.type === "vortex" ? "#ff7043" : explosion.type === "nuke" ? "#fff176" : "#ff9800";
       ctx.lineWidth = explosion.type === "nuke" ? 7 + progress * 5 : 4 + progress * 3;
       ctx.beginPath();
       ctx.arc(explosion.x, explosion.y, radius, 0, Math.PI * 2);
