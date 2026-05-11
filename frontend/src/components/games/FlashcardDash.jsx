@@ -17,7 +17,7 @@ const TILE_LENGTH = 10;
 const TILE_COUNT = 18;
 
 const PLAYER_Z = 4.4;
-const SPAWN_Z = -78;
+const SPAWN_Z = -48;
 
 const QUESTION_BANK = [
   {
@@ -62,7 +62,12 @@ const QUESTION_BANK = [
   },
   {
     q: "What does inflation mean?",
-    opts: ["Prices generally rise over time", "Prices always fall", "Interest rates are zero", "The stock market closes"],
+    opts: [
+      "Prices generally rise over time",
+      "Prices always fall",
+      "Interest rates are zero",
+      "The stock market closes",
+    ],
     correct: 0,
   },
   {
@@ -88,10 +93,12 @@ function rndLane() {
 
 function shuffleArray(arr) {
   const copy = [...arr];
+
   for (let i = copy.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
+
   return copy;
 }
 
@@ -142,6 +149,7 @@ function normalizeStudyQuestion(item) {
 
   if (correct < 0) {
     correct = 0;
+
     if (correctAnswer && opts[0] !== correctAnswer) {
       opts = [correctAnswer, ...opts.filter((opt) => opt !== correctAnswer)].slice(0, 4);
     }
@@ -175,8 +183,10 @@ function makeBox(w, h, d, color, opts = {}) {
   const geo = new THREE.BoxGeometry(w, h, d, 2, 2, 2);
   const mat = makeMaterial(color, opts);
   const mesh = new THREE.Mesh(geo, mat);
+
   mesh.castShadow = true;
   mesh.receiveShadow = true;
+
   return mesh;
 }
 
@@ -184,8 +194,10 @@ function makeSphere(r, color, opts = {}) {
   const geo = new THREE.SphereGeometry(r, 24, 18);
   const mat = makeMaterial(color, opts);
   const mesh = new THREE.Mesh(geo, mat);
+
   mesh.castShadow = true;
   mesh.receiveShadow = true;
+
   return mesh;
 }
 
@@ -193,8 +205,10 @@ function makeCapsule(radius, length, color, opts = {}) {
   const geo = new THREE.CapsuleGeometry(radius, length, 12, 24);
   const mat = makeMaterial(color, opts);
   const mesh = new THREE.Mesh(geo, mat);
+
   mesh.castShadow = true;
   mesh.receiveShadow = true;
+
   return mesh;
 }
 
@@ -202,8 +216,10 @@ function makeCylinder(rTop, rBottom, h, segs, color, opts = {}) {
   const geo = new THREE.CylinderGeometry(rTop, rBottom, h, segs, 2);
   const mat = makeMaterial(color, opts);
   const mesh = new THREE.Mesh(geo, mat);
+
   mesh.castShadow = true;
   mesh.receiveShadow = true;
+
   return mesh;
 }
 
@@ -248,7 +264,8 @@ function buildHallSegment(index) {
   const segment = new THREE.Group();
   segment.position.z = -index * TILE_LENGTH;
 
-  const floorColor = index % 2 === 0 ? 0x2c3242 : 0x252b3a;
+  const floorColor = index % 2 === 0 ? 0xd7dde8 : 0xc8d1df;
+
   const floor = makeBox(HALL_WIDTH, 0.08, TILE_LENGTH, floorColor);
   floor.position.y = -0.04;
   floor.receiveShadow = true;
@@ -275,7 +292,7 @@ function buildHallSegment(index) {
   rightLaneLine.position.set(1.4, 0.03, 0);
   segment.add(rightLaneLine);
 
-  const ceiling = makeBox(HALL_WIDTH, 0.12, TILE_LENGTH, 0x17172d);
+  const ceiling = makeBox(HALL_WIDTH, 0.12, TILE_LENGTH, 0xf4f6fb);
   ceiling.position.y = HALL_HEIGHT;
   segment.add(ceiling);
 
@@ -287,11 +304,11 @@ function buildHallSegment(index) {
   light.position.set(0, HALL_HEIGHT - 0.12, 0);
   segment.add(light);
 
-  const leftWall = makeBox(0.16, HALL_HEIGHT, TILE_LENGTH, 0x223a68);
+  const leftWall = makeBox(0.16, HALL_HEIGHT, TILE_LENGTH, 0xaed3f2);
   leftWall.position.set(-HALL_WIDTH / 2, HALL_HEIGHT / 2, 0);
   segment.add(leftWall);
 
-  const rightWall = makeBox(0.16, HALL_HEIGHT, TILE_LENGTH, 0x223a68);
+  const rightWall = makeBox(0.16, HALL_HEIGHT, TILE_LENGTH, 0xaed3f2);
   rightWall.position.set(HALL_WIDTH / 2, HALL_HEIGHT / 2, 0);
   segment.add(rightWall);
 
@@ -312,12 +329,12 @@ function buildHallSegment(index) {
   for (let li = 0; li < 3; li += 1) {
     const z = -TILE_LENGTH / 3 + li * (TILE_LENGTH / 3);
 
-    const lockerL = buildLocker3D(0x315ea8, 0x1e3a70);
+    const lockerL = buildLocker3D(0x5fa8e8, 0x2f6fae);
     lockerL.position.set(-HALL_WIDTH / 2 + 0.2, 0.9, z);
     lockerL.rotation.y = Math.PI / 2;
     segment.add(lockerL);
 
-    const lockerR = buildLocker3D(0x315ea8, 0x1e3a70);
+    const lockerR = buildLocker3D(0x5fa8e8, 0x2f6fae);
     lockerR.position.set(HALL_WIDTH / 2 - 0.2, 0.9, z);
     lockerR.rotation.y = -Math.PI / 2;
     segment.add(lockerR);
@@ -351,6 +368,7 @@ function buildHallway(scene) {
   }
 
   scene.add(group);
+
   return { group, segments };
 }
 
@@ -477,6 +495,7 @@ function buildCone3D() {
   g.add(base);
 
   g.userData = { kind: "obstacle", subtype: "cone" };
+
   return g;
 }
 
@@ -512,6 +531,7 @@ function buildLockerObstacle3D() {
   }
 
   g.userData = { kind: "obstacle", subtype: "locker" };
+
   return g;
 }
 
@@ -544,6 +564,7 @@ function buildBackpack3D() {
   g.add(strapL, strapR);
 
   g.userData = { kind: "obstacle", subtype: "backpack" };
+
   return g;
 }
 
@@ -569,7 +590,11 @@ function buildCoin3D() {
   ring.rotation.x = Math.PI / 2;
   g.add(ring);
 
-  g.userData = { kind: "coin", spinSpeed: 2.5 + Math.random() * 1.5 };
+  g.userData = {
+    kind: "coin",
+    spinSpeed: 2.5 + Math.random() * 1.5,
+  };
+
   return g;
 }
 
@@ -659,13 +684,13 @@ export default function FlashcardDash({ studySet, onExit }) {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.setClearColor(0x070817);
+    renderer.setClearColor(0xdff4ff);
 
     container.appendChild(renderer.domElement);
     renderer.domElement.className = "fd-canvas";
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x070817, 25, 96);
+    scene.fog = new THREE.Fog(0xdff4ff, 34, 105);
 
     const camera = new THREE.PerspectiveCamera(
       68,
@@ -674,13 +699,13 @@ export default function FlashcardDash({ studySet, onExit }) {
       140
     );
 
-    camera.position.set(0, 2.55, 8.4);
-    camera.lookAt(0, 1.38, -2.8);
+    camera.position.set(0, 3.35, 9.2);
+    camera.lookAt(0, 1.75, -8);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.54);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.82);
     scene.add(ambient);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.75);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.95);
     dirLight.position.set(0, 8, 8);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 1024;
@@ -705,6 +730,7 @@ export default function FlashcardDash({ studySet, onExit }) {
     function onResize() {
       const w = container.clientWidth;
       const h = container.clientHeight;
+
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h, false);
@@ -746,6 +772,7 @@ export default function FlashcardDash({ studySet, onExit }) {
 
       scene.traverse((obj) => {
         if (obj.geometry) obj.geometry.dispose();
+
         if (obj.material) {
           if (Array.isArray(obj.material)) {
             obj.material.forEach((mat) => mat.dispose());
@@ -783,17 +810,26 @@ export default function FlashcardDash({ studySet, onExit }) {
 
   function spawnCoins(scene, pool) {
     const lane = rndLane();
-    const count = 3 + Math.floor(Math.random() * 3);
+
+    // Subway Surfers-style trail: fewer coins, spaced cleanly in one lane.
+    const count = 5;
+    const spacing = 2.6;
 
     for (let i = 0; i < count; i += 1) {
       const mesh = buildCoin3D();
-      mesh.position.set(LANE_POSITIONS[lane], 1.25 + Math.sin(i) * 0.1, SPAWN_Z - i * 2.2);
+
+      mesh.position.set(
+        LANE_POSITIONS[lane],
+        1.35 + Math.sin(i * 0.7) * 0.08,
+        SPAWN_Z - i * spacing
+      );
+
       scene.add(mesh);
 
       pool.push({
         mesh,
         kind: "coin",
-        baseY: 1.25,
+        baseY: 1.35,
         lane,
       });
     }
@@ -848,11 +884,14 @@ export default function FlashcardDash({ studySet, onExit }) {
 
         three.cameraLean += gs.playerX * 0.18 - three.cameraLean;
         three.cameraLean *= 0.9;
+
         camera.position.x += (three.cameraLean - camera.position.x) * 0.08 * delta;
 
         gs.cameraBob = Math.sin(gs.runPhase * 0.5) * 0.035;
-        camera.position.y += (2.55 + gs.cameraBob - camera.position.y) * 0.08 * delta;
-        camera.lookAt(gs.playerX * 0.16, 1.38, -3.2);
+
+        camera.position.y += (3.35 + gs.cameraBob - camera.position.y) * 0.08 * delta;
+        camera.position.z += (9.2 - camera.position.z) * 0.08 * delta;
+        camera.lookAt(gs.playerX * 0.14, 1.75, -8);
 
         if (gs.jumping) {
           gs.jumpVel -= 0.017 * delta;
@@ -919,7 +958,7 @@ export default function FlashcardDash({ studySet, onExit }) {
           spawnObstacle(scene, itemPool);
         }
 
-        if (gs.spawnCoin > 34) {
+        if (gs.spawnCoin > 82) {
           gs.spawnCoin = 0;
           spawnCoins(scene, itemPool);
         }
@@ -959,7 +998,7 @@ export default function FlashcardDash({ studySet, onExit }) {
           const dz = Math.abs(item.mesh.position.z - playerWorldZ);
           const dx = Math.abs(item.mesh.position.x - playerWorldX);
 
-          if (dz < 1.55 && dx < 1.05) {
+          if (dz < 1.25 && dx < 0.95) {
             if (item.kind === "coin") {
               coinsRef.current += 1;
               scoreRef.current += 20;
@@ -980,9 +1019,9 @@ export default function FlashcardDash({ studySet, onExit }) {
             }
 
             if (item.kind === "obstacle" && !item.hit) {
-              const clearedCone = item.subtype === "cone" && gs.playerY > 0.72;
+              const clearedCone = item.subtype === "cone" && gs.playerY > 0.38;
               const clearedLocker = item.subtype === "locker" && gs.sliding;
-              const clearedBackpack = item.subtype === "backpack" && gs.playerY > 0.62;
+              const clearedBackpack = item.subtype === "backpack" && gs.playerY > 0.45;
 
               if (clearedCone || clearedLocker || clearedBackpack) {
                 continue;
@@ -1013,6 +1052,7 @@ export default function FlashcardDash({ studySet, onExit }) {
 
           item.mesh.traverse((obj) => {
             if (obj.geometry) obj.geometry.dispose();
+
             if (obj.material) {
               if (Array.isArray(obj.material)) {
                 obj.material.forEach((mat) => mat.dispose());
@@ -1023,18 +1063,22 @@ export default function FlashcardDash({ studySet, onExit }) {
           });
 
           const idx = itemPool.indexOf(item);
-          if (idx !== -1) itemPool.splice(idx, 1);
+
+          if (idx !== -1) {
+            itemPool.splice(idx, 1);
+          }
         }
       } else {
         gs.runPhase += 0.025 * delta;
 
         const pu = player.userData;
+
         pu.legL.rotation.x = Math.sin(gs.runPhase) * 0.1;
         pu.legR.rotation.x = -Math.sin(gs.runPhase) * 0.1;
         pu.armL.rotation.x = -Math.sin(gs.runPhase) * 0.08;
         pu.armR.rotation.x = Math.sin(gs.runPhase) * 0.08;
 
-        camera.lookAt(player.position.x * 0.16, 1.38, -3.2);
+        camera.lookAt(player.position.x * 0.14, 1.75, -8);
       }
 
       renderer.render(scene, camera);
@@ -1080,8 +1124,8 @@ export default function FlashcardDash({ studySet, onExit }) {
     three.player.rotation.set(0, Math.PI, 0);
 
     three.cameraLean = 0;
-    three.camera.position.set(0, 2.55, 8.4);
-    three.camera.lookAt(0, 1.38, -3.2);
+    three.camera.position.set(0, 3.35, 9.2);
+    three.camera.lookAt(0, 1.75, -8);
 
     heartRef.current = START_HEARTS;
     scoreRef.current = 0;
@@ -1105,33 +1149,42 @@ export default function FlashcardDash({ studySet, onExit }) {
 
   const moveLeft = useCallback(() => {
     const gs = gameStateRef.current;
+
     if (!gs || phaseRef.current !== "running") return;
+
     gs.targetLane = Math.max(0, gs.targetLane - 1);
   }, []);
 
   const moveRight = useCallback(() => {
     const gs = gameStateRef.current;
+
     if (!gs || phaseRef.current !== "running") return;
+
     gs.targetLane = Math.min(2, gs.targetLane + 1);
   }, []);
 
   const doJump = useCallback(() => {
     const gs = gameStateRef.current;
+
     if (!gs || phaseRef.current !== "running" || gs.jumping || gs.sliding) return;
 
     gs.jumping = true;
-    gs.jumpVel = 0.24;
+    gs.jumpVel = 0.31;
   }, []);
 
   const doSlide = useCallback(() => {
     const gs = gameStateRef.current;
+
     if (!gs || phaseRef.current !== "running" || gs.sliding || gs.jumping) return;
 
     gs.sliding = true;
 
     setTimeout(() => {
       const current = gameStateRef.current;
-      if (current) current.sliding = false;
+
+      if (current) {
+        current.sliding = false;
+      }
     }, 620);
   }, []);
 
@@ -1151,8 +1204,13 @@ export default function FlashcardDash({ studySet, onExit }) {
 
   useEffect(() => {
     function onKey(e) {
-      if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") moveLeft();
-      if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") moveRight();
+      if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") {
+        moveLeft();
+      }
+
+      if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") {
+        moveRight();
+      }
 
       if (e.key === "ArrowUp" || e.key === " ") {
         e.preventDefault();
@@ -1413,8 +1471,11 @@ export default function FlashcardDash({ studySet, onExit }) {
                   let cls = "fd-option";
 
                   if (answerStatus) {
-                    if (idx === activeQuestion.correct) cls += " correct";
-                    else if (answerStatus === "wrong") cls += " muted";
+                    if (idx === activeQuestion.correct) {
+                      cls += " correct";
+                    } else if (answerStatus === "wrong") {
+                      cls += " muted";
+                    }
                   }
 
                   return (

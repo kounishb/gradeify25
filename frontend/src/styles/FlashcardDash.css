@@ -197,8 +197,8 @@
   height: calc(100vh - 205px);
   overflow: hidden;
   background:
-    radial-gradient(circle at center, rgba(124, 58, 237, 0.22), transparent 42%),
-    linear-gradient(180deg, #09091a, #03040c);
+    radial-gradient(circle at center, rgba(14, 165, 233, 0.18), transparent 42%),
+    linear-gradient(180deg, #dff4ff, #edf7ff);
 }
 
 .fd-canvas {
