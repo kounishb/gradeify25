@@ -1,17 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:wght@700;800;900&display=swap');
 
 :root {
-  --bg:          #0d0d1a;
-  --panel-bg:    rgba(15, 12, 35, 0.92);
-  --border:      rgba(120, 80, 255, 0.25);
-  --accent1:     #7c3aed;
-  --accent2:     #f59e0b;
-  --accent3:     #06b6d4;
-  --neon-green:  #39ff14;
-  --text:        #e8e0ff;
-  --text-dim:    rgba(200,180,255,0.55);
-  --font-d:      'Bebas Neue', sans-serif;
-  --font-u:      'Nunito', sans-serif;
+  --bg: #f4fbff;
+  --panel-bg: rgba(255, 255, 255, 0.88);
+  --border: rgba(59, 130, 246, 0.18);
+  --accent1: #3b82f6;
+  --accent2: #f59e0b;
+  --accent3: #06b6d4;
+  --neon-green: #16a34a;
+  --text: #172033;
+  --text-dim: rgba(51, 65, 85, 0.68);
+  --font-d: 'Bebas Neue', sans-serif;
+  --font-u: 'Nunito', sans-serif;
 }
 
 * {
@@ -21,7 +21,10 @@
 .fd-page {
   width: 100%;
   min-height: 100vh;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.16), transparent 34%),
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.14), transparent 32%),
+    linear-gradient(180deg, #f4fbff, #eaf6ff);
   font-family: var(--font-u);
   color: var(--text);
   display: flex;
@@ -35,12 +38,13 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 24px;
-  background: var(--panel-bg);
+  background: rgba(255, 255, 255, 0.9);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(12px);
   gap: 16px;
   flex-wrap: wrap;
   flex-shrink: 0;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
 .fd-title-block h1 {
@@ -112,13 +116,14 @@
 }
 
 .fd-btn-secondary {
-  background: rgba(255,255,255,0.06);
-  color: var(--text);
-  border: 1.5px solid var(--border);
+  background: rgba(255, 255, 255, 0.82);
+  color: #1e293b;
+  border: 1.5px solid rgba(59, 130, 246, 0.22);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
 }
 
 .fd-btn-secondary:hover {
-  background: rgba(255,255,255,0.1);
+  background: rgba(239, 248, 255, 0.95);
   transform: translateY(-2px);
 }
 
@@ -145,18 +150,19 @@
   grid-template-columns: repeat(6, 1fr);
   gap: 8px;
   padding: 10px 24px;
-  background: rgba(10,8,25,0.7);
+  background: rgba(239, 248, 255, 0.82);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .fd-stat {
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(59, 130, 246, 0.16);
   border-radius: 10px;
   padding: 9px 12px;
   position: relative;
   overflow: hidden;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
 }
 
 .fd-stat::before {
@@ -482,7 +488,7 @@
   justify-content: center;
   gap: 10px;
   padding: 12px 24px;
-  background: rgba(10,8,25,0.8);
+  background: rgba(239, 248, 255, 0.88);
   border-top: 1px solid var(--border);
   flex-wrap: wrap;
   flex-shrink: 0;
@@ -494,17 +500,18 @@
   letter-spacing: 0.1em;
   min-width: 90px;
   padding: 11px 16px;
-  border: 1.5px solid rgba(200,180,255,0.2);
+  border: 1.5px solid rgba(59, 130, 246, 0.22);
   border-radius: 10px;
-  background: rgba(255,255,255,0.05);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.9);
+  color: #1e293b;
   cursor: pointer;
   transition: transform 0.14s, background 0.14s;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
 }
 
 .fd-controls button:hover {
   transform: translateY(-2px);
-  background: rgba(255,255,255,0.1);
+  background: #eff8ff;
   border-color: var(--accent2);
 }
 

@@ -1287,8 +1287,7 @@ export default function FlashcardDash({ studySet, onExit }) {
   }
 
   function continueQuestions() {
-    setAnswerStatus(null);
-    setActiveQuestion(rndQ(studySet));
+    closeQuestion();
   }
 
   const distM = Math.floor(distance);
@@ -1517,7 +1516,7 @@ export default function FlashcardDash({ studySet, onExit }) {
                   onClick={continueQuestions}
                   disabled={!answerStatus}
                 >
-                  Next Question
+                  Continue Run
                 </button>
               </div>
             </div>
