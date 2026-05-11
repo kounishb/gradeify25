@@ -1,70 +1,67 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import "../../styles/TowerDefenseGame.css";
 
-const CANVAS_WIDTH = 900;
-const CANVAS_HEIGHT = 540;
+const CANVAS_WIDTH = 980;
+const CANVAS_HEIGHT = 560;
 const MAX_TOWER_LEVEL = 4;
 
 const PATH = [
-  { x: 0, y: 270 },
-  { x: 140, y: 270 },
-  { x: 140, y: 120 },
-  { x: 330, y: 120 },
-  { x: 330, y: 410 },
-  { x: 560, y: 410 },
-  { x: 560, y: 190 },
-  { x: 760, y: 190 },
-  { x: 760, y: 320 },
-  { x: 900, y: 320 },
+  { x: 0, y: 300 },
+  { x: 130, y: 300 },
+  { x: 130, y: 145 },
+  { x: 330, y: 145 },
+  { x: 330, y: 425 },
+  { x: 585, y: 425 },
+  { x: 585, y: 215 },
+  { x: 785, y: 215 },
+  { x: 785, y: 345 },
+  { x: 980, y: 345 },
 ];
 
 const TOWER_TYPES = {
   basic: {
     name: "Cannon",
-    icon: "●",
-    cost: 100,
-    damage: 18,
-    range: 115,
-    fireRate: 620,
-    radius: 17,
+    icon: "C",
+    cost: 115,
+    damage: 17,
+    range: 112,
+    fireRate: 680,
     description: "Balanced starter tower",
     upgradeText: [
-      "Basic cannon shots.",
-      "Higher damage and range.",
-      "Double shot unlocked.",
+      "Standard cannon shots.",
+      "Stronger cannonballs.",
+      "Double cannon unlocked.",
       "Armor breaker against tanks.",
     ],
   },
   freeze: {
     name: "Frost",
-    icon: "◆",
-    cost: 140,
-    damage: 7,
-    range: 108,
-    fireRate: 850,
-    radius: 17,
-    slowAmount: 0.45,
-    slowDuration: 1100,
+    icon: "F",
+    cost: 155,
+    damage: 6,
+    range: 105,
+    fireRate: 920,
+    slowAmount: 0.48,
+    slowDuration: 950,
     description: "Slows enemies",
     upgradeText: [
       "Slows one enemy.",
       "Longer freeze duration.",
-      "Small freeze splash.",
+      "Freeze splash unlocked.",
       "Deep freeze slows harder.",
     ],
   },
   splash: {
     name: "Mortar",
-    icon: "◉",
-    cost: 180,
-    damage: 13,
-    range: 105,
-    fireRate: 980,
-    radius: 18,
-    splashRadius: 55,
+    icon: "M",
+    cost: 205,
+    damage: 12,
+    range: 102,
+    fireRate: 1050,
+    splashRadius: 48,
     description: "Area damage",
     upgradeText: [
-      "Explodes in a small area.",
+      "Small area explosion.",
       "Larger blast radius.",
       "Burn damage unlocked.",
       "Heavy explosion damage.",
@@ -72,44 +69,41 @@ const TOWER_TYPES = {
   },
   sniper: {
     name: "Sniper",
-    icon: "▲",
-    cost: 220,
-    damage: 75,
-    range: 250,
-    fireRate: 1450,
-    radius: 16,
+    icon: "S",
+    cost: 260,
+    damage: 70,
+    range: 260,
+    fireRate: 1600,
     description: "Long range, high damage",
     upgradeText: [
       "Long range single shot.",
-      "More damage.",
+      "Higher damage.",
       "Tank piercer unlocked.",
-      "Execute low-health enemies.",
+      "Executes weak enemies.",
     ],
   },
   rapid: {
     name: "Rapid",
-    icon: "✦",
-    cost: 130,
-    damage: 8,
-    range: 105,
-    fireRate: 230,
-    radius: 16,
+    icon: "R",
+    cost: 155,
+    damage: 7,
+    range: 102,
+    fireRate: 255,
     description: "Fast low-damage shots",
     upgradeText: [
       "Very fast shots.",
-      "Faster fire rate.",
-      "Multi-shot unlocked.",
-      "Triple-shot unlocked.",
+      "Faster firing.",
+      "Double shot unlocked.",
+      "Triple shot unlocked.",
     ],
   },
   laser: {
     name: "Laser",
-    icon: "✶",
-    cost: 260,
-    damage: 12,
+    icon: "L",
+    cost: 310,
+    damage: 10,
     range: 150,
-    fireRate: 135,
-    radius: 17,
+    fireRate: 150,
     description: "Continuous beam damage",
     upgradeText: [
       "Rapid beam damage.",
@@ -146,7 +140,7 @@ function pointToSegmentDistance(point, start, end) {
 
 function isTooCloseToPath(point) {
   for (let i = 0; i < PATH.length - 1; i++) {
-    if (pointToSegmentDistance(point, PATH[i], PATH[i + 1]) < 45) {
+    if (pointToSegmentDistance(point, PATH[i], PATH[i + 1]) < 48) {
       return true;
     }
   }
@@ -161,6 +155,9 @@ function makeEnemy(wave, index) {
   const isTank = wave % 4 === 0 && index % 4 === 0;
   const isFast = wave % 3 === 0 && index % 3 === 0;
   const isShielded = wave >= 5 && index % 5 === 0;
+  const isBoss = wave % 7 === 0 && index === 0;
+
+  const hpMultiplier = 1 + wave * 0.18;
 
   return {
     id: `enemy-${Date.now()}-${Math.random()}`,
@@ -168,20 +165,38 @@ function makeEnemy(wave, index) {
     y: PATH[0].y,
     pathIndex: 0,
     progress: 0,
-    radius: isTank ? 18 : isFast ? 12 : 14,
-    maxHp: isTank
-      ? 115 + wave * 16
+    radius: isBoss ? 24 : isTank ? 18 : isFast ? 12 : 14,
+    maxHp: isBoss
+      ? 360 * hpMultiplier
+      : isTank
+      ? 130 * hpMultiplier
       : isShielded
-      ? 70 + wave * 12
-      : 48 + wave * 9,
-    hp: isTank
-      ? 115 + wave * 16
+      ? 82 * hpMultiplier
+      : 58 * hpMultiplier,
+    hp: isBoss
+      ? 360 * hpMultiplier
+      : isTank
+      ? 130 * hpMultiplier
       : isShielded
-      ? 70 + wave * 12
-      : 48 + wave * 9,
-    speed: isFast ? 1.65 + wave * 0.04 : isTank ? 0.86 + wave * 0.025 : 1.08 + wave * 0.035,
-    reward: isTank ? 28 : isFast ? 16 : isShielded ? 20 : 13,
-    type: isTank ? "tank" : isFast ? "fast" : isShielded ? "shield" : "normal",
+      ? 82 * hpMultiplier
+      : 58 * hpMultiplier,
+    speed: isBoss
+      ? 0.72 + wave * 0.015
+      : isFast
+      ? 1.85 + wave * 0.045
+      : isTank
+      ? 0.88 + wave * 0.026
+      : 1.12 + wave * 0.038,
+    reward: isBoss ? 55 : isTank ? 20 : isFast ? 12 : isShielded ? 15 : 10,
+    type: isBoss
+      ? "boss"
+      : isTank
+      ? "tank"
+      : isFast
+      ? "fast"
+      : isShielded
+      ? "shield"
+      : "normal",
     slowUntil: 0,
     slowAmount: 1,
     burnUntil: 0,
@@ -225,9 +240,9 @@ function getTowerStats(tower) {
 
   const stats = {
     ...base,
-    damage: base.damage * (1 + (level - 1) * 0.42),
-    range: base.range + (level - 1) * 13,
-    fireRate: Math.max(90, base.fireRate - (level - 1) * 65),
+    damage: base.damage * (1 + (level - 1) * 0.36),
+    range: base.range + (level - 1) * 11,
+    fireRate: Math.max(90, base.fireRate - (level - 1) * 55),
     splashRadius: base.splashRadius || 0,
     slowDuration: base.slowDuration || 0,
     slowAmount: base.slowAmount || 1,
@@ -245,36 +260,36 @@ function getTowerStats(tower) {
   }
 
   if (tower.type === "freeze") {
-    stats.slowDuration = base.slowDuration + (level - 1) * 420;
-    stats.slowAmount = Math.max(0.25, base.slowAmount - (level - 1) * 0.06);
-    if (level >= 3) stats.splashRadius = 38;
-    if (level >= 4) stats.splashRadius = 55;
+    stats.slowDuration = base.slowDuration + (level - 1) * 360;
+    stats.slowAmount = Math.max(0.28, base.slowAmount - (level - 1) * 0.055);
+    if (level >= 3) stats.splashRadius = 36;
+    if (level >= 4) stats.splashRadius = 54;
   }
 
   if (tower.type === "splash") {
-    stats.splashRadius = base.splashRadius + (level - 1) * 14;
+    stats.splashRadius = base.splashRadius + (level - 1) * 13;
     if (level >= 3) {
-      stats.burnDps = 7 + level * 2;
-      stats.burnDuration = 1600 + level * 350;
+      stats.burnDps = 6 + level * 2;
+      stats.burnDuration = 1400 + level * 300;
     }
   }
 
   if (tower.type === "sniper") {
     stats.range = base.range + (level - 1) * 22;
-    stats.fireRate = Math.max(760, base.fireRate - (level - 1) * 120);
+    stats.fireRate = Math.max(820, base.fireRate - (level - 1) * 115);
     if (level >= 3) stats.tankPierce = true;
     if (level >= 4) stats.execute = true;
   }
 
   if (tower.type === "rapid") {
-    stats.fireRate = Math.max(95, base.fireRate - (level - 1) * 34);
+    stats.fireRate = Math.max(105, base.fireRate - (level - 1) * 30);
     if (level >= 3) stats.multiShot = 2;
     if (level >= 4) stats.multiShot = 3;
   }
 
   if (tower.type === "laser") {
-    stats.range = base.range + (level - 1) * 18;
-    stats.damage = base.damage * (1 + (level - 1) * 0.32);
+    stats.range = base.range + (level - 1) * 16;
+    stats.damage = base.damage * (1 + (level - 1) * 0.3);
     stats.chain = level >= 3 ? level - 2 : 0;
   }
 
@@ -299,14 +314,14 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   const [selectedTowerId, setSelectedTowerId] = useState(null);
   const [draggingTower, setDraggingTower] = useState(null);
 
-  const [coins, setCoins] = useState(220);
-  const [baseHealth, setBaseHealth] = useState(20);
+  const [coins, setCoins] = useState(150);
+  const [baseHealth, setBaseHealth] = useState(18);
   const [wave, setWave] = useState(1);
   const [score, setScore] = useState(0);
   const [isRunning, setIsRunning] = useState(true);
   const [gameOver, setGameOver] = useState(false);
   const [message, setMessage] = useState(
-    "Drag towers onto the map. Answer questions to earn coins."
+    "Drag towers from the bottom bar onto the map. Answer questions to earn coins."
   );
   const [questionModal, setQuestionModal] = useState(null);
   const [questionIndex, setQuestionIndex] = useState(0);
@@ -318,6 +333,9 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     if (!game || !selectedTowerId) return null;
     return game.towers.find((tower) => tower.id === selectedTowerId) || null;
   }, [selectedTowerId, coins, wave, score]);
+
+  const selectedTowerStats = selectedTower ? getTowerStats(selectedTower) : null;
+  const selectedUpgradeCost = selectedTower ? getUpgradeCost(selectedTower) : null;
 
   useEffect(() => {
     isRunningRef.current = isRunning;
@@ -364,6 +382,13 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     };
   }
 
+  function canvasToPercent(point) {
+    return {
+      left: `${(point.x / CANVAS_WIDTH) * 100}%`,
+      top: `${(point.y / CANVAS_HEIGHT) * 100}%`,
+    };
+  }
+
   function canPlaceTower(point, type) {
     const game = gameRef.current;
     if (!game || !point?.inside) return false;
@@ -371,11 +396,11 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     const towerType = TOWER_TYPES[type];
 
     if (game.coins < towerType.cost) return false;
-    if (point.x < 24 || point.x > CANVAS_WIDTH - 24) return false;
-    if (point.y < 24 || point.y > CANVAS_HEIGHT - 24) return false;
+    if (point.x < 28 || point.x > CANVAS_WIDTH - 28) return false;
+    if (point.y < 28 || point.y > CANVAS_HEIGHT - 28) return false;
     if (isTooCloseToPath(point)) return false;
 
-    return !game.towers.some((tower) => distance(tower, point) < 48);
+    return !game.towers.some((tower) => distance(tower, point) < 52);
   }
 
   function placeTower(type, point) {
@@ -384,7 +409,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
 
     const towerType = TOWER_TYPES[type];
 
-    game.towers.push({
+    const newTower = {
       id: `tower-${Date.now()}-${Math.random()}`,
       x: point.x,
       y: point.y,
@@ -393,9 +418,13 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       lastShot: 0,
       spent: towerType.cost,
       kills: 0,
-    });
+    };
 
+    game.towers.push(newTower);
     game.coins -= towerType.cost;
+
+    setSelectedTowerId(newTower.id);
+    selectedTowerIdRef.current = newTower.id;
     setMessage(`${towerType.name} placed.`);
     syncStateFromRef();
     return true;
@@ -474,7 +503,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   function launchWave(game) {
     game.waveInProgress = true;
     game.nextWaveReady = false;
-    game.enemiesToSpawn = 7 + game.wave * 3;
+    game.enemiesToSpawn = 9 + game.wave * 4;
     game.enemiesSpawned = 0;
     game.lastSpawnTime = 0;
   }
@@ -484,7 +513,9 @@ export default function TowerDefenseGame({ studySet, onExit }) {
 
     autoWaveTimeoutRef.current = setTimeout(() => {
       const game = gameRef.current;
-      if (!game || game.gameOver || game.waveInProgress || !isRunningRef.current) return;
+      if (!game || game.gameOver || game.waveInProgress || !isRunningRef.current) {
+        return;
+      }
 
       launchWave(game);
       setMessage(customMessage || `Wave ${game.wave} started automatically.`);
@@ -496,8 +527,8 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     clearAutoWaveTimer();
 
     const initialGame = {
-      coins: 220,
-      baseHealth: 20,
+      coins: 150,
+      baseHealth: 18,
       wave: 1,
       score: 0,
       gameOver: false,
@@ -516,8 +547,8 @@ export default function TowerDefenseGame({ studySet, onExit }) {
 
     gameRef.current = initialGame;
 
-    setCoins(220);
-    setBaseHealth(20);
+    setCoins(150);
+    setBaseHealth(18);
     setWave(1);
     setScore(0);
     setGameOver(false);
@@ -528,9 +559,10 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     setQuestionModal(null);
     setAnswerFeedback(null);
     setSelectedTowerId(null);
+    selectedTowerIdRef.current = null;
     setMessage("Get ready. The first wave starts automatically.");
 
-    scheduleAutoWave(1200, "Wave 1 started automatically.");
+    scheduleAutoWave(1400, "Wave 1 started automatically.");
   }
 
   useEffect(() => {
@@ -561,7 +593,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
 
       const clickedTower = [...game.towers]
         .reverse()
-        .find((tower) => distance(tower, point) <= 26);
+        .find((tower) => distance(tower, point) <= 30);
 
       if (clickedTower) {
         setSelectedTowerId(clickedTower.id);
@@ -610,7 +642,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
 
   function updateGame(game, now, delta) {
     if (game.waveInProgress && game.enemiesSpawned < game.enemiesToSpawn) {
-      if (now - game.lastSpawnTime > 650) {
+      if (now - game.lastSpawnTime > Math.max(420, 700 - game.wave * 12)) {
         game.enemies.push(makeEnemy(game.wave, game.enemiesSpawned));
         game.enemiesSpawned += 1;
         game.lastSpawnTime = now;
@@ -630,7 +662,10 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     );
 
     if (enemiesThatReachedBase.length > 0) {
-      game.baseHealth -= enemiesThatReachedBase.length;
+      game.baseHealth -= enemiesThatReachedBase.reduce((total, enemy) => {
+        return total + (enemy.type === "boss" ? 3 : enemy.type === "tank" ? 2 : 1);
+      }, 0);
+
       game.enemies = game.enemies.filter((enemy) => !enemy.reachedBase);
       setBaseHealth(game.baseHealth);
     }
@@ -660,12 +695,12 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       game.waveInProgress = false;
       game.nextWaveReady = true;
       game.wave += 1;
-      game.coins += 75;
+      game.coins += 35;
 
-      setMessage(`Wave cleared. Bonus +75 coins. Next wave starts soon.`);
+      setMessage(`Wave cleared. Bonus +35 coins. Next wave starts soon.`);
       syncStateFromRef();
 
-      scheduleAutoWave(3000, `Wave ${game.wave} started automatically.`);
+      scheduleAutoWave(2700, `Wave ${game.wave} started automatically.`);
     }
   }
 
@@ -724,7 +759,6 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         y1: tower.y,
         x2: target.x,
         y2: target.y,
-        type: tower.type,
         life: 90,
       });
 
@@ -734,7 +768,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
           .slice(0, stats.chain);
 
         chainTargets.forEach((enemy) => {
-          applyDamage(game, enemy, stats.damage * 0.55, tower, now, stats);
+          applyDamage(game, enemy, stats.damage * 0.5, tower, now, stats);
 
           game.beams.push({
             id: `beam-chain-${Date.now()}-${Math.random()}`,
@@ -742,7 +776,6 @@ export default function TowerDefenseGame({ studySet, onExit }) {
             y1: target.y,
             x2: enemy.x,
             y2: enemy.y,
-            type: tower.type,
             life: 90,
           });
         });
@@ -836,16 +869,16 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   function applyDamage(game, enemy, rawDamage, tower, now, source) {
     let damage = rawDamage;
 
-    if (source?.tankPierce && enemy.type === "tank") {
-      damage *= 1.65;
+    if (source?.tankPierce && (enemy.type === "tank" || enemy.type === "boss")) {
+      damage *= 1.45;
     }
 
-    if (source?.execute && enemy.hp / enemy.maxHp < 0.22) {
+    if (source?.execute && enemy.hp / enemy.maxHp < 0.18) {
       damage = enemy.hp + 1;
     }
 
     if (enemy.type === "shield" && !source?.tankPierce) {
-      damage *= 0.72;
+      damage *= 0.68;
     }
 
     enemy.hp -= damage;
@@ -855,7 +888,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       x: enemy.x,
       y: enemy.y - enemy.radius,
       text: Math.round(damage).toString(),
-      life: 620,
+      life: 600,
       color: source?.execute && enemy.hp <= 0 ? "#facc15" : "#ffffff",
     });
 
@@ -919,17 +952,17 @@ export default function TowerDefenseGame({ studySet, onExit }) {
 
   function drawBackground(ctx) {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, "#d9f99d");
-    gradient.addColorStop(1, "#86efac");
+    gradient.addColorStop(0, "#b7f36b");
+    gradient.addColorStop(1, "#65c466");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
     ctx.save();
-    ctx.globalAlpha = 0.16;
-    for (let x = 0; x < CANVAS_WIDTH; x += 45) {
-      for (let y = 0; y < CANVAS_HEIGHT; y += 45) {
-        ctx.fillStyle = (x + y) % 90 === 0 ? "#22c55e" : "#16a34a";
-        ctx.fillRect(x, y, 45, 45);
+    ctx.globalAlpha = 0.12;
+    for (let x = 0; x < CANVAS_WIDTH; x += 42) {
+      for (let y = 0; y < CANVAS_HEIGHT; y += 42) {
+        ctx.fillStyle = (x + y) % 84 === 0 ? "#22c55e" : "#15803d";
+        ctx.fillRect(x, y, 42, 42);
       }
     }
     ctx.restore();
@@ -938,41 +971,44 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   function drawDecorations(ctx) {
     ctx.save();
 
+    const trees = [
+      { x: 55, y: 65 },
+      { x: 885, y: 70 },
+      { x: 915, y: 115 },
+      { x: 865, y: 500 },
+      { x: 80, y: 495 },
+      { x: 475, y: 70 },
+    ];
+
+    trees.forEach((tree) => {
+      ctx.fillStyle = "#166534";
+      ctx.beginPath();
+      ctx.arc(tree.x, tree.y, 18, 0, Math.PI * 2);
+      ctx.arc(tree.x + 14, tree.y + 6, 16, 0, Math.PI * 2);
+      ctx.arc(tree.x - 13, tree.y + 7, 15, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#854d0e";
+      ctx.fillRect(tree.x - 4, tree.y + 16, 8, 18);
+    });
+
     const rocks = [
-      { x: 90, y: 70 },
-      { x: 250, y: 485 },
-      { x: 690, y: 90 },
-      { x: 820, y: 430 },
-      { x: 470, y: 65 },
+      { x: 215, y: 70 },
+      { x: 250, y: 515 },
+      { x: 690, y: 94 },
+      { x: 825, y: 450 },
+      { x: 465, y: 78 },
     ];
 
     rocks.forEach((rock) => {
       ctx.fillStyle = "#94a3b8";
       ctx.beginPath();
-      ctx.arc(rock.x, rock.y, 10, 0, Math.PI * 2);
+      ctx.arc(rock.x, rock.y, 11, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = "#cbd5e1";
       ctx.beginPath();
       ctx.arc(rock.x - 3, rock.y - 3, 4, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    const bushes = [
-      { x: 205, y: 55 },
-      { x: 380, y: 500 },
-      { x: 620, y: 70 },
-      { x: 760, y: 465 },
-      { x: 72, y: 430 },
-      { x: 545, y: 98 },
-    ];
-
-    bushes.forEach((bush) => {
-      ctx.fillStyle = "#15803d";
-      ctx.beginPath();
-      ctx.arc(bush.x, bush.y, 12, 0, Math.PI * 2);
-      ctx.arc(bush.x + 10, bush.y - 4, 10, 0, Math.PI * 2);
-      ctx.arc(bush.x - 10, bush.y - 4, 10, 0, Math.PI * 2);
       ctx.fill();
     });
 
@@ -984,23 +1020,23 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    ctx.strokeStyle = "#854d0e";
-    ctx.lineWidth = 64;
+    ctx.strokeStyle = "#64748b";
+    ctx.lineWidth = 66;
     ctx.beginPath();
     ctx.moveTo(PATH[0].x, PATH[0].y);
     for (let i = 1; i < PATH.length; i++) ctx.lineTo(PATH[i].x, PATH[i].y);
     ctx.stroke();
 
-    ctx.strokeStyle = "#d6a34d";
-    ctx.lineWidth = 46;
+    ctx.strokeStyle = "#b8c2c9";
+    ctx.lineWidth = 48;
     ctx.beginPath();
     ctx.moveTo(PATH[0].x, PATH[0].y);
     for (let i = 1; i < PATH.length; i++) ctx.lineTo(PATH[i].x, PATH[i].y);
     ctx.stroke();
 
-    ctx.strokeStyle = "rgba(255,255,255,0.25)";
-    ctx.lineWidth = 6;
-    ctx.setLineDash([14, 16]);
+    ctx.strokeStyle = "#e5e7eb";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([8, 12]);
     ctx.beginPath();
     ctx.moveTo(PATH[0].x, PATH[0].y);
     for (let i = 1; i < PATH.length; i++) ctx.lineTo(PATH[i].x, PATH[i].y);
@@ -1012,17 +1048,17 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   function drawSpawnGate(ctx) {
     ctx.save();
 
-    ctx.fillStyle = "#78350f";
-    ctx.fillRect(6, 238, 24, 66);
+    ctx.fillStyle = "#7f1d1d";
+    ctx.fillRect(7, 264, 24, 72);
 
-    ctx.fillStyle = "#92400e";
+    ctx.fillStyle = "#991b1b";
     ctx.beginPath();
-    ctx.arc(30, 270, 19, 0, Math.PI * 2);
+    ctx.arc(34, 300, 20, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#fde68a";
+    ctx.fillStyle = "#fecaca";
     ctx.beginPath();
-    ctx.arc(30, 270, 8, 0, Math.PI * 2);
+    ctx.arc(34, 300, 8, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.restore();
@@ -1033,32 +1069,32 @@ export default function TowerDefenseGame({ studySet, onExit }) {
 
     ctx.fillStyle = "#475569";
     ctx.beginPath();
-    ctx.roundRect(825, 265, 58, 110, 14);
+    ctx.roundRect(918, 298, 56, 102, 14);
     ctx.fill();
 
     ctx.fillStyle = "#1e293b";
     ctx.beginPath();
-    ctx.roundRect(836, 245, 36, 26, 8);
+    ctx.roundRect(929, 278, 35, 25, 8);
     ctx.fill();
 
     ctx.fillStyle = "#0f172a";
     ctx.beginPath();
-    ctx.roundRect(845, 320, 18, 28, 6);
+    ctx.roundRect(938, 350, 18, 28, 6);
     ctx.fill();
 
     ctx.fillStyle = "#2563eb";
-    ctx.fillRect(872, 235, 3, 22);
+    ctx.fillRect(964, 268, 3, 22);
     ctx.beginPath();
-    ctx.moveTo(875, 235);
-    ctx.lineTo(888, 240);
-    ctx.lineTo(875, 246);
+    ctx.moveTo(967, 268);
+    ctx.lineTo(982, 274);
+    ctx.lineTo(967, 280);
     ctx.closePath();
     ctx.fill();
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 12px Inter, system-ui, sans-serif";
+    ctx.font = "bold 11px Inter, system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("BASE", 854, 305);
+    ctx.fillText("BASE", 946, 334);
 
     ctx.restore();
   }
@@ -1079,19 +1115,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
 
         ctx.shadowColor = "#facc15";
         ctx.shadowBlur = 18;
-      } else {
-        ctx.globalAlpha = 0.07;
-        ctx.fillStyle = "#0f172a";
-        ctx.beginPath();
-        ctx.arc(tower.x, tower.y, stats.range, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
       }
-
-      ctx.fillStyle = "#334155";
-      ctx.beginPath();
-      ctx.arc(tower.x, tower.y, 21, 0, Math.PI * 2);
-      ctx.fill();
 
       drawTowerSprite(ctx, tower);
 
@@ -1099,116 +1123,154 @@ export default function TowerDefenseGame({ studySet, onExit }) {
 
       ctx.fillStyle = "#ffffff";
       ctx.beginPath();
-      ctx.arc(tower.x + 15, tower.y - 15, 9, 0, Math.PI * 2);
+      ctx.arc(tower.x + 16, tower.y - 17, 10, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = "#0f172a";
       ctx.font = "bold 10px Inter, system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(tower.level, tower.x + 15, tower.y - 12);
+      ctx.fillText(tower.level, tower.x + 16, tower.y - 13);
 
       ctx.restore();
     });
   }
 
   function drawTowerSprite(ctx, tower) {
+    ctx.save();
+
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = "#0f172a";
+    ctx.beginPath();
+    ctx.ellipse(tower.x, tower.y + 20, 24, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = "#334155";
+    ctx.beginPath();
+    ctx.roundRect(tower.x - 20, tower.y + 6, 40, 18, 6);
+    ctx.fill();
+
     if (tower.type === "basic") {
-      ctx.fillStyle = "#2563eb";
+      ctx.fillStyle = "#1d4ed8";
       ctx.beginPath();
-      ctx.arc(tower.x, tower.y, 14, 0, Math.PI * 2);
+      ctx.roundRect(tower.x - 15, tower.y - 14, 30, 25, 8);
       ctx.fill();
 
-      ctx.fillStyle = "#1d4ed8";
-      ctx.fillRect(tower.x - 4, tower.y - 20, 8, 24);
+      ctx.fillStyle = "#1e3a8a";
+      ctx.beginPath();
+      ctx.roundRect(tower.x - 5, tower.y - 32, 10, 26, 4);
+      ctx.fill();
+
+      ctx.fillStyle = "#93c5fd";
+      ctx.beginPath();
+      ctx.arc(tower.x, tower.y - 2, 6, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     if (tower.type === "freeze") {
-      ctx.fillStyle = "#06b6d4";
+      ctx.fillStyle = "#0891b2";
       ctx.beginPath();
-      ctx.moveTo(tower.x, tower.y - 19);
-      ctx.lineTo(tower.x + 13, tower.y);
+      ctx.roundRect(tower.x - 16, tower.y - 6, 32, 22, 7);
+      ctx.fill();
+
+      ctx.fillStyle = "#67e8f9";
+      ctx.beginPath();
+      ctx.moveTo(tower.x, tower.y - 33);
+      ctx.lineTo(tower.x + 15, tower.y - 4);
       ctx.lineTo(tower.x, tower.y + 19);
-      ctx.lineTo(tower.x - 13, tower.y);
+      ctx.lineTo(tower.x - 15, tower.y - 4);
       ctx.closePath();
       ctx.fill();
 
-      ctx.strokeStyle = "#cffafe";
+      ctx.strokeStyle = "#ecfeff";
       ctx.lineWidth = 2;
       ctx.stroke();
     }
 
     if (tower.type === "splash") {
-      ctx.fillStyle = "#7c3aed";
+      ctx.fillStyle = "#5b21b6";
       ctx.beginPath();
-      ctx.arc(tower.x, tower.y, 14, 0, Math.PI * 2);
+      ctx.roundRect(tower.x - 17, tower.y - 9, 34, 28, 9);
       ctx.fill();
 
-      ctx.fillStyle = "#c4b5fd";
+      ctx.fillStyle = "#a78bfa";
       ctx.beginPath();
-      ctx.arc(tower.x, tower.y - 2, 6, 0, Math.PI * 2);
+      ctx.arc(tower.x, tower.y - 13, 12, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = "#5b21b6";
-      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#312e81";
+      ctx.lineWidth = 5;
       ctx.beginPath();
-      ctx.moveTo(tower.x + 7, tower.y - 7);
-      ctx.lineTo(tower.x + 14, tower.y - 16);
+      ctx.moveTo(tower.x + 7, tower.y - 20);
+      ctx.lineTo(tower.x + 20, tower.y - 33);
       ctx.stroke();
     }
 
     if (tower.type === "sniper") {
       ctx.fillStyle = "#111827";
       ctx.beginPath();
-      ctx.moveTo(tower.x, tower.y - 18);
-      ctx.lineTo(tower.x + 16, tower.y + 12);
-      ctx.lineTo(tower.x - 16, tower.y + 12);
+      ctx.roundRect(tower.x - 14, tower.y - 10, 28, 28, 6);
+      ctx.fill();
+
+      ctx.fillStyle = "#374151";
+      ctx.beginPath();
+      ctx.moveTo(tower.x, tower.y - 31);
+      ctx.lineTo(tower.x + 17, tower.y + 8);
+      ctx.lineTo(tower.x - 17, tower.y + 8);
       ctx.closePath();
       ctx.fill();
 
       ctx.strokeStyle = "#facc15";
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 5;
       ctx.beginPath();
-      ctx.moveTo(tower.x, tower.y - 18);
-      ctx.lineTo(tower.x, tower.y - 30);
+      ctx.moveTo(tower.x, tower.y - 26);
+      ctx.lineTo(tower.x, tower.y - 47);
       ctx.stroke();
     }
 
     if (tower.type === "rapid") {
-      ctx.fillStyle = "#ea580c";
+      ctx.fillStyle = "#c2410c";
       ctx.beginPath();
-      ctx.arc(tower.x, tower.y, 13, 0, Math.PI * 2);
+      ctx.roundRect(tower.x - 16, tower.y - 9, 32, 26, 8);
       ctx.fill();
 
       ctx.strokeStyle = "#fed7aa";
-      ctx.lineWidth = 3;
-      for (let i = 0; i < 3; i++) {
+      ctx.lineWidth = 4;
+      [-10, 0, 10].forEach((offset) => {
         ctx.beginPath();
-        ctx.moveTo(tower.x - 9 + i * 9, tower.y - 13);
-        ctx.lineTo(tower.x - 9 + i * 9, tower.y - 25);
+        ctx.moveTo(tower.x + offset, tower.y - 9);
+        ctx.lineTo(tower.x + offset, tower.y - 33);
         ctx.stroke();
-      }
+      });
+
+      ctx.fillStyle = "#fb923c";
+      ctx.beginPath();
+      ctx.arc(tower.x, tower.y + 1, 7, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     if (tower.type === "laser") {
-      ctx.fillStyle = "#db2777";
+      ctx.fillStyle = "#be185d";
       ctx.beginPath();
-      ctx.arc(tower.x, tower.y, 14, 0, Math.PI * 2);
+      ctx.roundRect(tower.x - 16, tower.y - 12, 32, 30, 8);
       ctx.fill();
 
-      ctx.fillStyle = "#fbcfe8";
+      ctx.fillStyle = "#f9a8d4";
       ctx.beginPath();
-      ctx.arc(tower.x, tower.y, 6, 0, Math.PI * 2);
+      ctx.arc(tower.x, tower.y - 3, 10, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.strokeStyle = "#831843";
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.moveTo(tower.x - 12, tower.y);
-      ctx.lineTo(tower.x + 12, tower.y);
-      ctx.moveTo(tower.x, tower.y - 12);
-      ctx.lineTo(tower.x, tower.y + 12);
+      ctx.moveTo(tower.x - 18, tower.y - 3);
+      ctx.lineTo(tower.x + 18, tower.y - 3);
+      ctx.moveTo(tower.x, tower.y - 21);
+      ctx.lineTo(tower.x, tower.y + 15);
       ctx.stroke();
     }
+
+    ctx.restore();
   }
 
   function drawPlacementPreview(ctx) {
@@ -1242,13 +1304,13 @@ export default function TowerDefenseGame({ studySet, onExit }) {
 
     ctx.fillStyle = valid ? "#16a34a" : "#dc2626";
     ctx.beginPath();
-    ctx.arc(point.x, point.y, 23, 0, Math.PI * 2);
+    ctx.arc(point.x, point.y, 24, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 19px Inter, system-ui, sans-serif";
+    ctx.font = "bold 15px Inter, system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(TOWER_TYPES[drag.type].icon, point.x, point.y + 7);
+    ctx.fillText(TOWER_TYPES[drag.type].icon, point.x, point.y + 5);
 
     ctx.restore();
   }
@@ -1257,7 +1319,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     game.enemies.forEach((enemy) => {
       ctx.save();
 
-      ctx.globalAlpha = 0.16;
+      ctx.globalAlpha = 0.18;
       ctx.fillStyle = "#0f172a";
       ctx.beginPath();
       ctx.ellipse(
@@ -1272,25 +1334,36 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       ctx.fill();
       ctx.globalAlpha = 1;
 
-      if (enemy.type === "tank") {
-        ctx.fillStyle = "#b91c1c";
-      } else if (enemy.type === "fast") {
-        ctx.fillStyle = "#ea580c";
-      } else if (enemy.type === "shield") {
-        ctx.fillStyle = "#0f766e";
-      } else {
-        ctx.fillStyle = "#334155";
-      }
+      if (enemy.type === "boss") ctx.fillStyle = "#7f1d1d";
+      else if (enemy.type === "tank") ctx.fillStyle = "#b91c1c";
+      else if (enemy.type === "fast") ctx.fillStyle = "#ea580c";
+      else if (enemy.type === "shield") ctx.fillStyle = "#0f766e";
+      else ctx.fillStyle = "#334155";
 
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
       ctx.fill();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.globalAlpha = 0.82;
+      ctx.beginPath();
+      ctx.arc(enemy.x - 4, enemy.y - 4, Math.max(3, enemy.radius * 0.25), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
 
       if (enemy.type === "shield") {
         ctx.strokeStyle = "#99f6e4";
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.arc(enemy.x, enemy.y, enemy.radius + 4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      if (enemy.type === "boss") {
+        ctx.strokeStyle = "#fecaca";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(enemy.x, enemy.y, enemy.radius + 5, 0, Math.PI * 2);
         ctx.stroke();
       }
 
@@ -1311,7 +1384,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       }
 
       const hpPercent = Math.max(0, enemy.hp / enemy.maxHp);
-      const barWidth = enemy.radius * 2.4;
+      const barWidth = enemy.radius * 2.45;
 
       ctx.fillStyle = "#e2e8f0";
       ctx.fillRect(enemy.x - barWidth / 2, enemy.y - enemy.radius - 12, barWidth, 5);
@@ -1379,7 +1452,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     game.damagePopups.forEach((popup) => {
       ctx.save();
 
-      ctx.globalAlpha = Math.max(0, popup.life / 620);
+      ctx.globalAlpha = Math.max(0, popup.life / 600);
       ctx.fillStyle = popup.color;
       ctx.font = "bold 13px Inter, system-ui, sans-serif";
       ctx.textAlign = "center";
@@ -1395,18 +1468,18 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   function drawTopOverlay(ctx, game) {
     ctx.save();
 
-    ctx.fillStyle = "rgba(255,255,255,0.88)";
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
     ctx.beginPath();
-    ctx.roundRect(18, 16, 388, 48, 14);
+    ctx.roundRect(18, 16, 420, 48, 14);
     ctx.fill();
 
     ctx.fillStyle = "#0f172a";
     ctx.font = "bold 15px Inter, system-ui, sans-serif";
     ctx.textAlign = "left";
     ctx.fillText(`Wave ${game.wave}`, 36, 46);
-    ctx.fillText(`Coins ${game.coins}`, 128, 46);
-    ctx.fillText(`Health ${game.baseHealth}`, 234, 46);
-    ctx.fillText(`Score ${game.score}`, 320, 46);
+    ctx.fillText(`Coins ${game.coins}`, 132, 46);
+    ctx.fillText(`Health ${game.baseHealth}`, 242, 46);
+    ctx.fillText(`Score ${game.score}`, 342, 46);
 
     ctx.restore();
   }
@@ -1441,22 +1514,31 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     syncStateFromRef();
   }
 
+  function makeQuestionModal(index) {
+    if (!questions.length) return null;
+
+    const q = questions[index % questions.length];
+
+    return {
+      question: q,
+      choices: buildChoices(q, questions),
+      startedAt: Date.now(),
+    };
+  }
+
   function openQuestion() {
     if (!questions.length) {
       setMessage("No study questions found.");
       return;
     }
 
-    if (questionModal) return;
-
-    const q = questions[questionIndex % questions.length];
-
     setAnswerFeedback(null);
-    setQuestionModal({
-      question: q,
-      choices: buildChoices(q, questions),
-      startedAt: Date.now(),
-    });
+    setQuestionModal(makeQuestionModal(questionIndex));
+  }
+
+  function closeQuestions() {
+    setQuestionModal(null);
+    setAnswerFeedback(null);
   }
 
   function answerQuestion(choice) {
@@ -1469,9 +1551,9 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     let earned = 0;
 
     if (isCorrect) {
-      const speedBonus = timeTaken < 6000 ? 25 : 0;
-      const streakBonus = streak >= 2 ? 20 : 0;
-      earned = 85 + speedBonus + streakBonus;
+      const speedBonus = timeTaken < 6000 ? 10 : 0;
+      const streakBonus = streak >= 3 ? 10 : 0;
+      earned = 45 + speedBonus + streakBonus;
 
       game.coins += earned;
       game.score += earned * 4;
@@ -1479,11 +1561,11 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       setStreak((prev) => prev + 1);
       setMessage(`Correct! +${earned} coins.`);
     } else {
-      earned = 10;
+      earned = 3;
       game.coins += earned;
       setStreak(0);
       setMessage(
-        `Not quite. +10 coins. Correct answer: ${questionModal.question.correctAnswer}`
+        `Wrong. +3 coins. Correct answer: ${questionModal.question.correctAnswer}`
       );
     }
 
@@ -1498,14 +1580,15 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   }
 
   function continueAfterAnswer() {
-    setQuestionIndex((prev) => prev + 1);
+    const nextIndex = (questionIndex + 1) % Math.max(questions.length, 1);
+    setQuestionIndex(nextIndex);
     setAnswerFeedback(null);
-    setQuestionModal(null);
+    setQuestionModal(makeQuestionModal(nextIndex));
   }
 
   function getUpgradeCost(tower) {
     if (!tower || tower.level >= MAX_TOWER_LEVEL) return null;
-    return Math.round(TOWER_TYPES[tower.type].cost * 0.72 + tower.level * 55);
+    return Math.round(TOWER_TYPES[tower.type].cost * 0.95 + tower.level * 75);
   }
 
   function upgradeSelectedTower() {
@@ -1547,7 +1630,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     const tower = game.towers.find((t) => t.id === selectedTowerId);
     if (!tower) return;
 
-    const refund = Math.round((tower.spent || TOWER_TYPES[tower.type].cost) * 0.65);
+    const refund = Math.round((tower.spent || TOWER_TYPES[tower.type].cost) * 0.55);
 
     game.coins += refund;
     game.towers = game.towers.filter((t) => t.id !== selectedTowerId);
@@ -1558,21 +1641,19 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     syncStateFromRef();
   }
 
-  const selectedTowerStats = selectedTower ? getTowerStats(selectedTower) : null;
-  const selectedUpgradeCost = selectedTower ? getUpgradeCost(selectedTower) : null;
-
   return (
     <div className="td-page">
-      <div className="td-header">
+      <div className="td-header compact">
         <div>
           <p className="td-eyebrow">Study Siege</p>
           <h1>{studySet?.title || "Tower Defense"}</h1>
-          <p className="td-subtitle">
-            Drag towers onto the map, answer questions for coins, then upgrade your defense.
-          </p>
         </div>
 
         <div className="td-header-actions">
+          <button className="td-quiz-btn" onClick={openQuestion}>
+            Answer Questions
+          </button>
+
           <button
             onClick={() => {
               setIsRunning((prev) => {
@@ -1583,6 +1664,8 @@ export default function TowerDefenseGame({ studySet, onExit }) {
           >
             {isRunning ? "Pause" : "Resume"}
           </button>
+
+          <button onClick={startWave}>Send Wave</button>
           <button onClick={resetGame}>Restart</button>
           <button className="secondary" onClick={onExit}>
             Exit
@@ -1590,8 +1673,8 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         </div>
       </div>
 
-      <div className="td-layout">
-        <div className="td-main-card">
+      <div className="td-game-card">
+        <div className="td-canvas-wrap">
           <canvas
             ref={canvasRef}
             width={CANVAS_WIDTH}
@@ -1599,11 +1682,71 @@ export default function TowerDefenseGame({ studySet, onExit }) {
             className="td-canvas"
           />
 
-          <div className="td-message">{message}</div>
+          {selectedTower && selectedTowerStats && (
+            <div
+              className="tower-map-popover"
+              style={canvasToPercent(selectedTower)}
+            >
+              <div className="tower-popover-head">
+                <div className={`tower-shop-icon tower-${selectedTower.type}`}>
+                  {TOWER_TYPES[selectedTower.type].icon}
+                </div>
+
+                <div>
+                  <strong>{TOWER_TYPES[selectedTower.type].name}</strong>
+                  <span>Level {selectedTower.level}</span>
+                </div>
+
+                <button
+                  className="tower-popover-close"
+                  onClick={() => {
+                    setSelectedTowerId(null);
+                    selectedTowerIdRef.current = null;
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="tower-mini-stats">
+                <div>
+                  <span>Dmg</span>
+                  <strong>{Math.round(selectedTowerStats.damage)}</strong>
+                </div>
+                <div>
+                  <span>Range</span>
+                  <strong>{Math.round(selectedTowerStats.range)}</strong>
+                </div>
+                <div>
+                  <span>Kills</span>
+                  <strong>{selectedTower.kills || 0}</strong>
+                </div>
+              </div>
+
+              <p>{TOWER_TYPES[selectedTower.type].upgradeText[selectedTower.level - 1]}</p>
+
+              <div className="tower-popover-actions">
+                <button
+                  onClick={upgradeSelectedTower}
+                  disabled={selectedTower.level >= MAX_TOWER_LEVEL}
+                >
+                  {selectedTower.level >= MAX_TOWER_LEVEL
+                    ? "Maxed"
+                    : `Upgrade ${selectedUpgradeCost}`}
+                </button>
+
+                <button className="sell" onClick={sellSelectedTower}>
+                  Sell
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        <aside className="td-sidebar">
-          <div className="td-stat-grid">
+        <div className="td-bottom-bar">
+          <div className="td-message">{message}</div>
+
+          <div className="td-bottom-stats">
             <div>
               <span>Coins</span>
               <strong>{coins}</strong>
@@ -1617,135 +1760,36 @@ export default function TowerDefenseGame({ studySet, onExit }) {
               <strong>{wave}</strong>
             </div>
             <div>
-              <span>Score</span>
-              <strong>{score}</strong>
+              <span>Streak</span>
+              <strong>{streak}</strong>
             </div>
           </div>
 
-          <div className="td-panel td-study-panel">
-            <div>
-              <h3>Study Power</h3>
-              <p>Correct answers earn coins. Fast answers and streaks give bonuses.</p>
-            </div>
-
-            <button className="td-primary-btn" onClick={openQuestion}>
-              Answer Question
-            </button>
-
-            <div className="td-small-info">
-              Streak: <strong>{streak}</strong>
-            </div>
-          </div>
-
-          <div className="td-panel">
-            <h3>Tower Shop</h3>
-            <p className="td-panel-note">Drag a tower onto a valid green spot.</p>
-
-            <div className="tower-options real-td-shop">
-              {Object.entries(TOWER_TYPES).map(([key, tower]) => (
-                <button
-                  key={key}
-                  className={
-                    selectedTowerType === key
-                      ? "tower-option active"
-                      : "tower-option"
-                  }
-                  onPointerDown={(e) => startTowerDrag(key, e)}
-                  onClick={() => setSelectedTowerType(key)}
-                >
-                  <div className={`tower-shop-icon tower-${key}`}>
-                    {tower.icon}
-                  </div>
-
-                  <div className="tower-shop-copy">
-                    <strong>{tower.name}</strong>
-                    <span>{tower.description}</span>
-                  </div>
-
-                  <em>{tower.cost}</em>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="td-panel selected-tower-panel">
-            <h3>Selected Tower</h3>
-
-            {!selectedTower && (
-              <p className="td-panel-note">
-                Click one of your placed towers to upgrade or sell it.
-              </p>
-            )}
-
-            {selectedTower && (
-              <>
-                <div className="selected-tower-top">
-                  <div className={`tower-shop-icon tower-${selectedTower.type}`}>
-                    {TOWER_TYPES[selectedTower.type].icon}
-                  </div>
-
-                  <div>
-                    <strong>
-                      {TOWER_TYPES[selectedTower.type].name} Tower
-                    </strong>
-                    <span>Level {selectedTower.level}</span>
-                  </div>
+          <div className="td-tower-dock">
+            {Object.entries(TOWER_TYPES).map(([key, tower]) => (
+              <button
+                key={key}
+                className={
+                  selectedTowerType === key
+                    ? "dock-tower active"
+                    : "dock-tower"
+                }
+                onPointerDown={(e) => startTowerDrag(key, e)}
+                onClick={() => setSelectedTowerType(key)}
+                title={`${tower.name}: ${tower.description}`}
+              >
+                <div className={`dock-tower-icon tower-${key}`}>
+                  {tower.icon}
                 </div>
 
-                <div className="tower-details-grid">
-                  <div>
-                    <span>Damage</span>
-                    <strong>{Math.round(selectedTowerStats.damage)}</strong>
-                  </div>
-                  <div>
-                    <span>Range</span>
-                    <strong>{Math.round(selectedTowerStats.range)}</strong>
-                  </div>
-                  <div>
-                    <span>Speed</span>
-                    <strong>{Math.round(1000 / selectedTowerStats.fireRate * 10) / 10}/s</strong>
-                  </div>
-                  <div>
-                    <span>Kills</span>
-                    <strong>{selectedTower.kills || 0}</strong>
-                  </div>
+                <div>
+                  <strong>{tower.name}</strong>
+                  <span>{tower.cost}</span>
                 </div>
-
-                <div className="tower-ability-box">
-                  <span>Current ability</span>
-                  <p>{TOWER_TYPES[selectedTower.type].upgradeText[selectedTower.level - 1]}</p>
-                </div>
-
-                <button
-                  className="td-primary-btn"
-                  onClick={upgradeSelectedTower}
-                  disabled={selectedTower.level >= MAX_TOWER_LEVEL}
-                >
-                  {selectedTower.level >= MAX_TOWER_LEVEL
-                    ? "Max Level"
-                    : `Upgrade · ${selectedUpgradeCost} coins`}
-                </button>
-
-                <button className="td-danger-btn" onClick={sellSelectedTower}>
-                  Sell Tower
-                </button>
-              </>
-            )}
+              </button>
+            ))}
           </div>
-
-          <div className="td-panel">
-            <h3>Waves</h3>
-            <p>Waves auto-start, but you can send the next wave early.</p>
-
-            <button
-              className="td-secondary-btn"
-              onClick={startWave}
-              disabled={gameOver}
-            >
-              Send Wave Now
-            </button>
-          </div>
-        </aside>
+        </div>
       </div>
 
       {draggingTower && (
@@ -1767,14 +1811,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
           <div className="question-modal">
             <div className="question-modal-header">
               <p>Earn Coins</p>
-              <button
-                onClick={() => {
-                  setQuestionModal(null);
-                  setAnswerFeedback(null);
-                }}
-              >
-                ×
-              </button>
+              <button onClick={closeQuestions}>×</button>
             </div>
 
             <h2>{questionModal.question.question}</h2>
@@ -1825,7 +1862,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
                 </p>
 
                 <button className="td-primary-btn" onClick={continueAfterAnswer}>
-                  Continue
+                  Continue to Next Question
                 </button>
               </div>
             )}
