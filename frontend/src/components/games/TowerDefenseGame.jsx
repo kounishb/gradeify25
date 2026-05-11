@@ -1045,6 +1045,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       x: point.x, y: point.y, type, level: 1,
       angle: -Math.PI / 2, lastShot: 0, lastPopup: 0,
       spent: towerType.cost, kills: 0,
+      targetPriority: "first",
     };
     game.towers.push(newTower);
     game.coins -= towerType.cost;
@@ -1233,15 +1234,32 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   }
 
   function getEnemiesInRange(game, tower, stats) {
-    return game.enemies.filter(e => e.hp > 0 && distance(tower, e) <= stats.range).sort((a, b) => b.progress - a.progress);
+    const inRange = game.enemies.filter(e => e.hp > 0 && distance(tower, e) <= stats.range);
+    const priority = tower.targetPriority || "first";
+    inRange.sort((a, b) => {
+      switch (priority) {
+        case "first":    return b.progress - a.progress;
+        case "last":     return a.progress - b.progress;
+        case "strongest": return b.hp - a.hp;
+        case "weakest":  return a.hp - b.hp;
+        case "closest":  return distance(tower, a) - distance(tower, b);
+        default:         return b.progress - a.progress;
+      }
+    });
+    return inRange;
   }
 
   function fireTower(game, tower, now, delta) {
     const stats = getTowerStats(tower);
     const enemiesInRange = getEnemiesInRange(game, tower, stats);
+
+    // Always rotate barrel toward primary target every frame
+    if (enemiesInRange.length > 0) {
+      tower.angle = angleTo(tower, enemiesInRange[0]);
+    }
+
     if (!enemiesInRange.length) return;
     const target = enemiesInRange[0];
-    tower.angle = angleTo(tower, target);
     if (tower.type === "laser") {
       const damage = stats.damage * (delta / 1000);
       applyDamage(game, target, damage, tower, now, { ...stats, silent: true });
@@ -1262,7 +1280,6 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     if (now - tower.lastShot < stats.fireRate) return;
     const targets = enemiesInRange.slice(0, stats.multiShot);
     targets.forEach((shotTarget, index) => {
-      if (index === 0) tower.angle = angleTo(tower, shotTarget);
       const isMortar = tower.type === "splash";
       game.bullets.push({
         id: `bullet-${Date.now()}-${Math.random()}`,
@@ -2427,6 +2444,16 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     setQuestionModal(makeQuestionModal(nextIndex));
   }
 
+  function setTowerPriority(priority) {
+    const game = gameRef.current;
+    if (!game || !selectedTowerId) return;
+    const tower = game.towers.find(t => t.id === selectedTowerId);
+    if (!tower) return;
+    tower.targetPriority = priority;
+    // Force a re-render so the popover updates
+    syncStateFromRef();
+  }
+
   function upgradeSelectedTower() {
     const game = gameRef.current;
     if (!game || !selectedTowerId) return;
@@ -2504,6 +2531,30 @@ export default function TowerDefenseGame({ studySet, onExit }) {
                 <div><span>Range</span><strong>{Math.round(selectedTowerStats.range)}</strong></div>
                 <div><span>Kills</span><strong>{selectedTower.kills || 0}</strong></div>
               </div>
+
+              {/* Target priority selector */}
+              <div className="tower-priority-row">
+                <span className="tower-priority-label">🎯 Target</span>
+                <div className="tower-priority-btns">
+                  {[
+                    { key: "first",    label: "First",    emoji: "⏩" },
+                    { key: "last",     label: "Last",     emoji: "⏪" },
+                    { key: "strongest",label: "Strong",   emoji: "💪" },
+                    { key: "weakest",  label: "Weak",     emoji: "🩸" },
+                    { key: "closest",  label: "Close",    emoji: "📍" },
+                  ].map(({ key, label, emoji }) => (
+                    <button
+                      key={key}
+                      className={`priority-btn${(selectedTower.targetPriority || "first") === key ? " active" : ""}`}
+                      onClick={() => setTowerPriority(key)}
+                      title={label}
+                    >
+                      {emoji}<span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <p>{TOWER_TYPES[selectedTower.type].upgradeText[selectedTower.level - 1]}</p>
               <div className="tower-popover-actions">
                 <button onClick={upgradeSelectedTower} disabled={selectedTower.level >= MAX_TOWER_LEVEL}>
