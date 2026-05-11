@@ -103,6 +103,9 @@ export default function DashboardLayout() {
           <Link to="/app/cube" className={isActive("/app/cube")}>
             Cube
           </Link>
+          <Link to="/app/games" className={isActive("/app/games")}>
+            Games
+          </Link>
           <Link to="/app/settings" className={isActive("/app/settings")}>
             Settings
           </Link>

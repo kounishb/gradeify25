@@ -21,6 +21,8 @@ import LearnPage from "./pages/Learn.jsx";
 
 import RubiksCube from "./pages/RubiksCube.jsx";
 
+import Games from "./pages/Games";
+
 import "./App.css";
 
 /* ---------------- ErrorBoundary ---------------- */
@@ -115,6 +117,7 @@ export default function App() {
           <Route path="review" element={<Review />} />
           <Route path="groups" element={<Groups />} />
           <Route path="cube" element={<RubiksCube />} />
+          <Route path="games" element={<Games />} />
         </Route>
 
         {/* backwards compatibility: old routes redirect into new ones */}
