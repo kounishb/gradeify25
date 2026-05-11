@@ -1,29 +1,22 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import * as THREE from "three";
 import "../../styles/FlashcardDash.css";
 
-// ── Constants ─────────────────────────────────────────────────────────────
-const GAME_W = 900;
-const GAME_H = 580;
-const LANES = [-1, 0, 1];
-const LANE_GAP = 182;
-const LANE_CENTER_X = GAME_W / 2;
-const PLAYER_BASE_Y = 455;   // feet Y in canvas coords
-const START_SPEED = 4.8;
-const MAX_SPEED = 13;
+// ─── Constants ────────────────────────────────────────────────────────────
+const LANE_POSITIONS = [-3.2, 0, 3.2];  // x coords in 3D world
+const START_SPEED = 0.22;
+const MAX_SPEED   = 0.58;
+const HALL_WIDTH  = 12;
+const HALL_HEIGHT = 5.5;
 const START_HEARTS = 3;
+const TILE_LENGTH  = 8;   // length of each floor/ceiling tile segment
+const TILE_COUNT   = 18;  // pool of tiles recycled
 
-// Items spawn lower (further from top = closer to player = bigger in perspective)
-const SPAWN_Y = -100;
-
-function laneX(lane) { return LANE_CENTER_X + lane * LANE_GAP; }
-function rndLane() { return LANES[Math.floor(Math.random() * 3)]; }
-
-// ── Question bank ─────────────────────────────────────────────────────────
 const QUESTION_BANK = [
   { q: "What is the main purpose of photosynthesis?", opts: ["To create glucose using sunlight","To break down rocks","To make oxygen from glucose","To digest proteins"], correct: 0 },
   { q: "What does slope represent in y = mx + b?", opts: ["The x-intercept","The rate of change","The y-intercept","The maximum value"], correct: 1 },
   { q: "Which organelle is the powerhouse of the cell?", opts: ["Nucleus","Ribosome","Mitochondria","Golgi apparatus"], correct: 2 },
-  { q: "What is opportunity cost?", opts: ["The total money spent","The value of the next best alternative","A fixed expense","Profit after taxes"], correct: 1 },
+  { q: "What is opportunity cost?", opts: ["Total money spent","The value of the next best alternative","A fixed expense","Profit after taxes"], correct: 1 },
   { q: "What is the derivative of x²?", opts: ["x","2x","x³","2"], correct: 1 },
   { q: "Which molecule carries genetic information?", opts: ["ATP","DNA","Glucose","Water"], correct: 1 },
   { q: "What does inflation mean?", opts: ["Prices generally rise over time","Prices always fall","Interest rates are zero","The stock market closes"], correct: 0 },
@@ -32,534 +25,839 @@ const QUESTION_BANK = [
   { q: "Which planet is closest to the Sun?", opts: ["Venus","Earth","Mercury","Mars"], correct: 2 },
 ];
 
-function rndQuestion() { return QUESTION_BANK[Math.floor(Math.random() * QUESTION_BANK.length)]; }
+function rndQ() { return QUESTION_BANK[Math.floor(Math.random() * QUESTION_BANK.length)]; }
+function rndLane() { return Math.floor(Math.random() * 3); }  // 0,1,2
 
-// ── Item factories ─────────────────────────────────────────────────────────
-let nextId = 1;
-const OBS_TYPES = ["cone","locker","backpack"];
-function mkObstacle() {
-  return { id: nextId++, kind: "obstacle", subtype: OBS_TYPES[Math.floor(Math.random()*3)], lane: rndLane(), y: SPAWN_Y, w: 66, h: 74 };
-}
-function mkCoin(lane, offsetY = 0) {
-  return { id: nextId++, kind: "coin", lane, y: SPAWN_Y + offsetY, w: 34, h: 34 };
-}
-function mkCard() {
-  return { id: nextId++, kind: "card", lane: rndLane(), y: SPAWN_Y, w: 62, h: 46, question: rndQuestion() };
+// ─── Three.js builder helpers ─────────────────────────────────────────────
+
+function makeMaterial(color, opts = {}) {
+  return new THREE.MeshLambertMaterial({ color, ...opts });
 }
 
-// ── Canvas environment renderer ────────────────────────────────────────────
-// We render the track, sky, buildings, graffiti walls, and ground all on canvas
-// for smooth parallax. React handles the player + items as DOM elements on top.
-
-// Tunnel perspective constants
-const TRACK_TOP_W  = 360;   // width of road at horizon
-const TRACK_BOT_W  = GAME_W + 60; // width at bottom (wide)
-const HORIZON_Y    = 168;   // where sky meets road
-const TRACK_TOP_X  = (GAME_W - TRACK_TOP_W) / 2; // left edge of road at horizon
-const TRACK_BOT_X  = -30;   // left edge at bottom
-
-// Interpolate between horizon and bottom for a given y
-function trackX(y, side) {
-  const t = (y - HORIZON_Y) / (GAME_H - HORIZON_Y);
-  if (side === 'left') return TRACK_TOP_X + (TRACK_BOT_X - TRACK_TOP_X) * t;
-  return TRACK_TOP_X + TRACK_TOP_W + (TRACK_BOT_X + TRACK_BOT_W - TRACK_TOP_X - TRACK_TOP_W) * t;
+function makeBox(w, h, d, color, opts = {}) {
+  const geo  = new THREE.BoxGeometry(w, h, d);
+  const mat  = makeMaterial(color, opts);
+  return new THREE.Mesh(geo, mat);
 }
-function trackWidth(y) { return trackX(y, 'right') - trackX(y, 'left'); }
 
-// Draw the static environment (called every frame to get scrolling ground lines)
-function drawEnvironment(ctx, scrollOffset, now) {
-  // Sky gradient
-  const skyGrad = ctx.createLinearGradient(0, 0, 0, HORIZON_Y + 30);
-  skyGrad.addColorStop(0,   "#08001a");
-  skyGrad.addColorStop(0.45,"#1a0533");
-  skyGrad.addColorStop(0.75,"#3d0f6e");
-  skyGrad.addColorStop(1,   "#7b2fbf");
-  ctx.fillStyle = skyGrad;
-  ctx.fillRect(0, 0, GAME_W, HORIZON_Y + 30);
+function makeCylinder(rT, rB, h, segs, color) {
+  const geo = new THREE.CylinderGeometry(rT, rB, h, segs);
+  const mat = makeMaterial(color);
+  return new THREE.Mesh(geo, mat);
+}
 
-  // Stars
-  ctx.save();
-  const starData = [
-    [60,20,1.2],[140,45,0.8],[220,15,1.4],[310,60,0.7],[400,25,1.1],[500,40,0.9],
-    [590,18,1.3],[680,50,0.8],[760,30,1.0],[830,12,1.2],[880,55,0.7],[30,55,0.9],
-    [170,8,0.8],[350,35,1.1],[450,12,0.6],[630,42,1.0],[720,20,0.9],[800,38,1.3],
-  ];
-  starData.forEach(([sx, sy, r]) => {
-    const twinkle = 0.5 + 0.5 * Math.sin(now * 0.002 + sx);
-    ctx.fillStyle = `rgba(255,255,255,${0.4 + 0.4 * twinkle})`;
-    ctx.beginPath();
-    ctx.arc(sx, sy, r, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  ctx.restore();
+// ─── Build School Hallway Geometry ────────────────────────────────────────
 
-  // Distant city silhouette
-  ctx.save();
-  ctx.fillStyle = "rgba(50,10,100,0.85)";
-  const buildings = [
-    [60,70,55],[130,95,48],[210,60,52],[290,80,44],[370,105,50],[450,70,46],
-    [520,88,54],[600,62,46],[670,95,50],[740,72,48],[800,85,52],[860,65,44],
-  ];
-  buildings.forEach(([bx, bh, bw]) => {
-    ctx.beginPath();
-    ctx.roundRect(bx - bw/2, HORIZON_Y - bh, bw, bh + 2, [6, 6, 0, 0]);
-    ctx.fill();
-    // Windows
-    ctx.fillStyle = "rgba(255,230,0,0.22)";
-    for (let wy = 8; wy < bh - 8; wy += 16) {
-      for (let wx = 8; wx < bw - 8; wx += 12) {
-        if (Math.random() > 0.45) {
-          ctx.fillRect(bx - bw/2 + wx, HORIZON_Y - bh + wy, 7, 9);
-        }
-      }
-    }
-    ctx.fillStyle = "rgba(50,10,100,0.85)";
-  });
-  ctx.restore();
+function buildHallway(scene) {
+  const group = new THREE.Group();
 
-  // Neon glow at horizon
-  const horizonGlow = ctx.createLinearGradient(0, HORIZON_Y - 20, 0, HORIZON_Y + 20);
-  horizonGlow.addColorStop(0, "transparent");
-  horizonGlow.addColorStop(0.5, "rgba(255,45,155,0.3)");
-  horizonGlow.addColorStop(1, "transparent");
-  ctx.fillStyle = horizonGlow;
-  ctx.fillRect(0, HORIZON_Y - 20, GAME_W, 40);
-
-  // ── Road surface ──────────────────────────────────────────────────────
-  ctx.save();
-  // Road trapezoid fill
-  ctx.beginPath();
-  ctx.moveTo(TRACK_TOP_X, HORIZON_Y);
-  ctx.lineTo(TRACK_TOP_X + TRACK_TOP_W, HORIZON_Y);
-  ctx.lineTo(TRACK_BOT_X + TRACK_BOT_W, GAME_H);
-  ctx.lineTo(TRACK_BOT_X, GAME_H);
-  ctx.closePath();
-  const roadGrad = ctx.createLinearGradient(0, HORIZON_Y, 0, GAME_H);
-  roadGrad.addColorStop(0,   "#1a1a2e");
-  roadGrad.addColorStop(0.4, "#222240");
-  roadGrad.addColorStop(1,   "#2a2a4a");
-  ctx.fillStyle = roadGrad;
-  ctx.fill();
-
-  // Road edge glow strips (left & right)
-  const leftGlow = ctx.createLinearGradient(TRACK_BOT_X, 0, TRACK_BOT_X + 80, 0);
-  leftGlow.addColorStop(0, "rgba(255,45,155,0.18)");
-  leftGlow.addColorStop(1, "transparent");
-  ctx.fillStyle = leftGlow;
-  ctx.fill();
-
-  // Scrolling horizontal ground lines (perspective stripes)
-  const STRIPE_SPACING = 90; // at bottom
-  const numStripes = Math.ceil(GAME_H / STRIPE_SPACING) + 2;
-  for (let i = 0; i < numStripes; i++) {
-    // Start stripes from bottom, scroll up
-    let yBot = GAME_H - ((scrollOffset % STRIPE_SPACING) + i * STRIPE_SPACING);
-    if (yBot < HORIZON_Y) continue;
-    if (yBot > GAME_H + STRIPE_SPACING) continue;
-    const t = (yBot - HORIZON_Y) / (GAME_H - HORIZON_Y);
-    // Alpha based on distance (fades toward horizon)
-    const alpha = 0.04 + t * 0.14;
-    ctx.beginPath();
-    ctx.moveTo(trackX(yBot, 'left'),  yBot);
-    ctx.lineTo(trackX(yBot, 'right'), yBot);
-    ctx.strokeStyle = `rgba(150,100,255,${alpha})`;
-    ctx.lineWidth = Math.max(0.5, t * 3);
-    ctx.stroke();
+  // Texture-like material using vertex colors approach with MeshLambertMaterial
+  // Floor tiles — alternating cream/light grey
+  const floorTiles = [];
+  for (let i = 0; i < TILE_COUNT; i++) {
+    const color = i % 2 === 0 ? 0xf0ece0 : 0xe0dcd0;
+    const tile = makeBox(HALL_WIDTH, 0.05, TILE_LENGTH, color);
+    tile.receiveShadow = true;
+    tile.position.y = 0;
+    tile.position.z = -(i * TILE_LENGTH);
+    // Grout lines via child thin strips
+    const grout = makeBox(HALL_WIDTH, 0.06, 0.08, 0xbbbbaa);
+    grout.position.z = TILE_LENGTH / 2;
+    tile.add(grout);
+    const grout2 = makeBox(0.08, 0.06, TILE_LENGTH, 0xbbbbaa);
+    grout2.position.x = HALL_WIDTH / 2;
+    tile.add(grout2);
+    group.add(tile);
+    floorTiles.push(tile);
   }
 
-  // Perspective lane dividers — 3 lanes = 2 dividers
-  const laneRelPositions = [-0.333, 0, 0.333]; // normalized -0.5 to 0.5 across road
-  // Draw lane lines (dashed in perspective)
-  const DASH_SPACING = 80;
-  for (let li = 0; li < 2; li++) {
-    const laneRelX = -0.5 + (li + 1) * (1 / 3); // 0.167 and 0.5
-    const numDashes = Math.ceil(GAME_H / DASH_SPACING) + 2;
-    for (let di = 0; di < numDashes; di++) {
-      let yBot = GAME_H - ((scrollOffset * 0.9 % DASH_SPACING) + di * DASH_SPACING);
-      if (yBot < HORIZON_Y + 10) continue;
-      if (yBot > GAME_H) continue;
-      const t = (yBot - HORIZON_Y) / (GAME_H - HORIZON_Y);
-      const roadLeft = trackX(yBot, 'left');
-      const w = trackWidth(yBot);
-      const dashX = roadLeft + w * (0.5 + laneRelX);
-      const dashLen = Math.max(4, t * 30);
-      const dashH  = Math.max(1.5, t * 8);
-      ctx.fillStyle = `rgba(200,180,255,${0.06 + t * 0.18})`;
-      ctx.beginPath();
-      ctx.roundRect(dashX - dashLen/2, yBot - dashH/2, dashLen, dashH, 2);
-      ctx.fill();
+  // Ceiling tiles — drop-panel look
+  const ceilTiles = [];
+  for (let i = 0; i < TILE_COUNT; i++) {
+    const tile = makeBox(HALL_WIDTH, 0.1, TILE_LENGTH, 0xf5f5f0);
+    tile.position.y = HALL_HEIGHT;
+    tile.position.z = -(i * TILE_LENGTH);
+    group.add(tile);
+    ceilTiles.push(tile);
+
+    // Ceiling light fixture every 2nd tile
+    if (i % 2 === 0) {
+      const fixture = makeBox(0.6, 0.12, TILE_LENGTH * 0.7, 0xffffee);
+      fixture.position.y = HALL_HEIGHT - 0.1;
+      fixture.position.z = -(i * TILE_LENGTH);
+      // Emissive glow
+      fixture.material = new THREE.MeshLambertMaterial({ color: 0xffffcc, emissive: 0xffffaa, emissiveIntensity: 0.6 });
+      group.add(fixture);
     }
   }
 
-  // Road edges (neon outlines)
-  ctx.beginPath();
-  ctx.moveTo(TRACK_TOP_X, HORIZON_Y);
-  ctx.lineTo(TRACK_BOT_X, GAME_H);
-  ctx.strokeStyle = "rgba(255,45,155,0.55)";
-  ctx.lineWidth = 3;
-  ctx.stroke();
+  // Left wall — painted cinder block + lockers
+  const leftWallTiles = [];
+  for (let i = 0; i < TILE_COUNT; i++) {
+    // Upper wall (painted)
+    const upper = makeBox(0.15, HALL_HEIGHT * 0.52, TILE_LENGTH, 0x8bbfe0);  // school blue
+    upper.position.set(-HALL_WIDTH / 2, HALL_HEIGHT * 0.74, -(i * TILE_LENGTH));
+    group.add(upper);
+    leftWallTiles.push(upper);
 
-  ctx.beginPath();
-  ctx.moveTo(TRACK_TOP_X + TRACK_TOP_W, HORIZON_Y);
-  ctx.lineTo(TRACK_BOT_X + TRACK_BOT_W, GAME_H);
-  ctx.strokeStyle = "rgba(0,245,255,0.55)";
-  ctx.lineWidth = 3;
-  ctx.stroke();
+    // Lockers on lower half
+    for (let li = 0; li < 3; li++) {
+      const lockerGroup = buildLocker3D(0x4a7fc1, 0x3a6aaa);
+      lockerGroup.position.set(
+        -HALL_WIDTH / 2 + 0.25,
+        HALL_HEIGHT * 0.22,
+        -(i * TILE_LENGTH) + (li - 1) * (TILE_LENGTH / 3)
+      );
+      lockerGroup.rotation.y = Math.PI / 2;
+      group.add(lockerGroup);
+    }
 
-  ctx.restore();
-
-  // ── Side walls (graffiti) ─────────────────────────────────────────────
-  ctx.save();
-
-  // Left wall
-  ctx.beginPath();
-  ctx.moveTo(0, HORIZON_Y - 10);
-  ctx.lineTo(TRACK_BOT_X, GAME_H);
-  ctx.lineTo(0, GAME_H);
-  ctx.closePath();
-  const lwGrad = ctx.createLinearGradient(0, HORIZON_Y, 0, GAME_H);
-  lwGrad.addColorStop(0, "#0d0020");
-  lwGrad.addColorStop(1, "#1a0033");
-  ctx.fillStyle = lwGrad;
-  ctx.fill();
-
-  // Right wall
-  ctx.beginPath();
-  ctx.moveTo(GAME_W, HORIZON_Y - 10);
-  ctx.lineTo(TRACK_BOT_X + TRACK_BOT_W, GAME_H);
-  ctx.lineTo(GAME_W, GAME_H);
-  ctx.closePath();
-  const rwGrad = ctx.createLinearGradient(GAME_W, HORIZON_Y, GAME_W, GAME_H);
-  rwGrad.addColorStop(0, "#0d0020");
-  rwGrad.addColorStop(1, "#1a0033");
-  ctx.fillStyle = rwGrad;
-  ctx.fill();
-
-  // Graffiti tags on left wall — static art shapes
-  drawGraffitiLeft(ctx, scrollOffset);
-  drawGraffitiRight(ctx, scrollOffset);
-
-  // Scrolling light poles on both sides
-  drawPoles(ctx, scrollOffset);
-
-  ctx.restore();
-}
-
-function drawGraffitiLeft(ctx, scroll) {
-  const shift = (scroll * 0.4) % 900;
-  ctx.save();
-  ctx.globalAlpha = 0.55;
-  // Repeating graffiti "DASH" letters
-  const tags = [
-    { x: -800 + shift, y: 320, text: "DASH", color: "#ff2d9b", size: 28 },
-    { x: -800 + shift + 200, y: 360, text: "GO", color: "#39ff14", size: 22 },
-    { x: -800 + shift + 380, y: 330, text: "STUDY", color: "#00f5ff", size: 18 },
-    { x: -800 + shift + 560, y: 350, text: "×", color: "#ffe600", size: 32 },
-    { x: -800 + shift + 700, y: 320, text: "GRADEIFY", color: "#ff6b00", size: 14 },
-    { x: -800 + shift + 900, y: 345, text: "DASH", color: "#ff2d9b", size: 28 },
-    { x: -800 + shift + 1100, y: 360, text: "GO", color: "#39ff14", size: 22 },
-    { x: -800 + shift + 1280, y: 330, text: "STUDY", color: "#00f5ff", size: 18 },
-  ];
-  tags.forEach(({ x, y, text, color, size }) => {
-    if (x < -120 || x > 160) return;
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 8;
-    ctx.font = `900 ${size}px 'Bebas Neue', sans-serif`;
-    ctx.textAlign = "left";
-    ctx.fillText(text, x, y);
-  });
-  ctx.restore();
-}
-
-function drawGraffitiRight(ctx, scroll) {
-  const shift = (scroll * 0.35) % 900;
-  ctx.save();
-  ctx.globalAlpha = 0.5;
-  const tags = [
-    { x: GAME_W - 130 + (shift % 900) * 0.15, y: 310, text: "RUN", color: "#ff6b00", size: 30 },
-    { x: GAME_W - 110 + ((shift+200) % 900) * 0.12, y: 355, text: "A+", color: "#ffe600", size: 26 },
-    { x: GAME_W - 125 + ((shift+430) % 900) * 0.1, y: 330, text: "LEARN", color: "#7c3aed", size: 18 },
-  ];
-  tags.forEach(({ x, y, text, color, size }) => {
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 8;
-    ctx.font = `900 ${size}px 'Bebas Neue', sans-serif`;
-    ctx.textAlign = "right";
-    ctx.fillText(text, x, y);
-  });
-  ctx.restore();
-}
-
-function drawPoles(ctx, scroll) {
-  const POLE_SPACING = 220;
-  const numPoles = 6;
-  for (let i = 0; i < numPoles; i++) {
-    const base = ((scroll * 1.1) % POLE_SPACING);
-    const offset = i * POLE_SPACING - base;
-    const t = Math.max(0, Math.min(1, offset / (GAME_H - HORIZON_Y)));
-    const yBot = HORIZON_Y + t * (GAME_H - HORIZON_Y);
-    if (yBot < HORIZON_Y || yBot > GAME_H + 20) continue;
-
-    const poleH = 80 * t + 20;
-    const poleW = 4 * t + 1;
-
-    // Left pole
-    const lx = trackX(yBot, 'left') - 12 * t;
-    ctx.fillStyle = `rgba(160,100,255,${0.3 + t * 0.4})`;
-    ctx.fillRect(lx, yBot - poleH, poleW, poleH);
-    // Lamp
-    ctx.fillStyle = `rgba(255,230,0,${0.5 + t * 0.4})`;
-    ctx.shadowColor = "#ffe600";
-    ctx.shadowBlur = 8 * t;
-    ctx.beginPath();
-    ctx.arc(lx + poleW/2, yBot - poleH, poleW * 1.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    // Right pole
-    const rx = trackX(yBot, 'right') + 12 * t;
-    ctx.fillStyle = `rgba(160,100,255,${0.3 + t * 0.4})`;
-    ctx.fillRect(rx - poleW, yBot - poleH, poleW, poleH);
-    ctx.fillStyle = `rgba(255,230,0,${0.5 + t * 0.4})`;
-    ctx.shadowColor = "#ffe600";
-    ctx.shadowBlur = 8 * t;
-    ctx.beginPath();
-    ctx.arc(rx - poleW/2, yBot - poleH, poleW * 1.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
+    // Baseboard
+    const base = makeBox(0.15, 0.18, TILE_LENGTH, 0x3355aa);
+    base.position.set(-HALL_WIDTH / 2, 0.09, -(i * TILE_LENGTH));
+    group.add(base);
   }
+
+  // Right wall — painted + bulletin boards + lockers
+  const rightWallTiles = [];
+  for (let i = 0; i < TILE_COUNT; i++) {
+    const upper = makeBox(0.15, HALL_HEIGHT * 0.52, TILE_LENGTH, 0x8bbfe0);
+    upper.position.set(HALL_WIDTH / 2, HALL_HEIGHT * 0.74, -(i * TILE_LENGTH));
+    group.add(upper);
+    rightWallTiles.push(upper);
+
+    // Lockers
+    for (let li = 0; li < 3; li++) {
+      const lockerGroup = buildLocker3D(0x4a7fc1, 0x3a6aaa);
+      lockerGroup.position.set(
+        HALL_WIDTH / 2 - 0.25,
+        HALL_HEIGHT * 0.22,
+        -(i * TILE_LENGTH) + (li - 1) * (TILE_LENGTH / 3)
+      );
+      lockerGroup.rotation.y = -Math.PI / 2;
+      group.add(lockerGroup);
+    }
+
+    // Bulletin board every 3rd tile
+    if (i % 3 === 0) {
+      const board = makeBox(0.1, 1.2, 2.2, 0x8B4513);
+      board.position.set(HALL_WIDTH / 2 - 0.12, HALL_HEIGHT * 0.7, -(i * TILE_LENGTH));
+      const paper = makeBox(0.08, 1.0, 2.0, 0xf5deb3);
+      paper.position.set(0.05, 0, 0);
+      board.add(paper);
+      group.add(board);
+    }
+
+    const base = makeBox(0.15, 0.18, TILE_LENGTH, 0x3355aa);
+    base.position.set(HALL_WIDTH / 2, 0.09, -(i * TILE_LENGTH));
+    group.add(base);
+  }
+
+  scene.add(group);
+  return { group, floorTiles, ceilTiles, leftWallTiles, rightWallTiles };
 }
 
-// ── Main Component ─────────────────────────────────────────────────────────
+// ─── Locker 3D model ──────────────────────────────────────────────────────
+function buildLocker3D(bodyColor, shadowColor) {
+  const g = new THREE.Group();
+  // Body
+  const body = makeBox(2.2, 1.6, 0.5, bodyColor);
+  body.castShadow = true;
+  g.add(body);
+  // Door seam
+  const seam = makeBox(2.22, 0.03, 0.52, shadowColor);
+  g.add(seam);
+  // Handle
+  const handle = makeBox(0.06, 0.22, 0.12, 0xc0c0c0);
+  handle.position.set(0.5, 0, 0.32);
+  g.add(handle);
+  // Vent slats
+  for (let v = 0; v < 3; v++) {
+    const vent = makeBox(1.4, 0.06, 0.12, 0x000000, { transparent: true, opacity: 0.35 });
+    vent.position.set(0, 0.45 - v * 0.25, 0.27);
+    g.add(vent);
+  }
+  // Number plate
+  const plate = makeBox(0.35, 0.25, 0.08, 0xffffff, { transparent: true, opacity: 0.7 });
+  plate.position.set(-0.5, 0.5, 0.27);
+  g.add(plate);
+  return g;
+}
+
+// ─── Player character (back-facing, Subway Surfers style) ─────────────────
+function buildPlayer() {
+  const g = new THREE.Group();
+
+  // Shoes
+  const shoeL = makeBox(0.32, 0.22, 0.55, 0xff2d9b);
+  shoeL.position.set(-0.22, 0.11, 0.1);
+  const shoeR = makeBox(0.32, 0.22, 0.55, 0xff2d9b);
+  shoeR.position.set(0.22, 0.11, 0.1);
+  g.add(shoeL, shoeR);
+
+  // Legs
+  const legL = makeBox(0.28, 0.72, 0.28, 0x1565c0);
+  legL.position.set(-0.22, 0.58, 0);
+  const legR = makeBox(0.28, 0.72, 0.28, 0x1565c0);
+  legR.position.set(0.22, 0.58, 0);
+  g.add(legL, legR);
+
+  // Torso (jersey)
+  const torso = makeBox(0.72, 0.72, 0.38, 0xff6b00);
+  torso.position.set(0, 1.22, 0);
+  // Number "7" represented as slightly darker box on front
+  const num = makeBox(0.22, 0.28, 0.06, 0xffaa44, { transparent: true, opacity: 0.9 });
+  num.position.set(0, 0, -0.22);
+  torso.add(num);
+  g.add(torso);
+
+  // Backpack (visible from behind)
+  const pack = makeBox(0.54, 0.62, 0.28, 0x06b6d4);
+  pack.position.set(0, 1.22, 0.32);
+  const packPocket = makeBox(0.36, 0.32, 0.1, 0x0891b2);
+  packPocket.position.set(0, -0.14, 0.52);
+  pack.add(packPocket);
+  g.add(pack);
+
+  // Arms
+  const armL = makeBox(0.22, 0.62, 0.22, 0xff6b00);
+  armL.position.set(-0.52, 1.1, 0);
+  const armR = makeBox(0.22, 0.62, 0.22, 0xff6b00);
+  armR.position.set(0.52, 1.1, 0);
+  g.add(armL, armR);
+
+  // Neck
+  const neck = makeBox(0.2, 0.18, 0.18, 0xffcc80);
+  neck.position.set(0, 1.68, 0);
+  g.add(neck);
+
+  // Head (we see the back)
+  const head = makeBox(0.58, 0.58, 0.52, 0xffcc80);
+  head.position.set(0, 2.08, 0);
+  g.add(head);
+
+  // Hair / cap (pink cap, brim pointing forward = toward us = toward -z since camera is behind)
+  const capTop = makeBox(0.64, 0.2, 0.56, 0xff2d9b);
+  capTop.position.set(0, 0.34, -0.02);
+  head.add(capTop);
+  const capBrim = makeBox(0.72, 0.08, 0.28, 0xe0186a);
+  capBrim.position.set(0, 0.2, -0.36);  // brim sticks out toward us (behind player = positive z from camera view, so -z in world)
+  head.add(capBrim);
+
+  // Store references for animation
+  g.userData = {
+    legL, legR, armL, armR,
+    shoeL, shoeR,
+    phase: 0,
+    isJumping: false,
+    isSliding: false,
+    jumpVel: 0,
+    groundY: 0,
+  };
+
+  return g;
+}
+
+// ─── Obstacle 3D models ───────────────────────────────────────────────────
+
+function buildCone3D() {
+  const g = new THREE.Group();
+  // Cone body
+  const cone = new THREE.Mesh(
+    new THREE.ConeGeometry(0.55, 1.4, 12),
+    new THREE.MeshLambertMaterial({ color: 0xff6b00 })
+  );
+  cone.position.y = 0.85;
+  cone.castShadow = true;
+  g.add(cone);
+  // Reflective stripe
+  const stripe = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.42, 0.42, 0.14, 12),
+    new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.3 })
+  );
+  stripe.position.y = 0.7;
+  g.add(stripe);
+  const stripe2 = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.3, 0.3, 0.1, 12),
+    new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.3 })
+  );
+  stripe2.position.y = 1.0;
+  g.add(stripe2);
+  // Base
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.62, 0.62, 0.14, 16),
+    new THREE.MeshLambertMaterial({ color: 0x7c2d12 })
+  );
+  base.position.y = 0.07;
+  g.add(base);
+  g.userData = { kind: "obstacle", subtype: "cone" };
+  return g;
+}
+
+function buildLockerObstacle3D() {
+  const g = new THREE.Group();
+  // Main locker body — big red school locker obstacle
+  const body = makeBox(1.1, 2.4, 0.65, 0xc62828);
+  body.position.y = 1.2;
+  body.castShadow = true;
+  g.add(body);
+  // Door detail
+  const door = makeBox(0.9, 2.0, 0.08, 0x9e1b1b);
+  door.position.set(0, 1.2, -0.37);
+  g.add(door);
+  // Handle — gold sphere
+  const handle = new THREE.Mesh(
+    new THREE.SphereGeometry(0.1, 8, 8),
+    new THREE.MeshLambertMaterial({ color: 0xf4b942, emissive: 0xf4b942, emissiveIntensity: 0.2 })
+  );
+  handle.position.set(0.3, 1.2, -0.42);
+  g.add(handle);
+  // Vents
+  for (let v = 0; v < 3; v++) {
+    const vent = makeBox(0.7, 0.07, 0.06, 0x1a0000, { transparent: true, opacity: 0.5 });
+    vent.position.set(0, 1.9 - v * 0.28, -0.38);
+    g.add(vent);
+  }
+  // Number
+  const num = makeBox(0.28, 0.2, 0.04, 0xffffff, { transparent: true, opacity: 0.8 });
+  num.position.set(-0.2, 2.0, -0.38);
+  g.add(num);
+  g.userData = { kind: "obstacle", subtype: "locker" };
+  return g;
+}
+
+function buildBackpack3D() {
+  const g = new THREE.Group();
+  // Main bag body
+  const body = makeBox(0.95, 1.3, 0.55, 0x5e35b1);
+  body.position.y = 0.75;
+  body.castShadow = true;
+  g.add(body);
+  // Front pocket
+  const pocket = makeBox(0.72, 0.62, 0.14, 0x4527a0);
+  pocket.position.set(0, 0.4, -0.35);
+  g.add(pocket);
+  // Zipper
+  const zip = makeBox(0.58, 0.06, 0.06, 0xbdbdbd);
+  zip.position.set(0, 0.72, -0.42);
+  g.add(zip);
+  // Straps
+  const strapL = makeBox(0.12, 1.1, 0.12, 0x3a1f8a);
+  strapL.position.set(-0.3, 0.75, 0.3);
+  const strapR = makeBox(0.12, 1.1, 0.12, 0x3a1f8a);
+  strapR.position.set(0.3, 0.75, 0.3);
+  g.add(strapL, strapR);
+  g.userData = { kind: "obstacle", subtype: "backpack" };
+  return g;
+}
+
+function buildCoin3D() {
+  const g = new THREE.Group();
+  const coin = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.32, 0.32, 0.1, 16),
+    new THREE.MeshLambertMaterial({ color: 0xffe600, emissive: 0xffcc00, emissiveIntensity: 0.5 })
+  );
+  coin.rotation.x = Math.PI / 2;  // face toward camera
+  g.add(coin);
+  // Dollar sign ring
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.28, 0.04, 8, 16),
+    new THREE.MeshLambertMaterial({ color: 0xffa000, emissive: 0xff8800, emissiveIntensity: 0.3 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  g.add(ring);
+  g.userData = { kind: "coin", spinSpeed: 2.5 + Math.random() * 1.5 };
+  return g;
+}
+
+function buildFlashcard3D() {
+  const g = new THREE.Group();
+  const card = makeBox(1.0, 0.72, 0.06, 0x0d2a5e);
+  card.material = new THREE.MeshLambertMaterial({
+    color: 0x0d2a5e,
+    emissive: 0x0a4488,
+    emissiveIntensity: 0.4,
+  });
+  g.add(card);
+  // Border glow
+  const border = makeBox(1.1, 0.82, 0.04, 0x00f5ff);
+  border.material = new THREE.MeshLambertMaterial({
+    color: 0x00f5ff,
+    emissive: 0x00f5ff,
+    emissiveIntensity: 0.8,
+    transparent: true,
+    opacity: 0.7,
+  });
+  border.position.z = 0.02;
+  g.add(border);
+  // "?" mark as small box
+  const q = makeBox(0.12, 0.38, 0.1, 0xffffff);
+  q.material = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xaaaaff, emissiveIntensity: 0.5 });
+  g.add(q);
+  g.userData = { kind: "card", question: rndQ(), floatPhase: Math.random() * Math.PI * 2 };
+  return g;
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────
 export default function FlashcardDash({ studySet }) {
-  const canvasRef = useRef(null);
-  const gameRef = useRef(null);
-  const animRef = useRef(null);
-  const lastTimeRef = useRef(0);
-  const scrollRef = useRef(0);
-  const spawnObsRef = useRef(0);
-  const spawnCoinRef = useRef(0);
-  const spawnCardRef = useRef(0);
+  const mountRef = useRef(null);
+  const threeRef = useRef(null);  // holds all Three.js objects
+  const gameStateRef = useRef(null);
+  const animFrameRef = useRef(null);
 
-  // React state for UI
-  const [phase, setPhase] = useState("idle"); // idle | running | paused | question | gameover
-  const [playerLane, setPlayerLane] = useState(0);
-  const [jumpOffset, setJumpOffset] = useState(0);
-  const [isJumping, setIsJumping] = useState(false);
-  const [isSliding, setIsSliding] = useState(false);
-  const [isHit, setIsHit] = useState(false);
-  const [items, setItems] = useState([]);
-  const [speed, setSpeed] = useState(START_SPEED);
-  const [distance, setDistance] = useState(0);
-  const [coins, setCoins] = useState(0);
-  const [hearts, setHearts] = useState(START_HEARTS);
-  const [streak, setStreak] = useState(0);
-  const [bestStreak, setBestStreak] = useState(0);
-  const [score, setScore] = useState(0);
+  // React UI state
+  const [phase, setPhase]               = useState("idle");
+  const [score, setScore]               = useState(0);
+  const [distance, setDistance]         = useState(0);
+  const [coins, setCoins]               = useState(0);
+  const [hearts, setHearts]             = useState(START_HEARTS);
+  const [streak, setStreak]             = useState(0);
+  const [bestStreak, setBestStreak]     = useState(0);
   const [activeQuestion, setActiveQuestion] = useState(null);
   const [answerStatus, setAnswerStatus] = useState(null);
-  const [comboText, setComboText] = useState(null);
-  const [shake, setShake] = useState(false);
+  const [comboText, setComboText]       = useState(null);
+  const [speed, setSpeed]               = useState(START_SPEED);
 
-  // Mutable refs that game loop reads directly
-  const phaseRef     = useRef("idle");
-  const laneRef      = useRef(0);
-  const jumpRef      = useRef(0);
-  const slidingRef   = useRef(false);
-  const jumpingRef   = useRef(false);
-  const speedRef     = useRef(START_SPEED);
-  const heartsRef    = useRef(START_HEARTS);
-  const itemsRef     = useRef([]);
-  const streakRef    = useRef(0);
-  const scoreRef     = useRef(0);
-  const coinsRef     = useRef(0);
-  const distRef      = useRef(0);
+  const phaseRef = useRef("idle");
+  const heartRef = useRef(START_HEARTS);
+  const scoreRef = useRef(0);
+  const streakRef = useRef(0);
+  const coinsRef = useRef(0);
+  const distRef  = useRef(0);
+  const speedRef = useRef(START_SPEED);
 
-  // Sync refs
   useEffect(() => { phaseRef.current = phase; }, [phase]);
-  useEffect(() => { laneRef.current = playerLane; }, [playerLane]);
-  useEffect(() => { jumpRef.current = jumpOffset; }, [jumpOffset]);
-  useEffect(() => { slidingRef.current = isSliding; }, [isSliding]);
-  useEffect(() => { jumpingRef.current = isJumping; }, [isJumping]);
-  useEffect(() => { speedRef.current = speed; }, [speed]);
-  useEffect(() => { heartsRef.current = hearts; }, [hearts]);
-  useEffect(() => { streakRef.current = streak; }, [streak]);
-  useEffect(() => { scoreRef.current = score; }, [score]);
-  useEffect(() => { coinsRef.current = coins; }, [coins]);
-  useEffect(() => { distRef.current = distance; }, [distance]);
-  useEffect(() => { itemsRef.current = items; }, [items]);
 
-  // ── Canvas loop ──────────────────────────────────────────────────────────
+  // ── Three.js setup ──────────────────────────────────────────────────────
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
+    const container = mountRef.current;
+    if (!container) return;
 
-    function loop(now) {
-      animRef.current = requestAnimationFrame(loop);
-      const delta = Math.min((now - (lastTimeRef.current || now)) / 16.67, 2.5);
-      lastTimeRef.current = now;
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.setClearColor(0x001122);
+    container.appendChild(renderer.domElement);
+    renderer.domElement.className = "fd-canvas";
 
-      const ph = phaseRef.current;
-      if (ph === "running") {
-        scrollRef.current += speedRef.current * delta;
-      }
+    // Scene
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x001122, 18, 55);
 
-      drawEnvironment(ctx, scrollRef.current, now);
+    // Camera — positioned behind player, looking forward down the hall
+    const camera = new THREE.PerspectiveCamera(65, container.clientWidth / container.clientHeight, 0.1, 100);
+    camera.position.set(0, 3.8, 7.5);
+    camera.lookAt(0, 2.0, -15);
+
+    // Lighting
+    const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+    scene.add(ambient);
+
+    // Ceiling lights (point lights simulating fluorescent)
+    const lightPositions = [-8, -16, -24, -32, -40];
+    lightPositions.forEach(z => {
+      const pl = new THREE.PointLight(0xffffee, 1.4, 18);
+      pl.position.set(0, HALL_HEIGHT - 0.3, z);
+      pl.castShadow = false;
+      scene.add(pl);
+    });
+
+    // Directional light from front for depth
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.4);
+    dirLight.position.set(0, 8, 10);
+    scene.add(dirLight);
+
+    // Build hallway
+    const hallway = buildHallway(scene);
+
+    // Build player
+    const player = buildPlayer();
+    player.position.set(LANE_POSITIONS[1], 0, 4.5);
+    player.rotation.y = Math.PI; // face away from camera (back to us)
+    scene.add(player);
+
+    // Item pools
+    const itemPool = [];  // active 3D items in scene
+
+    // Resize handler
+    function onResize() {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
     }
+    onResize();
+    window.addEventListener("resize", onResize);
 
-    animRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(animRef.current);
+    // Store everything
+    threeRef.current = {
+      renderer, scene, camera,
+      player, hallway, itemPool,
+      cameraTargetX: 0,
+      cameraLean: 0,
+    };
+
+    // Init game state
+    gameStateRef.current = {
+      speed: START_SPEED,
+      hallZ: 0,      // how far we've scrolled (we move world toward +z)
+      spawnObs: 0,
+      spawnCoin: 0,
+      spawnCard: 0,
+      playerLane: 1,
+      targetLane: 1,
+      playerX: LANE_POSITIONS[1],
+      jumping: false,
+      sliding: false,
+      jumpVel: 0,
+      playerY: 0,
+      runPhase: 0,
+      shakeDur: 0,
+      lastFrame: performance.now(),
+    };
+
+    return () => {
+      window.removeEventListener("resize", onResize);
+      cancelAnimationFrame(animFrameRef.current);
+      renderer.dispose();
+      if (container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
+      }
+    };
   }, []);
 
-  // ── Game tick (items + collisions) ───────────────────────────────────────
+  // ── Animation loop ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (phase !== "running") return;
+    function animate(now) {
+      animFrameRef.current = requestAnimationFrame(animate);
+      const three = threeRef.current;
+      const gs    = gameStateRef.current;
+      if (!three || !gs) return;
 
-    let tickAnim;
-    let lastT = performance.now();
+      const { renderer, scene, camera, player, hallway, itemPool } = three;
+      const delta = Math.min((now - gs.lastFrame) / 16.67, 2.5);
+      gs.lastFrame = now;
 
-    function tick(now) {
-      tickAnim = requestAnimationFrame(tick);
-      const delta = Math.min((now - lastT) / 16.67, 2.5);
-      lastT = now;
+      const isRunning = phaseRef.current === "running";
 
-      const spd = speedRef.current;
+      if (isRunning) {
+        // Speed up
+        gs.speed = Math.min(MAX_SPEED, gs.speed + 0.00015 * delta);
+        speedRef.current = gs.speed;
 
-      // Timers
-      spawnObsRef.current  += delta;
-      spawnCoinRef.current += delta;
-      spawnCardRef.current += delta;
+        // Scroll world
+        gs.hallZ += gs.speed * delta * 10;
 
-      // Increase score & distance
-      const dScore = Math.floor(spd * delta);
-      scoreRef.current  += dScore;
-      distRef.current   += spd * delta;
-      setScore(s => s + dScore);
-      setDistance(d => d + spd * delta);
-      setSpeed(s => Math.min(MAX_SPEED, s + 0.002 * delta));
-      speedRef.current = Math.min(MAX_SPEED, speedRef.current + 0.002 * delta);
+        // Score + distance
+        const ds = Math.floor(gs.speed * delta * 8);
+        scoreRef.current += ds;
+        distRef.current  += gs.speed * delta * 10;
+        setScore(s => s + ds);
+        setDistance(distRef.current);
 
-      setItems(prev => {
-        let next = prev.map(it => ({ ...it, y: it.y + spd * delta }));
+        // Smooth lane change
+        const targetX = LANE_POSITIONS[gs.targetLane];
+        gs.playerX += (targetX - gs.playerX) * 0.18 * delta;
+        player.position.x = gs.playerX;
 
-        // Spawn obstacles
-        const obsThresh = Math.max(38, 88 - spd * 4);
-        if (spawnObsRef.current > obsThresh) {
-          spawnObsRef.current = 0;
-          next.push(mkObstacle());
+        // Camera lean into lane change
+        three.cameraLean += ((gs.playerX * 0.18) - three.cameraLean) * 0.1 * delta;
+        camera.position.x = three.cameraLean;
+
+        // Jump physics
+        if (gs.jumping) {
+          gs.jumpVel -= 0.025 * delta;
+          gs.playerY += gs.jumpVel * delta;
+          if (gs.playerY <= 0) {
+            gs.playerY = 0;
+            gs.jumping = false;
+            gs.jumpVel = 0;
+          }
+        }
+        player.position.y = gs.playerY;
+
+        // Slide: scale player vertically
+        if (gs.sliding) {
+          player.scale.y += (0.52 - player.scale.y) * 0.22 * delta;
+        } else {
+          player.scale.y += (1.0 - player.scale.y) * 0.18 * delta;
         }
 
-        // Spawn coins
-        if (spawnCoinRef.current > 16) {
-          spawnCoinRef.current = 0;
-          const cl = rndLane();
-          next.push(mkCoin(cl, 0));
-          if (Math.random() > 0.4) next.push(mkCoin(cl, -55));
-          if (Math.random() > 0.65) next.push(mkCoin(cl, -110));
+        // Run animation
+        gs.runPhase += gs.speed * delta * 6;
+        const pu = player.userData;
+        if (!gs.jumping && !gs.sliding) {
+          pu.legL.rotation.x =  Math.sin(gs.runPhase) * 0.55;
+          pu.legR.rotation.x = -Math.sin(gs.runPhase) * 0.55;
+          pu.armL.rotation.x = -Math.sin(gs.runPhase) * 0.45;
+          pu.armR.rotation.x =  Math.sin(gs.runPhase) * 0.45;
+          pu.shoeL.rotation.x = Math.sin(gs.runPhase) * 0.3;
+          pu.shoeR.rotation.x = -Math.sin(gs.runPhase) * 0.3;
+        } else if (gs.jumping) {
+          pu.legL.rotation.x = -0.6;
+          pu.legR.rotation.x = -0.6;
+          pu.armL.rotation.x = -1.0;
+          pu.armR.rotation.x = -1.0;
         }
 
-        // Spawn flashcard
-        if (spawnCardRef.current > 240) {
-          spawnCardRef.current = 0;
-          next.push(mkCard());
+        // Screen shake on hit
+        if (gs.shakeDur > 0) {
+          gs.shakeDur -= delta;
+          camera.position.x += (Math.random() - 0.5) * 0.12;
+          camera.position.y = 3.8 + (Math.random() - 0.5) * 0.08;
+        } else {
+          camera.position.y += (3.8 - camera.position.y) * 0.1;
         }
 
-        const keep = [];
-        for (const it of next) {
-          // Cull off-screen
-          if (it.y > GAME_H + 80) continue;
+        // Recycle hallway tiles
+        recycleHallway(hallway, gs.hallZ);
 
-          // Collision check — items hit player when near player's feet
-          const playerY = PLAYER_BASE_Y - jumpRef.current;
-          const inLane = it.lane === laneRef.current;
-          const itemFeet = it.y + it.h / 2;
-          const playerFeet = playerY;
-          const hitZone = inLane && itemFeet > playerFeet - 55 && itemFeet < playerFeet + 30;
+        // Spawn items
+        gs.spawnObs  += delta;
+        gs.spawnCoin += delta;
+        gs.spawnCard += delta;
 
-          if (hitZone) {
-            if (it.kind === "coin") {
+        const obsThresh = Math.max(28, 72 - gs.speed * 80);
+        if (gs.spawnObs > obsThresh) {
+          gs.spawnObs = 0;
+          spawnObstacle(scene, itemPool, gs.hallZ);
+        }
+        if (gs.spawnCoin > 12) {
+          gs.spawnCoin = 0;
+          spawnCoins(scene, itemPool, gs.hallZ);
+        }
+        if (gs.spawnCard > 210) {
+          gs.spawnCard = 0;
+          spawnCard(scene, itemPool, gs.hallZ);
+        }
+
+        // Animate items + collision
+        const playerWorldZ = player.position.z;
+        const playerWorldX = player.position.x;
+        const playerTop    = gs.playerY + 2.3 * player.scale.y;
+        const COLL_X = 1.4;
+        const COLL_Z_NEAR = 0.8;
+        const COLL_Z_FAR  = 2.5;
+
+        const toRemove = [];
+        for (const item of itemPool) {
+          item.mesh.position.z += gs.speed * delta * 10;
+
+          // Animate
+          if (item.kind === "coin") {
+            item.mesh.rotation.y += (item.mesh.userData.spinSpeed || 2) * delta * 0.08;
+            item.mesh.position.y = item.baseY + Math.sin(now * 0.002 + item.mesh.position.x) * 0.15;
+          }
+          if (item.kind === "card") {
+            const fp = item.mesh.userData.floatPhase || 0;
+            item.mesh.position.y = item.baseY + Math.sin(now * 0.0015 + fp) * 0.2;
+            item.mesh.rotation.y = Math.sin(now * 0.001 + fp) * 0.3;
+          }
+
+          // Cull far behind
+          if (item.mesh.position.z > playerWorldZ + 6) {
+            toRemove.push(item);
+            continue;
+          }
+
+          // Collision check
+          const dz = Math.abs(item.mesh.position.z - playerWorldZ);
+          const dx = Math.abs(item.mesh.position.x - playerWorldX);
+
+          if (dz < COLL_Z_FAR && dz > COLL_Z_NEAR - 0.5 && dx < COLL_X) {
+            if (item.kind === "coin") {
               coinsRef.current += 1;
               scoreRef.current += 20;
               setCoins(c => c + 1);
               setScore(s => s + 20);
-              continue; // remove coin
-            }
-
-            if (it.kind === "card") {
-              // Pause for question
-              setActiveQuestion(it.question);
-              setPhase("question");
-              phaseRef.current = "question";
+              toRemove.push(item);
               continue;
             }
-
-            if (it.kind === "obstacle") {
-              // Can we dodge?
-              if (it.subtype === "cone" && jumpRef.current > 50) { keep.push(it); continue; }
-              if (it.subtype === "locker" && slidingRef.current) { keep.push(it); continue; }
-
+            if (item.kind === "card") {
+              setActiveQuestion(item.question);
+              setPhase("question");
+              phaseRef.current = "question";
+              toRemove.push(item);
+              continue;
+            }
+            if (item.kind === "obstacle") {
+              // Dodge checks
+              if (item.subtype === "cone" && gs.playerY > 0.9) { continue; }
+              if (item.subtype === "locker" && gs.sliding) { continue; }
               // HIT
-              const newH = heartsRef.current - 1;
-              heartsRef.current = Math.max(0, newH);
-              setHearts(Math.max(0, newH));
-              setIsHit(true);
-              setShake(true);
-              setTimeout(() => setIsHit(false), 400);
-              setTimeout(() => setShake(false), 420);
-              setStreak(0);
+              const nh = Math.max(0, heartRef.current - 1);
+              heartRef.current = nh;
+              setHearts(nh);
               streakRef.current = 0;
-
-              if (newH <= 0) {
+              setStreak(0);
+              gs.shakeDur = 18;
+              if (nh <= 0) {
                 setPhase("gameover");
                 phaseRef.current = "gameover";
               }
-              continue; // remove the obstacle
+              toRemove.push(item);
             }
           }
-
-          keep.push(it);
         }
 
-        itemsRef.current = keep;
-        return keep;
-      });
+        for (const item of toRemove) {
+          scene.remove(item.mesh);
+          const idx = itemPool.indexOf(item);
+          if (idx !== -1) itemPool.splice(idx, 1);
+        }
+      } else {
+        // Still animate run cycle gently while idle/paused
+        gs.runPhase += 0.04 * delta;
+        const pu = player.userData;
+        pu.legL.rotation.x = Math.sin(gs.runPhase) * 0.15;
+        pu.legR.rotation.x = -Math.sin(gs.runPhase) * 0.15;
+      }
+
+      // Always render
+      renderer.render(scene, camera);
     }
 
-    tickAnim = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(tickAnim);
-  }, [phase]);
+    animFrameRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animFrameRef.current);
+  }, []); // single loop, reads phaseRef
 
-  // ── Controls ──────────────────────────────────────────────────────────────
-  const moveLeft  = useCallback(() => { if (phaseRef.current !== "running") return; setPlayerLane(l => Math.max(-1, l - 1)); laneRef.current = Math.max(-1, laneRef.current - 1); }, []);
-  const moveRight = useCallback(() => { if (phaseRef.current !== "running") return; setPlayerLane(l => Math.min(1, l + 1)); laneRef.current = Math.min(1, laneRef.current + 1); }, []);
+  // ── Hallway tile recycling ──────────────────────────────────────────────
+  function recycleHallway(hallway, hallZ) {
+    const farZ = -(TILE_COUNT * TILE_LENGTH);
+    // Move tiles that are behind camera far ahead
+    for (const tile of hallway.floorTiles) {
+      if (tile.position.z + hallZ > 12) {
+        tile.position.z -= TILE_COUNT * TILE_LENGTH;
+      }
+    }
+    for (const tile of hallway.ceilTiles) {
+      if (tile.position.z + hallZ > 12) {
+        tile.position.z -= TILE_COUNT * TILE_LENGTH;
+      }
+    }
+  }
+
+  function spawnObstacle(scene, pool, hallZ) {
+    const lane = rndLane();
+    const builders = [buildCone3D, buildLockerObstacle3D, buildBackpack3D];
+    const mesh = builders[Math.floor(Math.random() * 3)]();
+    mesh.position.set(LANE_POSITIONS[lane], 0, -45 + hallZ % 8);
+    scene.add(mesh);
+    pool.push({ mesh, kind: mesh.userData.kind, subtype: mesh.userData.subtype, baseY: 0, lane });
+  }
+
+  function spawnCoins(scene, pool, hallZ) {
+    const lane = rndLane();
+    const count = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      const mesh = buildCoin3D();
+      mesh.position.set(LANE_POSITIONS[lane], 1.2 + i * 0.1, -42 - i * 1.8 + hallZ % 8);
+      scene.add(mesh);
+      pool.push({ mesh, kind: "coin", baseY: 1.2, lane });
+    }
+  }
+
+  function spawnCard(scene, pool, hallZ) {
+    const lane = rndLane();
+    const mesh = buildFlashcard3D();
+    mesh.position.set(LANE_POSITIONS[lane], 1.6, -42 + hallZ % 8);
+    scene.add(mesh);
+    pool.push({ mesh, kind: "card", question: mesh.userData.question, baseY: 1.6, lane });
+  }
+
+  // ── Game start/reset ────────────────────────────────────────────────────
+  function startGame() {
+    const three = threeRef.current;
+    const gs = gameStateRef.current;
+    if (!three || !gs) return;
+
+    // Clear items
+    for (const item of three.itemPool) {
+      three.scene.remove(item.mesh);
+    }
+    three.itemPool.length = 0;
+
+    // Reset state
+    gs.speed = START_SPEED;
+    gs.hallZ = 0;
+    gs.spawnObs = 0;
+    gs.spawnCoin = 0;
+    gs.spawnCard = 0;
+    gs.playerLane = 1;
+    gs.targetLane = 1;
+    gs.playerX = LANE_POSITIONS[1];
+    gs.jumping = false;
+    gs.sliding = false;
+    gs.jumpVel = 0;
+    gs.playerY = 0;
+    gs.runPhase = 0;
+    gs.shakeDur = 0;
+    three.player.position.set(LANE_POSITIONS[1], 0, 4.5);
+    three.player.scale.set(1, 1, 1);
+    three.cameraLean = 0;
+    three.camera.position.set(0, 3.8, 7.5);
+
+    heartRef.current = START_HEARTS;
+    scoreRef.current = 0;
+    streakRef.current = 0;
+    coinsRef.current = 0;
+    distRef.current = 0;
+    speedRef.current = START_SPEED;
+
+    setHearts(START_HEARTS);
+    setScore(0);
+    setDistance(0);
+    setCoins(0);
+    setStreak(0);
+    setActiveQuestion(null);
+    setAnswerStatus(null);
+    setComboText(null);
+    setPhase("running");
+    phaseRef.current = "running";
+    gs.lastFrame = performance.now();
+  }
+
+  // ── Controls ────────────────────────────────────────────────────────────
+  const moveLeft = useCallback(() => {
+    const gs = gameStateRef.current;
+    if (!gs || phaseRef.current !== "running") return;
+    gs.targetLane = Math.max(0, gs.targetLane - 1);
+    gs.playerLane = gs.targetLane;
+  }, []);
+
+  const moveRight = useCallback(() => {
+    const gs = gameStateRef.current;
+    if (!gs || phaseRef.current !== "running") return;
+    gs.targetLane = Math.min(2, gs.targetLane + 1);
+    gs.playerLane = gs.targetLane;
+  }, []);
 
   const doJump = useCallback(() => {
-    if (phaseRef.current !== "running" || jumpingRef.current || slidingRef.current) return;
-    jumpingRef.current = true;
-    setIsJumping(true);
-    let start = null;
-    const dur = 640;
-    const maxH = 130;
-    function frame(ts) {
-      if (!start) start = ts;
-      const p = Math.min((ts - start) / dur, 1);
-      const h = Math.sin(p * Math.PI) * maxH;
-      jumpRef.current = h;
-      setJumpOffset(h);
-      if (p < 1) requestAnimationFrame(frame);
-      else { jumpRef.current = 0; setJumpOffset(0); jumpingRef.current = false; setIsJumping(false); }
-    }
-    requestAnimationFrame(frame);
+    const gs = gameStateRef.current;
+    if (!gs || phaseRef.current !== "running" || gs.jumping || gs.sliding) return;
+    gs.jumping = true;
+    gs.jumpVel = 0.38;
   }, []);
 
   const doSlide = useCallback(() => {
-    if (phaseRef.current !== "running" || slidingRef.current || jumpingRef.current) return;
-    slidingRef.current = true;
-    setIsSliding(true);
-    setTimeout(() => { slidingRef.current = false; setIsSliding(false); }, 540);
+    const gs = gameStateRef.current;
+    if (!gs || phaseRef.current !== "running" || gs.sliding || gs.jumping) return;
+    gs.sliding = true;
+    setTimeout(() => { if (gs) gs.sliding = false; }, 600);
+  }, []);
+
+  const togglePause = useCallback(() => {
+    if (phaseRef.current === "running") {
+      setPhase("paused");
+      phaseRef.current = "paused";
+    } else if (phaseRef.current === "paused") {
+      setPhase("running");
+      phaseRef.current = "running";
+      if (gameStateRef.current) gameStateRef.current.lastFrame = performance.now();
+    }
   }, []);
 
   // Keyboard
@@ -569,340 +867,191 @@ export default function FlashcardDash({ studySet }) {
       if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") moveRight();
       if (e.key === "ArrowUp"    || e.key === " ") { e.preventDefault(); doJump(); }
       if (e.key === "ArrowDown"  || e.key.toLowerCase() === "s") doSlide();
-      if (e.key.toLowerCase() === "p") {
-        setPhase(p => {
-          const next = p === "running" ? "paused" : p === "paused" ? "running" : p;
-          phaseRef.current = next;
-          return next;
-        });
-      }
+      if (e.key.toLowerCase() === "p") togglePause();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [moveLeft, moveRight, doJump, doSlide]);
+  }, [moveLeft, moveRight, doJump, doSlide, togglePause]);
 
-  // ── Game start / reset ────────────────────────────────────────────────────
-  function startGame() {
-    nextId = 1;
-    scrollRef.current = 0;
-    spawnObsRef.current = 0;
-    spawnCoinRef.current = 0;
-    spawnCardRef.current = 0;
-    laneRef.current = 0;
-    jumpRef.current = 0;
-    slidingRef.current = false;
-    jumpingRef.current = false;
-    speedRef.current = START_SPEED;
-    heartsRef.current = START_HEARTS;
-    streakRef.current = 0;
-    scoreRef.current = 0;
-    coinsRef.current = 0;
-    distRef.current = 0;
-    itemsRef.current = [];
-
-    setPlayerLane(0);
-    setJumpOffset(0);
-    setIsJumping(false);
-    setIsSliding(false);
-    setIsHit(false);
-    setItems([]);
-    setSpeed(START_SPEED);
-    setDistance(0);
-    setCoins(0);
-    setHearts(START_HEARTS);
-    setStreak(0);
-    setScore(0);
-    setActiveQuestion(null);
-    setAnswerStatus(null);
-    setComboText(null);
-    setShake(false);
-    setPhase("running");
-    phaseRef.current = "running";
-    lastTimeRef.current = performance.now();
-  }
-
-  // ── Question answering ────────────────────────────────────────────────────
+  // ── Question UI ──────────────────────────────────────────────────────────
   function answerQuestion(idx) {
     if (!activeQuestion || answerStatus) return;
     const correct = idx === activeQuestion.correct;
     if (correct) {
-      const newStreak = streakRef.current + 1;
-      const bonus = 150 + newStreak * 30;
-      streakRef.current = newStreak;
+      const ns = streakRef.current + 1;
+      const bonus = 150 + ns * 30;
+      streakRef.current = ns;
       scoreRef.current += bonus;
-      coinsRef.current += 8 + Math.min(newStreak, 10);
-      setStreak(newStreak);
-      setBestStreak(b => Math.max(b, newStreak));
+      coinsRef.current += 8 + Math.min(ns, 10);
+      setStreak(ns);
+      setBestStreak(b => Math.max(b, ns));
       setScore(s => s + bonus);
-      setCoins(c => c + 8 + Math.min(newStreak, 10));
+      setCoins(c => c + 8 + Math.min(ns, 10));
       setAnswerStatus("correct");
-      if (newStreak >= 3) setComboText(`${newStreak}× COMBO! 🔥`);
+      if (ns >= 3) { setComboText(`${ns}× COMBO! 🔥`); setTimeout(() => setComboText(null), 1600); }
     } else {
       streakRef.current = 0;
-      heartsRef.current = Math.max(0, heartsRef.current - 1);
+      const nh = Math.max(0, heartRef.current - 1);
+      heartRef.current = nh;
       setStreak(0);
-      setHearts(h => {
-        const nh = Math.max(0, h - 1);
-        if (nh <= 0) {
-          setTimeout(() => {
-            setAnswerStatus(null);
-            setActiveQuestion(null);
-            setPhase("gameover");
-            phaseRef.current = "gameover";
-          }, 800);
-        }
-        return nh;
-      });
+      setHearts(nh);
       setAnswerStatus("wrong");
+      if (nh <= 0) {
+        setTimeout(() => {
+          setAnswerStatus(null);
+          setActiveQuestion(null);
+          setPhase("gameover");
+          phaseRef.current = "gameover";
+        }, 800);
+      }
     }
   }
 
   function closeQuestion() {
     setActiveQuestion(null);
     setAnswerStatus(null);
-    setComboText(null);
     setPhase("running");
     phaseRef.current = "running";
-    lastTimeRef.current = performance.now();
+    if (gameStateRef.current) gameStateRef.current.lastFrame = performance.now();
   }
 
   function continueQuestions() {
     setAnswerStatus(null);
-    setActiveQuestion(rndQuestion());
+    setActiveQuestion(rndQ());
   }
 
-  // ── Computed ──────────────────────────────────────────────────────────────
-  const playerX = laneX(playerLane);
-  const playerY = PLAYER_BASE_Y - jumpOffset;
-  const distM = Math.floor(distance / 12);
-  const heartsDisplay = "❤️".repeat(Math.max(0, hearts)) || "—";
-
-  // Scale canvas coords to CSS %
-  const toCSSX = (cx) => `${(cx / GAME_W) * 100}%`;
-  const toCSSY = (cy) => `${(cy / GAME_H) * 100}%`;
+  const distM = Math.floor(distance / 10);
 
   return (
-    <div className="flashdash-page">
-      <div className="flashdash-header">
-        <div>
-          <p className="flashdash-kicker">Gradeify Games</p>
+    <div className="fd-page">
+      {/* Header */}
+      <div className="fd-header">
+        <div className="fd-title-block">
+          <p className="fd-eyebrow">Gradeify Games</p>
           <h1>Flashcard Dash</h1>
-          <p>Sprint the neon track, dodge obstacles, grab coins, answer flashcards to keep your streak alive.</p>
+          <p className="fd-subtitle">Sprint the school hall — dodge obstacles, grab coins, answer flashcards!</p>
         </div>
-        <div className="flashdash-header-actions">
-          <button className="flashdash-primary-btn" onClick={startGame}>
+        <div className="fd-header-btns">
+          <button className="fd-btn-primary" onClick={startGame}>
             {phase === "gameover" || phase === "idle" ? "Start Run" : "Restart"}
           </button>
-          <button className="flashdash-secondary-btn" onClick={() => {
-            if (phase === "running") { setPhase("paused"); phaseRef.current = "paused"; }
-            else if (phase === "paused") { setPhase("running"); phaseRef.current = "running"; lastTimeRef.current = performance.now(); }
-          }} disabled={phase === "idle" || phase === "gameover" || phase === "question"}>
+          <button
+            className="fd-btn-secondary"
+            onClick={togglePause}
+            disabled={phase === "idle" || phase === "gameover" || phase === "question"}
+          >
             {phase === "running" ? "Pause" : "Resume"}
           </button>
         </div>
       </div>
 
-      <div className="flashdash-shell">
-        {/* HUD stats */}
-        <div className="flashdash-stats">
-          <div><span>Score</span><strong>{score.toLocaleString()}</strong></div>
-          <div><span>Distance</span><strong>{distM}m</strong></div>
-          <div><span>Coins</span><strong>{coins}</strong></div>
-          <div><span>Hearts</span><strong style={{ fontSize: "1rem" }}>{heartsDisplay}</strong></div>
-          <div><span>Streak</span><strong>{streak}🔥</strong></div>
-          <div><span>Best</span><strong>{bestStreak}</strong></div>
-        </div>
+      {/* Stats HUD */}
+      <div className="fd-stats">
+        <div className="fd-stat"><span className="fd-stat-label">Score</span><strong className="fd-stat-value">{score.toLocaleString()}</strong></div>
+        <div className="fd-stat"><span className="fd-stat-label">Distance</span><strong className="fd-stat-value">{distM}m</strong></div>
+        <div className="fd-stat"><span className="fd-stat-label">Coins</span><strong className="fd-stat-value">{coins}</strong></div>
+        <div className="fd-stat"><span className="fd-stat-label">Hearts</span><strong className="fd-stat-value" style={{ fontSize: "1rem" }}>{"❤️".repeat(Math.max(0, hearts)) || "—"}</strong></div>
+        <div className="fd-stat"><span className="fd-stat-label">Streak</span><strong className="fd-stat-value">{streak}🔥</strong></div>
+        <div className="fd-stat"><span className="fd-stat-label">Best</span><strong className="fd-stat-value">{bestStreak}</strong></div>
+      </div>
 
-        {/* Game viewport */}
-        <div className={`flashdash-game${shake ? " shake" : ""}`} ref={gameRef}>
-          {/* Canvas — draws track / sky / environment */}
-          <canvas
-            ref={canvasRef}
-            className="flashdash-canvas"
-            width={GAME_W}
-            height={GAME_H}
-          />
+      {/* 3D Game Canvas */}
+      <div className="fd-game-wrap" ref={mountRef}>
+        {/* Combo notice */}
+        {comboText && <div className="fd-combo" key={comboText}>{comboText}</div>}
 
-          {/* Overlay layer — player + items as DOM elements */}
-          <div className="flashdash-overlay-layer">
-            {/* Items */}
-            {items.map(it => {
-              const ix = toCSSX(laneX(it.lane));
-              const iy = toCSSY(it.y);
-
-              if (it.kind === "coin") return (
-                <div key={it.id} className="dash-item dash-coin" style={{ left: ix, top: iy }}>$</div>
-              );
-
-              if (it.kind === "card") return (
-                <div key={it.id} className="dash-item dash-flashcard" style={{ left: ix, top: iy }}>
-                  <span className="card-q">?</span>
-                  <span className="card-label">Flashcard</span>
-                </div>
-              );
-
-              // Obstacles
-              return (
-                <div key={it.id} className={`dash-item dash-obstacle ${it.subtype}`} style={{ left: ix, top: iy }}>
-                  {it.subtype === "cone" && (
-                    <>
-                      <div className="cone-body" />
-                      <div className="cone-base" />
-                    </>
-                  )}
-                  {it.subtype === "locker" && (
-                    <>
-                      <div className="locker-door" />
-                      <div className="locker-handle" />
-                      <div className="locker-vent one" />
-                      <div className="locker-vent two" />
-                    </>
-                  )}
-                  {it.subtype === "backpack" && (
-                    <>
-                      <div className="bag-strap left" />
-                      <div className="bag-strap right" />
-                      <div className="bag-zipper" />
-                      <div className="bag-pocket" />
-                    </>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* Combo text */}
-            {comboText && (
-              <div key={comboText + streak} className="combo-notice">{comboText}</div>
-            )}
-
-            {/* Player */}
-            {(phase === "running" || phase === "paused" || phase === "question") && (
-              <div
-                className={`flashdash-player${isJumping ? " jumping" : ""}${isSliding ? " sliding" : ""}${isHit ? " hit" : ""}`}
-                style={{ left: toCSSX(playerX), top: toCSSY(playerY) }}
-              >
-                <div className="pl-shadow" />
-                <div className="pl-shoe left" />
-                <div className="pl-shoe right" />
-                <div className="pl-leg left" />
-                <div className="pl-leg right" />
-                <div className="pl-torso" />
-                <div className="pl-arm left" />
-                <div className="pl-arm right" />
-                <div className="pl-head" />
-                <div className="pl-pack" />
+        {/* Start screen */}
+        {phase === "idle" && (
+          <div className="fd-overlay">
+            <div className="fd-card">
+              <p className="fd-eyebrow">Ready?</p>
+              <h2>Flashcard Dash</h2>
+              <p>Run through the school hallway. Jump over cones, slide under lockers, grab flashcards for bonus points.</p>
+              <div className="fd-key-grid">
+                <div className="fd-key-row"><kbd>← / A</kbd><span>Move left</span></div>
+                <div className="fd-key-row"><kbd>→ / D</kbd><span>Move right</span></div>
+                <div className="fd-key-row"><kbd>↑ / Space</kbd><span>Jump (clears cones)</span></div>
+                <div className="fd-key-row"><kbd>↓ / S</kbd><span>Slide (ducks lockers)</span></div>
               </div>
-            )}
+              <button className="fd-btn-primary" onClick={startGame}>Start Flashcard Dash</button>
+            </div>
           </div>
+        )}
 
-          {/* Speed lines (CSS) when running fast */}
-          {phase === "running" && (
-            <div className={`flashdash-speed-lines${speed > 7 ? " active" : ""}`} />
-          )}
+        {/* Paused */}
+        {phase === "paused" && (
+          <div className="fd-overlay">
+            <div className="fd-card">
+              <p className="fd-eyebrow">Paused</p>
+              <h2>Game Paused</h2>
+              <p>Press <strong>P</strong> or Resume to keep running.</p>
+              <button className="fd-btn-primary" onClick={togglePause}>Resume</button>
+            </div>
+          </div>
+        )}
 
-          {/* ── Overlays ── */}
+        {/* Game over */}
+        {phase === "gameover" && (
+          <div className="fd-overlay">
+            <div className="fd-card">
+              <p className="fd-eyebrow">Run Over</p>
+              <h2>Game Over</h2>
+              <div className="fd-final-grid">
+                <div><span>Score</span><strong>{score.toLocaleString()}</strong></div>
+                <div><span>Distance</span><strong>{distM}m</strong></div>
+                <div><span>Coins</span><strong>{coins}</strong></div>
+                <div><span>Best Streak</span><strong>{bestStreak}🔥</strong></div>
+              </div>
+              <button className="fd-btn-primary" onClick={startGame}>Run Again</button>
+            </div>
+          </div>
+        )}
 
-          {/* Idle start screen */}
-          {phase === "idle" && (
-            <div className="flashdash-overlay">
-              <div className="flashdash-start-card">
-                <p className="flashdash-kicker">Ready to dash?</p>
-                <h2>Flashcard Dash</h2>
-                <p>Dodge cones by <strong style={{color:"#ffe600"}}>jumping</strong>, slide under <strong style={{color:"#ff2d9b"}}>lockers</strong>, grab <strong style={{color:"#00f5ff"}}>flashcards</strong> for bonus score.</p>
-                <div className="key-hints">
-                  <div className="key-hint"><kbd>← →</kbd><span>Change lane</span></div>
-                  <div className="key-hint"><kbd>↑ / Space</kbd><span>Jump</span></div>
-                  <div className="key-hint"><kbd>↓ / S</kbd><span>Slide</span></div>
-                  <div className="key-hint"><kbd>P</kbd><span>Pause</span></div>
+        {/* Question modal */}
+        {phase === "question" && activeQuestion && (
+          <div className="fd-question-backdrop">
+            <div className="fd-question-modal">
+              <button className="fd-q-close" onClick={closeQuestion}>×</button>
+              <p className="fd-eyebrow">Flashcard Checkpoint</p>
+              <h2>{activeQuestion.q}</h2>
+              <div className="fd-options">
+                {activeQuestion.opts.map((opt, idx) => {
+                  let cls = "fd-option";
+                  if (answerStatus) {
+                    if (idx === activeQuestion.correct) cls += " correct";
+                    else if (answerStatus === "wrong") cls += " muted";
+                  }
+                  return (
+                    <button key={opt} className={cls} onClick={() => answerQuestion(idx)} disabled={!!answerStatus}>
+                      <span className="opt-letter">{String.fromCharCode(65 + idx)}</span>
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
+              {answerStatus === "correct" && (
+                <div className="fd-answer-fb correct">Correct! Streak: {streak} 🔥  +{150 + streak * 30} pts</div>
+              )}
+              {answerStatus === "wrong" && (
+                <div className="fd-answer-fb wrong">
+                  Nope! Answer: <strong>{activeQuestion.opts[activeQuestion.correct]}</strong>
                 </div>
-                <button onClick={startGame}>Start Flashcard Dash</button>
+              )}
+              <div className="fd-q-actions">
+                <button className="fd-btn-ghost" onClick={closeQuestion}>Back to Run</button>
+                <button className="fd-btn-primary" onClick={continueQuestions} disabled={!answerStatus}>Next Question</button>
               </div>
             </div>
-          )}
+          </div>
+        )}
+      </div>
 
-          {/* Paused */}
-          {phase === "paused" && (
-            <div className="flashdash-overlay">
-              <div className="flashdash-start-card">
-                <p className="flashdash-kicker">Paused</p>
-                <h2>Game Paused</h2>
-                <p>Press <strong style={{color:"#ffe600"}}>P</strong> or hit Resume to keep running.</p>
-                <button onClick={() => { setPhase("running"); phaseRef.current = "running"; lastTimeRef.current = performance.now(); }}>Resume</button>
-              </div>
-            </div>
-          )}
-
-          {/* Game over */}
-          {phase === "gameover" && (
-            <div className="flashdash-overlay">
-              <div className="flashdash-start-card game-over">
-                <p className="flashdash-kicker">Run finished</p>
-                <h2>Game Over</h2>
-                <div className="flashdash-final-grid">
-                  <div><span>Score</span><strong>{score.toLocaleString()}</strong></div>
-                  <div><span>Distance</span><strong>{distM}m</strong></div>
-                  <div><span>Coins</span><strong>{coins}</strong></div>
-                  <div><span>Best Streak</span><strong>{bestStreak}🔥</strong></div>
-                </div>
-                <button onClick={startGame}>Run Again</button>
-              </div>
-            </div>
-          )}
-
-          {/* Question modal */}
-          {phase === "question" && activeQuestion && (
-            <div className="flashdash-question-backdrop">
-              <div className="flashdash-question-modal">
-                <button className="question-close" onClick={closeQuestion}>×</button>
-                <p className="flashdash-kicker">Flashcard Checkpoint</p>
-                <h2>{activeQuestion.q}</h2>
-                <div className="question-options">
-                  {activeQuestion.opts.map((opt, idx) => {
-                    let cls = "question-option";
-                    if (answerStatus) {
-                      if (idx === activeQuestion.correct) cls += " correct";
-                      else if (answerStatus === "wrong") cls += " muted";
-                    }
-                    return (
-                      <button key={opt} className={cls} onClick={() => answerQuestion(idx)} disabled={!!answerStatus}>
-                        <span>{String.fromCharCode(65 + idx)}</span>
-                        {opt}
-                      </button>
-                    );
-                  })}
-                </div>
-                {answerStatus === "correct" && (
-                  <div className="answer-feedback correct">Correct! Streak: {streak} 🔥 +{150 + streak * 30} points</div>
-                )}
-                {answerStatus === "wrong" && (
-                  <div className="answer-feedback wrong">
-                    Not quite. Correct answer: <strong>{activeQuestion.opts[activeQuestion.correct]}</strong>
-                  </div>
-                )}
-                <div className="question-actions">
-                  <button className="flashdash-secondary-btn" onClick={closeQuestion}>Back to Run</button>
-                  <button className="flashdash-primary-btn" onClick={continueQuestions} disabled={!answerStatus}>Next Question</button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* On-screen controls */}
-        <div className="flashdash-controls">
-          <button onClick={moveLeft}>← Left</button>
-          <button onClick={doJump}>↑ Jump</button>
-          <button onClick={doSlide}>↓ Slide</button>
-          <button onClick={moveRight}>Right →</button>
-        </div>
-
-        {/* Help strip */}
-        <div className="flashdash-help">
-          <div><strong>Move:</strong> Arrow keys / A D</div>
-          <div><strong>Jump:</strong> Up / Space — clears cones</div>
-          <div><strong>Slide:</strong> Down / S — ducks lockers</div>
-          <div><strong>Pause:</strong> P</div>
-        </div>
+      {/* On-screen controls */}
+      <div className="fd-controls">
+        <button onClick={moveLeft}>← Left</button>
+        <button onClick={doJump}>↑ Jump</button>
+        <button onClick={doSlide}>↓ Slide</button>
+        <button onClick={moveRight}>Right →</button>
       </div>
     </div>
   );
