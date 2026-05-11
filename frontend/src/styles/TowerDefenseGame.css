@@ -307,3 +307,37 @@
     grid-template-columns: 1fr;
   }
 }
+.choice-list button.correct {
+  border-color: #22c55e;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.choice-list button.wrong {
+  border-color: #ef4444;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.answer-feedback {
+  margin-top: 16px;
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.correct-box {
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #166534;
+}
+
+.wrong-box {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+}
+
+.answer-feedback p {
+  margin: 8px 0 14px;
+  line-height: 1.5;
+}
