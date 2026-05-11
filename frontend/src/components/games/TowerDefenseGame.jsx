@@ -22,8 +22,8 @@ const TOWER_TYPES = {
   basic: {
     name: "Cannon",
     icon: "💣",
-    cost: 115,
-    damage: 17,
+    cost: 100,
+    damage: 20,
     range: 112,
     fireRate: 680,
     description: "Balanced starter tower",
@@ -37,7 +37,7 @@ const TOWER_TYPES = {
   freeze: {
     name: "Frost",
     icon: "❄️",
-    cost: 155,
+    cost: 105,
     damage: 6,
     range: 105,
     fireRate: 920,
@@ -54,7 +54,7 @@ const TOWER_TYPES = {
   splash: {
     name: "Mortar",
     icon: "💥",
-    cost: 205,
+    cost: 175,
     damage: 13,
     range: 118,
     fireRate: 1120,
@@ -100,7 +100,7 @@ const TOWER_TYPES = {
   laser: {
     name: "Laser",
     icon: "🔮",
-    cost: 310,
+    cost: 300,
     damage: 64,
     range: 150,
     fireRate: 0,
@@ -153,8 +153,8 @@ const TOWER_TYPES = {
     explodeDelay: 720,
     explosionRadius: 60,
     chainDamage: 25,
-    superEvery: 10,
-    superRadius: 9999,
+    superEvery: 20,
+    superRadius: 300,
     superPull: 0.42,
     superDuration: 1150,
     description: "Every third hit chains explosions; every tenth shot groups enemies",
