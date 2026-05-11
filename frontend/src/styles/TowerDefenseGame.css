@@ -310,6 +310,9 @@
 .tower-sniper { background: linear-gradient(145deg, #4b5563, #1f2937); }
 .tower-rapid  { background: linear-gradient(145deg, #d97706, #92400e); }
 .tower-laser  { background: linear-gradient(145deg, #7c3aed, #4c1d95); }
+.tower-support{ background: linear-gradient(145deg, #22c55e, #166534); }
+.tower-nuke   { background: linear-gradient(145deg, #facc15, #b45309); }
+.tower-chain  { background: linear-gradient(145deg, #f97316, #991b1b); }
 
 .floating-drag-tower {
   position: fixed;

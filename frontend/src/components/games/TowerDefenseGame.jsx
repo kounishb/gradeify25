@@ -112,6 +112,55 @@ const TOWER_TYPES = {
       "Stronger chain beam.",
     ],
   },
+  support: {
+    name: "Beacon",
+    icon: "📡",
+    cost: 230,
+    damage: 0,
+    range: 132,
+    fireRate: 0,
+    isSupport: true,
+    buffDamage: 1.16,
+    buffRange: 1.08,
+    buffFireRate: 0.9,
+    description: "Buffs nearby towers",
+    upgradeText: [
+      "Nearby towers get damage, range, and attack speed buffs.",
+      "Stronger buff aura.",
+      "Wider command aura.",
+      "Max aura: major range, damage, and speed boosts.",
+    ],
+  },
+  nuke: {
+    name: "Nuke",
+    icon: "☢️",
+    cost: 340,
+    damage: 235,
+    range: 9999,
+    fireRate: 0,
+    isConsumable: true,
+    description: "One-time global blast",
+    upgradeText: ["Drop once to damage every enemy on the map."],
+  },
+  chain: {
+    name: "Chainshot",
+    icon: "🧨",
+    cost: 275,
+    damage: 28,
+    range: 128,
+    fireRate: 1220,
+    knockback: 18,
+    explodeDelay: 720,
+    explosionRadius: 54,
+    chainDamage: 25,
+    description: "Every third hit chains explosions",
+    upgradeText: [
+      "Slow shots. Every third shot marks enemies to explode.",
+      "Bigger chain blast and stronger knockback.",
+      "Faster reload and larger chain radius.",
+      "Huge chain reactions through packed enemies.",
+    ],
+  },
 };
 
 function distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
@@ -177,6 +226,8 @@ function getTowerStats(tower) {
     slowDuration: base.slowDuration || 0,
     slowAmount: base.slowAmount || 1,
     multiShot: 1, burnDps: 0, burnDuration: 0, chain: 0, tankPierce: false, execute: false,
+    buffDamage: base.buffDamage || 1, buffRange: base.buffRange || 1, buffFireRate: base.buffFireRate || 1,
+    knockback: base.knockback || 0, explodeDelay: base.explodeDelay || 0, explosionRadius: base.explosionRadius || 0, chainDamage: base.chainDamage || 0,
   };
   if (tower.type === "basic") { if (level >= 3) stats.multiShot = 2; if (level >= 4) stats.tankPierce = true; }
   if (tower.type === "freeze") {
@@ -206,6 +257,23 @@ function getTowerStats(tower) {
     stats.damage = base.damage * (1 + (level - 1) * 0.32);
     stats.chain = level >= 3 ? level - 2 : 0;
     stats.fireRate = 0;
+  }
+  if (tower.type === "support") {
+    stats.range = base.range + (level - 1) * 24;
+    stats.damage = 0;
+    stats.fireRate = 0;
+    stats.buffDamage = base.buffDamage + (level - 1) * 0.07;
+    stats.buffRange = base.buffRange + (level - 1) * 0.035;
+    stats.buffFireRate = Math.max(0.72, base.buffFireRate - (level - 1) * 0.045);
+  }
+  if (tower.type === "chain") {
+    stats.range = base.range + (level - 1) * 13;
+    stats.damage = base.damage * (1 + (level - 1) * 0.34);
+    stats.fireRate = Math.max(820, base.fireRate - (level - 1) * 95);
+    stats.knockback = base.knockback + (level - 1) * 5;
+    stats.explodeDelay = Math.max(480, base.explodeDelay - (level - 1) * 55);
+    stats.explosionRadius = base.explosionRadius + (level - 1) * 12;
+    stats.chainDamage = base.chainDamage * (1 + (level - 1) * 0.3);
   }
   return stats;
 }
@@ -929,6 +997,143 @@ function drawLaserTower(ctx, tower) {
   ctx.restore();
 }
 
+
+function drawSupportTower(ctx, tower) {
+  const { x, y, level } = tower;
+  const lv = level || 1;
+  const time = performance.now();
+
+  const baseH = 28 + lv * 2;
+  const baseW = 34 + lv * 2;
+  drawTowerBase(ctx, x, y + 8, baseW, baseH, "#a5d6a7", "#43a047", "#1b5e20");
+  if (lv >= 3) drawTowerBase(ctx, x, y - 4, baseW - 8, 16, "#c8e6c9", "#66bb6a", "#2e7d32");
+
+  const deckY = y + 8 - baseH / 2;
+  drawBattlements(ctx, x, deckY, baseW, 7, 8, "#81c784", "#2e7d32");
+  drawWoodDeck(ctx, x, y + 4, baseW - 6, 10);
+
+  // Radio mast
+  ctx.strokeStyle = "#1b5e20";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x, y + 2);
+  ctx.lineTo(x, y - 28 - lv * 3);
+  ctx.stroke();
+
+  // Dish facing upward/right
+  ctx.save();
+  ctx.translate(x, y - 22 - lv * 3);
+  ctx.rotate(-0.65);
+  const dishG = ctx.createLinearGradient(-12, -8, 12, 8);
+  dishG.addColorStop(0, "#e8f5e9");
+  dishG.addColorStop(0.5, "#66bb6a");
+  dishG.addColorStop(1, "#1b5e20");
+  ctx.fillStyle = dishG;
+  ctx.strokeStyle = "#0f3d14";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 15 + lv * 1.5, 8 + lv, 0, Math.PI * 0.12, Math.PI * 1.88);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#fffde7";
+  ctx.shadowColor = "#d4ff7a";
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.arc(3, 0, 4 + lv * 0.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+
+  // Pulsing buff rings
+  for (let i = 0; i < 2; i++) {
+    const p = ((time * 0.001 + i * 0.5) % 1);
+    ctx.globalAlpha = 0.35 * (1 - p);
+    ctx.strokeStyle = "#d4ff7a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y - 18 - lv * 2, 10 + p * (24 + lv * 4), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  if (lv >= 4) {
+    ctx.fillStyle = "#f4b942";
+    ctx.strokeStyle = "#c8862a";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(x - baseW / 2, y + 8 - baseH / 2 + 8, baseW, 6, 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+function drawChainTower(ctx, tower) {
+  const { x, y, level, angle } = tower;
+  const lv = level || 1;
+
+  const baseH = 28 + lv * 2;
+  const baseW = 34 + lv * 2;
+  drawTowerBase(ctx, x, y + 8, baseW, baseH, "#ffcc80", "#ef6c00", "#9c3d00");
+  if (lv >= 2) drawTowerBase(ctx, x, y - 4, baseW - 8, 16, "#ffb74d", "#e65100", "#8a2f00");
+
+  const bY = y + 8 - baseH / 2;
+  drawBattlements(ctx, x, bY, baseW, 7, 8, "#ffa726", "#9c3d00");
+  if (lv >= 2) drawBattlements(ctx, x, bY - 16, baseW - 8, 6, 7, "#ffb74d", "#8a2f00");
+
+  // Volatile core
+  const coreR = 9 + lv * 1.4;
+  const cg = ctx.createRadialGradient(x - 2, y - 6, 2, x, y - 4, coreR);
+  cg.addColorStop(0, "#fff9c4");
+  cg.addColorStop(0.45, "#ff7043");
+  cg.addColorStop(1, "#b71c1c");
+  ctx.fillStyle = cg;
+  ctx.shadowColor = "#ff5722";
+  ctx.shadowBlur = 12 + lv * 2;
+  ctx.beginPath();
+  ctx.arc(x, y - 4, coreR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "#7f1d1d";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Launcher barrel
+  ctx.save();
+  ctx.translate(x, y - 4);
+  ctx.rotate(angle);
+  const barrelLen = 26 + lv * 5;
+  const bg = ctx.createLinearGradient(0, -5, 0, 5);
+  bg.addColorStop(0, "#ffecb3");
+  bg.addColorStop(0.45, "#f4511e");
+  bg.addColorStop(1, "#7f1d1d");
+  ctx.fillStyle = bg;
+  ctx.strokeStyle = "#5f1515";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(coreR - 2, -5, barrelLen, 10, 5);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#212121";
+  ctx.beginPath();
+  ctx.arc(coreR + barrelLen - 1, 0, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Fuse sparks
+  ctx.fillStyle = "#fff176";
+  ctx.shadowColor = "#ffeb3b";
+  ctx.shadowBlur = 8;
+  const sparks = lv >= 4 ? 5 : lv >= 3 ? 4 : 3;
+  for (let i = 0; i < sparks; i++) {
+    const a = (i / sparks) * Math.PI * 2 + performance.now() * 0.006;
+    ctx.beginPath();
+    ctx.arc(x + Math.cos(a) * (coreR + 8), y - 4 + Math.sin(a) * (coreR + 8), 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+}
+
 // ─── MAIN COMPONENT ─────────────────────────────────────────────────────────
 
 export default function TowerDefenseGame({ studySet, onExit }) {
@@ -1032,6 +1237,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     if (game.coins < TOWER_TYPES[type].cost) return false;
     if (point.x < 28 || point.x > CANVAS_WIDTH - 28) return false;
     if (point.y < 28 || point.y > CANVAS_HEIGHT - 28) return false;
+    if (TOWER_TYPES[type]?.isConsumable) return true;
     if (isTooCloseToPath(point)) return false;
     return !game.towers.some(t => distance(t, point) < 52);
   }
@@ -1040,10 +1246,18 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     const game = gameRef.current;
     if (!game || !canPlaceTower(point, type)) return false;
     const towerType = TOWER_TYPES[type];
+    if (towerType.isConsumable) {
+      game.coins -= towerType.cost;
+      detonateNuke(game, point);
+      setSelectedTowerId(null);
+      selectedTowerIdRef.current = null;
+      syncStateFromRef();
+      return true;
+    }
     const newTower = {
       id: `tower-${Date.now()}-${Math.random()}`,
       x: point.x, y: point.y, type, level: 1,
-      angle: -Math.PI / 2, lastShot: 0, lastPopup: 0,
+      angle: -Math.PI / 2, lastShot: 0, lastPopup: 0, shotCount: 0,
       spent: towerType.cost, kills: 0,
       targetPriority: "first",
     };
@@ -1204,6 +1418,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     }
     game.towers.forEach(tower => fireTower(game, tower, now, delta));
     updateBullets(game, now, delta);
+    updateChainExplosions(game, now);
     updateBeamsExplosionsAndPopups(game, delta);
     removeDefeatedEnemies(game);
     if (game.waveInProgress && game.enemiesSpawned >= game.enemiesToSpawn && game.enemies.length === 0) {
@@ -1249,8 +1464,36 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     return inRange;
   }
 
+  function getSupportBuffForTower(game, tower) {
+    if (!game || tower.type === "support" || tower.type === "nuke") return { damage: 1, range: 1, fireRate: 1 };
+    return game.towers.reduce((buff, supportTower) => {
+      if (supportTower.type !== "support" || supportTower.id === tower.id) return buff;
+      const supportStats = getTowerStats(supportTower);
+      if (distance(supportTower, tower) > supportStats.range) return buff;
+      return {
+        damage: Math.max(buff.damage, supportStats.buffDamage),
+        range: Math.max(buff.range, supportStats.buffRange),
+        fireRate: Math.min(buff.fireRate, supportStats.buffFireRate),
+      };
+    }, { damage: 1, range: 1, fireRate: 1 });
+  }
+
+  function applySupportBuffToStats(stats, buff) {
+    return {
+      ...stats,
+      damage: stats.damage * buff.damage,
+      range: stats.range * buff.range,
+      fireRate: stats.fireRate === 0 ? 0 : Math.max(70, stats.fireRate * buff.fireRate),
+    };
+  }
+
   function fireTower(game, tower, now, delta) {
-    const stats = getTowerStats(tower);
+    let stats = getTowerStats(tower);
+    if (tower.type === "support") {
+      tower.angle = (tower.angle || 0) + 0.012;
+      return;
+    }
+    stats = applySupportBuffToStats(stats, getSupportBuffForTower(game, tower));
     const enemiesInRange = getEnemiesInRange(game, tower, stats);
 
     // Always rotate barrel toward primary target every frame
@@ -1281,19 +1524,27 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     const targets = enemiesInRange.slice(0, stats.multiShot);
     targets.forEach((shotTarget, index) => {
       const isMortar = tower.type === "splash";
+      const nextShotCount = (tower.shotCount || 0) + 1 + index;
+      const isChainPowerShot = tower.type === "chain" && nextShotCount % 3 === 0;
       game.bullets.push({
         id: `bullet-${Date.now()}-${Math.random()}`,
         x: tower.x, y: tower.y, startX: tower.x, startY: tower.y,
         targetX: shotTarget.x, targetY: shotTarget.y, targetId: shotTarget.id,
-        speed: tower.type === "sniper" ? 18 : tower.type === "rapid" ? 11 : 8.8,
+        speed: tower.type === "sniper" ? 18 : tower.type === "rapid" ? 11 : tower.type === "chain" ? 9.6 : 8.8,
         damage: stats.damage, type: tower.type, towerId: tower.id,
         splashRadius: stats.splashRadius || 0, slowAmount: stats.slowAmount || 1,
         slowDuration: stats.slowDuration || 0, burnDps: stats.burnDps || 0,
         burnDuration: stats.burnDuration || 0, tankPierce: stats.tankPierce, execute: stats.execute,
+        specialChain: isChainPowerShot,
+        knockback: isChainPowerShot ? stats.knockback : 0,
+        explodeDelay: isChainPowerShot ? stats.explodeDelay : 0,
+        explosionRadius: isChainPowerShot ? stats.explosionRadius : 0,
+        chainDamage: isChainPowerShot ? stats.chainDamage : 0,
         mode: isMortar ? "arc" : "direct", startTime: now,
         duration: isMortar ? 680 : 0, arcHeight: isMortar ? 105 + tower.level * 16 : 0,
       });
     });
+    tower.shotCount = (tower.shotCount || 0) + targets.length;
     tower.lastShot = now;
   }
 
@@ -1318,6 +1569,10 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         else {
           const tower = game.towers.find(t => t.id === bullet.towerId);
           applyDamage(game, target, bullet.damage, tower, now, bullet);
+          if (bullet.specialChain) {
+            knockbackEnemy(target, bullet.knockback || 0);
+            markEnemyToExplode(game, target, tower, now, bullet, 0);
+          }
           if (bullet.slowDuration > 0) { target.slowUntil = now + bullet.slowDuration; target.slowAmount = bullet.slowAmount; }
           if (bullet.burnDuration > 0) { target.burnUntil = now + bullet.burnDuration; target.burnDps = bullet.burnDps; }
         }
@@ -1340,6 +1595,102 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         if (bullet.burnDuration > 0) { enemy.burnUntil = now + bullet.burnDuration; enemy.burnDps = bullet.burnDps; }
       }
     });
+  }
+
+  function knockbackEnemy(enemy, amount) {
+    if (!enemy || amount <= 0 || enemy.pathIndex >= PATH.length - 1) return;
+    const current = PATH[enemy.pathIndex];
+    const next = PATH[Math.min(enemy.pathIndex + 1, PATH.length - 1)];
+    const dx = next.x - current.x;
+    const dy = next.y - current.y;
+    const len = Math.max(1, Math.hypot(dx, dy));
+    enemy.x -= (dx / len) * amount;
+    enemy.y -= (dy / len) * amount;
+  }
+
+  function markEnemyToExplode(game, enemy, tower, now, source, depth = 0) {
+    if (!enemy || enemy.hp <= 0) return;
+    if (enemy.explodeAt && enemy.explodeAt > now && (enemy.explodeChainDepth || 0) <= depth) return;
+    enemy.explodeAt = now + (source.explodeDelay || 700);
+    enemy.explodeRadius = source.explosionRadius || 54;
+    enemy.explodeDamage = source.chainDamage || source.damage || 22;
+    enemy.explodeSourceTowerId = tower?.id || source.towerId || null;
+    enemy.explodeChainDepth = depth;
+    enemy.explodePrimed = true;
+    game.damagePopups.push({
+      id: `popup-explode-${Date.now()}-${Math.random()}`,
+      x: enemy.x,
+      y: enemy.y - enemy.radius - 10,
+      text: depth === 0 ? "EXPLODE" : "CHAIN",
+      life: 650,
+      color: depth === 0 ? "#ff7043" : "#ffca28",
+    });
+  }
+
+  function triggerChainExplosion(game, enemy, now) {
+    if (!enemy || !enemy.explodePrimed) return;
+    const tower = game.towers.find(t => t.id === enemy.explodeSourceTowerId);
+    const center = { x: enemy.x, y: enemy.y };
+    const radius = enemy.explodeRadius || 54;
+    const damage = enemy.explodeDamage || 22;
+    const depth = enemy.explodeChainDepth || 0;
+    enemy.explodePrimed = false;
+    enemy.explodeAt = null;
+    game.explosions.push({
+      id: `explosion-chain-${Date.now()}-${Math.random()}`,
+      x: center.x,
+      y: center.y,
+      radius,
+      life: 320,
+      maxLife: 320,
+      type: "chain",
+    });
+    game.enemies.forEach(other => {
+      if (other.hp <= 0) return;
+      const dist = distance(other, center);
+      if (dist > radius) return;
+      const falloff = Math.max(0.62, 1 - dist / Math.max(1, radius) * 0.28);
+      applyDamage(game, other, damage * falloff, tower, now, { type: "chain", silent: other.id === enemy.id });
+      if (other.id !== enemy.id && depth < 4) {
+        markEnemyToExplode(game, other, tower, now, {
+          explodeDelay: 520,
+          explosionRadius: Math.max(40, radius * 0.86),
+          chainDamage: damage * 0.72,
+        }, depth + 1);
+      }
+    });
+  }
+
+  function updateChainExplosions(game, now) {
+    game.enemies.forEach(enemy => {
+      if (enemy.explodePrimed && enemy.explodeAt && now >= enemy.explodeAt) {
+        triggerChainExplosion(game, enemy, now);
+      }
+    });
+  }
+
+  function detonateNuke(game, point, now = performance.now()) {
+    const nuke = TOWER_TYPES.nuke;
+    const blastRadius = 290;
+    game.explosions.push({
+      id: `explosion-nuke-${Date.now()}-${Math.random()}`,
+      x: point.x,
+      y: point.y,
+      radius: blastRadius,
+      life: 620,
+      maxLife: 620,
+      type: "nuke",
+    });
+    game.enemies.forEach(enemy => {
+      const dist = distance(enemy, point);
+      const mapWideDamage = nuke.damage * 0.62;
+      const closeBonus = dist <= blastRadius ? nuke.damage * Math.max(0.45, 1 - dist / blastRadius * 0.45) : 0;
+      applyDamage(game, enemy, mapWideDamage + closeBonus, null, now, { type: "nuke" });
+      enemy.slowUntil = Math.max(enemy.slowUntil || 0, now + 520);
+      enemy.slowAmount = Math.min(enemy.slowAmount || 1, 0.62);
+    });
+    game.damagePopups.push({ id: `popup-nuke-${Date.now()}-${Math.random()}`, x: point.x, y: point.y - 20, text: "NUKE", life: 850, color: "#fff176" });
+    setMessage("Nuke dropped. Every enemy took blast damage.");
   }
 
   function applyDamage(game, enemy, rawDamage, tower, now, source) {
@@ -1773,6 +2124,22 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         ctx.fill();
       }
 
+      // Draw active support links before the sprite so buffed towers feel connected
+      const buff = getSupportBuffForTower(game, tower);
+      if (tower.type !== "support" && (buff.damage > 1 || buff.range > 1 || buff.fireRate < 1)) {
+        const supportTower = game.towers.find(s => s.type === "support" && distance(s, tower) <= getTowerStats(s).range);
+        if (supportTower) {
+          ctx.strokeStyle = "rgba(212,255,122,0.42)";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([5, 7]);
+          ctx.beginPath();
+          ctx.moveTo(supportTower.x, supportTower.y - 18);
+          ctx.lineTo(tower.x, tower.y - 8);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+
       // Draw the sprite
       if (tower.type === "basic") drawCannonTower(ctx, tower);
       else if (tower.type === "freeze") drawFrostTower(ctx, tower);
@@ -1780,6 +2147,8 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       else if (tower.type === "sniper") drawSniperTower(ctx, tower);
       else if (tower.type === "rapid") drawRapidTower(ctx, tower);
       else if (tower.type === "laser") drawLaserTower(ctx, tower);
+      else if (tower.type === "support") drawSupportTower(ctx, tower);
+      else if (tower.type === "chain") drawChainTower(ctx, tower);
 
       // Level badge
       const lvColors = ["", "#4caf50", "#2196f3", "#9c27b0", "#f4b942"];
@@ -2050,6 +2419,23 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         ctx.fill();
       }
 
+      // Chainshot explode marker
+      if (enemy.explodePrimed) {
+        const pulse = 0.65 + Math.sin(now * 0.018) * 0.22;
+        ctx.strokeStyle = `rgba(255,112,67,${pulse})`;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = "#ff5722";
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(enemy.x, enemy.y, enemy.radius + 8, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#ff7043";
+        ctx.font = "bold 11px 'Nunito', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("✹", enemy.x, enemy.y - enemy.radius - 18);
+      }
+
       // HP bar
       const hpPct = Math.max(0, enemy.hp / enemy.maxHp);
       const bw = enemy.radius * 2.6;
@@ -2201,6 +2587,35 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         ctx.fill();
       }
 
+      if (bullet.type === "chain") {
+        const target = game.enemies.find(e => e.id === bullet.targetId);
+        const rot = target ? angleTo(bullet, target) : 0;
+        ctx.save();
+        ctx.translate(bullet.x, bullet.y);
+        ctx.rotate(rot);
+        const chainG = ctx.createLinearGradient(-10, 0, 12, 0);
+        chainG.addColorStop(0, bullet.specialChain ? "#fff176" : "#ffcc80");
+        chainG.addColorStop(0.5, bullet.specialChain ? "#ff5722" : "#ef6c00");
+        chainG.addColorStop(1, bullet.specialChain ? "#b71c1c" : "#8a2f00");
+        ctx.fillStyle = chainG;
+        ctx.strokeStyle = bullet.specialChain ? "#fff9c4" : "#5f1515";
+        ctx.lineWidth = bullet.specialChain ? 2 : 1.2;
+        ctx.shadowColor = bullet.specialChain ? "#ff5722" : "#ef6c00";
+        ctx.shadowBlur = bullet.specialChain ? 14 : 7;
+        ctx.beginPath();
+        ctx.roundRect(-9, -4.5, 18, 9, 5);
+        ctx.fill();
+        ctx.stroke();
+        if (bullet.specialChain) {
+          ctx.strokeStyle = "#fff176";
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.arc(0, 0, 11, -0.5, Math.PI * 1.4);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
       ctx.restore();
     });
   }
@@ -2250,26 +2665,38 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       const alpha = Math.max(0, explosion.life / explosion.maxLife);
       ctx.save();
       // Dirt/smoke cloud
-      ctx.globalAlpha = alpha * 0.4;
-      ctx.fillStyle = "#8d6e63";
+      ctx.globalAlpha = alpha * (explosion.type === "nuke" ? 0.25 : 0.4);
+      ctx.fillStyle = explosion.type === "chain" ? "#ff7043" : explosion.type === "nuke" ? "#fff176" : "#8d6e63";
       ctx.beginPath();
       ctx.arc(explosion.x, explosion.y, radius * 1.1, 0, Math.PI * 2);
       ctx.fill();
       // Fire core
-      ctx.globalAlpha = alpha * 0.7;
+      ctx.globalAlpha = alpha * (explosion.type === "nuke" ? 0.55 : 0.7);
       const fg = ctx.createRadialGradient(explosion.x, explosion.y, 0, explosion.x, explosion.y, radius * 0.8);
-      fg.addColorStop(0, "#fff9c4");
-      fg.addColorStop(0.3, "#ff9800");
-      fg.addColorStop(0.7, "#e64a19");
-      fg.addColorStop(1, "rgba(100,30,0,0)");
+      if (explosion.type === "nuke") {
+        fg.addColorStop(0, "#ffffff");
+        fg.addColorStop(0.22, "#fff176");
+        fg.addColorStop(0.55, "#ff9800");
+        fg.addColorStop(1, "rgba(255,255,120,0)");
+      } else if (explosion.type === "chain") {
+        fg.addColorStop(0, "#fff9c4");
+        fg.addColorStop(0.28, "#ff7043");
+        fg.addColorStop(0.72, "#b71c1c");
+        fg.addColorStop(1, "rgba(100,0,0,0)");
+      } else {
+        fg.addColorStop(0, "#fff9c4");
+        fg.addColorStop(0.3, "#ff9800");
+        fg.addColorStop(0.7, "#e64a19");
+        fg.addColorStop(1, "rgba(100,30,0,0)");
+      }
       ctx.fillStyle = fg;
       ctx.beginPath();
       ctx.arc(explosion.x, explosion.y, radius * 0.8, 0, Math.PI * 2);
       ctx.fill();
       // Shockwave ring
-      ctx.globalAlpha = alpha * 0.5;
-      ctx.strokeStyle = "#ff9800";
-      ctx.lineWidth = 4 + progress * 3;
+      ctx.globalAlpha = alpha * (explosion.type === "nuke" ? 0.85 : 0.5);
+      ctx.strokeStyle = explosion.type === "chain" ? "#ff7043" : explosion.type === "nuke" ? "#fff176" : "#ff9800";
+      ctx.lineWidth = explosion.type === "nuke" ? 7 + progress * 5 : 4 + progress * 3;
       ctx.beginPath();
       ctx.arc(explosion.x, explosion.y, radius, 0, Math.PI * 2);
       ctx.stroke();
@@ -2533,27 +2960,29 @@ export default function TowerDefenseGame({ studySet, onExit }) {
               </div>
 
               {/* Target priority selector */}
-              <div className="tower-priority-row">
-                <span className="tower-priority-label">🎯 Target</span>
-                <div className="tower-priority-btns">
-                  {[
-                    { key: "first",    label: "First",    emoji: "⏩" },
-                    { key: "last",     label: "Last",     emoji: "⏪" },
-                    { key: "strongest",label: "Strong",   emoji: "💪" },
-                    { key: "weakest",  label: "Weak",     emoji: "🩸" },
-                    { key: "closest",  label: "Close",    emoji: "📍" },
-                  ].map(({ key, label, emoji }) => (
-                    <button
-                      key={key}
-                      className={`priority-btn${(selectedTower.targetPriority || "first") === key ? " active" : ""}`}
-                      onClick={() => setTowerPriority(key)}
-                      title={label}
-                    >
-                      {emoji}<span>{label}</span>
-                    </button>
-                  ))}
+              {selectedTower.type !== "support" && (
+                <div className="tower-priority-row">
+                  <span className="tower-priority-label">🎯 Target</span>
+                  <div className="tower-priority-btns">
+                    {[
+                      { key: "first",    label: "First",    emoji: "⏩" },
+                      { key: "last",     label: "Last",     emoji: "⏪" },
+                      { key: "strongest",label: "Strong",   emoji: "💪" },
+                      { key: "weakest",  label: "Weak",     emoji: "🩸" },
+                      { key: "closest",  label: "Close",    emoji: "📍" },
+                    ].map(({ key, label, emoji }) => (
+                      <button
+                        key={key}
+                        className={`priority-btn${(selectedTower.targetPriority || "first") === key ? " active" : ""}`}
+                        onClick={() => setTowerPriority(key)}
+                        title={label}
+                      >
+                        {emoji}<span>{label}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <p>{TOWER_TYPES[selectedTower.type].upgradeText[selectedTower.level - 1]}</p>
               <div className="tower-popover-actions">
