@@ -219,7 +219,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(8,5,20,0.75);
+  background: rgba(239, 248, 255, 0.72);
   backdrop-filter: blur(10px);
   z-index: 20;
 }
@@ -227,12 +227,14 @@
 /* ── Cards ───────────────────────────────────────────────────── */
 .fd-card {
   width: min(480px, calc(100vw - 40px));
-  background: linear-gradient(145deg, rgba(22,8,50,0.98), rgba(14,5,35,0.98));
-  border: 1.5px solid rgba(124,58,237,0.45);
+  background:
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.12), transparent 34%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(239, 248, 255, 0.98));
+  border: 1.5px solid rgba(59, 130, 246, 0.22);
   border-radius: 22px;
   padding: 32px 28px;
   text-align: center;
-  box-shadow: 0 0 60px rgba(124,58,237,0.25), 0 30px 80px rgba(0,0,0,0.8);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16);
 }
 
 .fd-card h2 {
@@ -240,14 +242,14 @@
   font-size: 2.6rem;
   letter-spacing: 0.06em;
   color: var(--accent2);
-  filter: drop-shadow(0 0 14px rgba(245,159,11,0.5));
+  filter: drop-shadow(0 0 10px rgba(245, 159, 11, 0.22));
   margin: 6px 0 12px;
 }
 
 .fd-card p {
-  color: var(--text-dim);
+  color: #475569;
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.6;
   margin-bottom: 18px;
 }
@@ -264,14 +266,15 @@
 }
 
 .fd-key-row {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.09);
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(59, 130, 246, 0.16);
   border-radius: 10px;
   padding: 9px 12px;
   display: flex;
   align-items: center;
   gap: 10px;
   text-align: left;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.045);
 }
 
 .fd-key-row kbd {
@@ -282,19 +285,19 @@
   height: 26px;
   padding: 0 6px;
   border-radius: 6px;
-  background: rgba(245,159,11,0.12);
-  border: 1px solid rgba(245,159,11,0.3);
+  background: rgba(245, 159, 11, 0.14);
+  border: 1px solid rgba(245, 159, 11, 0.35);
   font-family: var(--font-d);
   font-size: 0.75rem;
-  color: var(--accent2);
+  color: #b45309;
   letter-spacing: 0.05em;
   flex-shrink: 0;
 }
 
 .fd-key-row span {
   font-size: 0.78rem;
-  color: var(--text-dim);
-  font-weight: 700;
+  color: #475569;
+  font-weight: 800;
 }
 
 .fd-final-grid {
@@ -334,19 +337,21 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(8,5,20,0.8);
+  background: rgba(239, 248, 255, 0.78);
   backdrop-filter: blur(10px);
   z-index: 25;
 }
 
 .fd-question-modal {
   width: min(640px, calc(100vw - 32px));
-  background: linear-gradient(145deg, rgba(22,8,50,0.99), rgba(14,5,35,0.99));
-  border: 1.5px solid rgba(6,182,212,0.35);
+  background:
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.12), transparent 34%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.99), rgba(239, 248, 255, 0.99));
+  border: 1.5px solid rgba(6, 182, 212, 0.24);
   border-radius: 22px;
   padding: 28px 26px 24px;
   position: relative;
-  box-shadow: 0 0 50px rgba(6,182,212,0.15), 0 30px 80px rgba(0,0,0,0.85);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16);
 }
 
 .fd-question-modal::before {
@@ -364,7 +369,7 @@
   font-size: 1.3rem;
   font-weight: 800;
   line-height: 1.35;
-  color: #fff;
+  color: #172033;
   margin: 10px 40px 18px 0;
 }
 
@@ -401,10 +406,10 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  border: 1.5px solid rgba(255,255,255,0.1);
+  border: 1.5px solid rgba(59, 130, 246, 0.14);
   border-radius: 13px;
-  background: rgba(255,255,255,0.04);
-  color: #e0d4ff;
+  background: rgba(255, 255, 255, 0.82);
+  color: #1e293b;
   padding: 13px 14px;
   cursor: pointer;
   font-family: var(--font-u);
