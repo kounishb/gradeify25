@@ -318,8 +318,8 @@ function getTowerStats(tower) {
     stats.damage = base.damage * (1 + (level - 1) * 0.44);
     stats.range = base.range + (level - 1) * 18;
     stats.fireRate = 0;
-    stats.dashCooldown = Math.max(3100, base.dashCooldown - (level - 1) * 420);
-    stats.dashSpeed = (base.dashSpeed || 1.45) + (level - 1) * 0.16;
+    stats.dashCooldown = Math.max(4300, base.dashCooldown - (level - 1) * 520);
+    stats.dashSpeed = (base.dashSpeed || 1.15) + (level - 1) * 0.13;
     stats.dashWidth = base.dashWidth + (level - 1) * 7;
     stats.maxPoles = Math.min(6, level + 1);
     stats.poleImpactRadius = level >= 4 ? 58 + level * 4 : 34 + level * 3;
@@ -1300,23 +1300,120 @@ function drawChuckTower(ctx, tower) {
   ctx.save();
   ctx.translate(current.x, current.y - 2);
   ctx.rotate(angle);
-  const bodyG = ctx.createLinearGradient(-16, -12, 18, 12);
-  bodyG.addColorStop(0, "#fde68a");
-  bodyG.addColorStop(0.45, "#f97316");
+
+  // More train-like Chuck sprite: engine body, cab, smokestack, wheels, headlamp, and cowcatcher.
+  ctx.shadowColor = "rgba(249,115,22,0.45)";
+  ctx.shadowBlur = 11;
+
+  // Main boiler/body
+  const bodyG = ctx.createLinearGradient(-24, -13, 23, 14);
+  bodyG.addColorStop(0, "#ffedd5");
+  bodyG.addColorStop(0.35, "#f97316");
   bodyG.addColorStop(1, "#7c2d12");
   ctx.fillStyle = bodyG;
   ctx.strokeStyle = "#431407";
   ctx.lineWidth = 2;
-  ctx.shadowColor = "rgba(249,115,22,0.5)";
-  ctx.shadowBlur = 10;
   ctx.beginPath();
-  ctx.roundRect(-17, -11, 34 + lv * 2, 22, 8);
+  ctx.roundRect(-22, -11, 39 + lv * 2, 22, 8);
   ctx.fill(); ctx.stroke();
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = "#111827";
-  ctx.beginPath(); ctx.arc(-8, 11, 5, 0, Math.PI * 2); ctx.arc(10, 11, 5, 0, Math.PI * 2); ctx.fill();
+
+  // Front nose/headlamp section
+  ctx.fillStyle = "#991b1b";
+  ctx.strokeStyle = "#450a0a";
+  ctx.beginPath();
+  ctx.roundRect(13 + lv * 2, -8, 13, 16, 5);
+  ctx.fill(); ctx.stroke();
   ctx.fillStyle = "#fef3c7";
-  ctx.beginPath(); ctx.arc(16 + lv * 2, 0, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowColor = "#fde047";
+  ctx.shadowBlur = 9;
+  ctx.beginPath();
+  ctx.arc(26 + lv * 2, 0, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Cab with window
+  ctx.fillStyle = "#7c2d12";
+  ctx.strokeStyle = "#431407";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-22, -22, 18, 19, 5);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#bae6fd";
+  ctx.strokeStyle = "#0f172a";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(-18, -18, 9, 8, 3);
+  ctx.fill(); ctx.stroke();
+
+  // Smokestack + smoke puffs while moving
+  ctx.fillStyle = "#1f2937";
+  ctx.strokeStyle = "#111827";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(1, -22, 9, 14, 3);
+  ctx.fill(); ctx.stroke();
+  if (tower.chuckDash) {
+    ctx.globalAlpha = 0.42;
+    ctx.fillStyle = "#f3f4f6";
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(-2 - i * 7, -27 - i * 3, 4 + i * 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Cowcatcher on the front
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 2;
+  for (let i = -1; i <= 1; i++) {
+    ctx.beginPath();
+    ctx.moveTo(24 + lv * 2, i * 4);
+    ctx.lineTo(35 + lv * 2, i * 7);
+    ctx.stroke();
+  }
+
+  // Wheels + spokes
+  ctx.shadowBlur = 0;
+  const wheelXs = [-15, -3, 10];
+  wheelXs.forEach((wx, idx) => {
+    ctx.fillStyle = "#111827";
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(wx, 13, idx === 1 ? 5 : 6, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "rgba(254,243,199,0.75)";
+    ctx.lineWidth = 1;
+    for (let s = 0; s < 4; s++) {
+      const a = performance.now() * 0.012 + s * Math.PI / 2;
+      ctx.beginPath();
+      ctx.moveTo(wx, 13);
+      ctx.lineTo(wx + Math.cos(a) * 5, 13 + Math.sin(a) * 5);
+      ctx.stroke();
+    }
+  });
+
+  // Level styling accents
+  if (lv >= 4) {
+    ctx.strokeStyle = "#fde047";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-18, -2);
+    ctx.lineTo(17 + lv * 2, -2);
+    ctx.stroke();
+  }
+  if (lv >= 5) {
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = "#fef08a";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(-26, 0);
+    ctx.lineTo(33 + lv * 2, 0);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
   ctx.restore();
 }
 
@@ -1667,16 +1764,20 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     removeDefeatedEnemies(game);
     if (game.waveInProgress && game.enemiesSpawned >= game.enemiesToSpawn && game.enemies.length === 0) {
       const clearedWave = game.wave;
-      const waveReward = 95 + clearedWave * 24;
+      const waveReward = 38 + clearedWave * 12 + Math.floor(clearedWave / 5) * 22;
       const questionRewardCount = clearedWave % 5 === 0 ? 4 : 3;
       game.waveInProgress = false;
       game.nextWaveReady = true;
       game.wave += 1;
       game.coins += waveReward;
       game.bonusQuestions = questionRewardCount;
-      setMessage(`Wave ${clearedWave} cleared. +${waveReward} coins. Answer ${questionRewardCount} bonus questions now before the next wave.`);
+      setMessage(`Wave ${clearedWave} cleared! +${waveReward} coins. Bonus questions coming up...`);
       syncStateFromRef();
-      openPostWaveQuestions(questionRewardCount);
+      setTimeout(() => {
+        const latestGame = gameRef.current;
+        if (!latestGame || latestGame.gameOver || latestGame.waveInProgress) return;
+        openPostWaveQuestions(questionRewardCount);
+      }, 950);
     }
   }
 
@@ -1742,20 +1843,35 @@ export default function TowerDefenseGame({ studySet, onExit }) {
 
 
   function buildChuckDashRoute(tower, poles) {
-    const startIndex = tower.currentPoleIndex ?? 0;
+    const n = poles.length;
+    if (n < 2) return [];
+
+    let startIndex = tower.currentPoleIndex ?? 0;
+    startIndex = Math.max(0, Math.min(n - 1, startIndex));
+
+    // Chuck now follows placement order, then reverses back through the same order:
+    // 0 → 1 → 2 → 3, then 3 → 2 → 1 → 0. No nearest-pole shortcuts.
+    let direction = tower.chuckDirection || 1;
+    if (startIndex <= 0) direction = 1;
+    if (startIndex >= n - 1) direction = -1;
+
     const route = [startIndex];
-    const remaining = new Set(poles.map((_, i) => i).filter(i => i !== startIndex));
-    while (remaining.size > 0) {
-      const current = poles[route[route.length - 1]];
-      let bestIndex = null;
-      let bestDist = Infinity;
-      remaining.forEach(i => {
-        const d = distance(current, poles[i]);
-        if (d < bestDist) { bestDist = d; bestIndex = i; }
-      });
-      route.push(bestIndex);
-      remaining.delete(bestIndex);
+    let i = startIndex;
+    while (i + direction >= 0 && i + direction < n) {
+      i += direction;
+      route.push(i);
     }
+
+    if (route.length < 2 && n >= 2) {
+      direction *= -1;
+      i = startIndex;
+      while (i + direction >= 0 && i + direction < n) {
+        i += direction;
+        route.push(i);
+      }
+    }
+
+    tower.chuckDirection = direction;
     return route;
   }
 
@@ -1851,6 +1967,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         if (dash.segment >= dash.route.length - 1) {
           const hitCount = dash.totalHits || 0;
           if (hitCount >= (stats.fastRechargeHits || 9999)) tower.lastDash = now - stats.dashCooldown * 0.72;
+          tower.chuckDirection = -(tower.chuckDirection || 1);
           game.damagePopups.push({ id: `popup-chuck-end-${Date.now()}-${Math.random()}`, x: dash.x, y: dash.y - 42, text: hitCount >= 3 ? "GHOST TRAIN" : "ROUTE DONE", life: 650, color: "#fff176" });
           tower.chuckDash = null;
         }
@@ -2320,7 +2437,19 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   function removeDefeatedEnemies(game) {
     const defeated = game.enemies.filter(e => e.hp <= 0);
     if (defeated.length > 0) {
-      defeated.forEach(e => { game.score += e.reward * 10; });
+      defeated.forEach(e => {
+        game.score += e.reward * 10;
+        const killCoins = Math.max(2, Math.round(e.reward * (0.32 + game.wave * 0.018)));
+        game.coins += killCoins;
+        game.damagePopups.push({
+          id: `popup-coins-${Date.now()}-${Math.random()}`,
+          x: e.x,
+          y: e.y - e.radius - 18,
+          text: `+$${killCoins}`,
+          life: 520,
+          color: "#f4b942",
+        });
+      });
       game.enemies = game.enemies.filter(e => e.hp > 0);
       syncStateFromRef();
     }
@@ -3519,29 +3648,27 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   function skipOrStackWave() {
     const game = gameRef.current;
     if (!game || game.gameOver) return;
-
-    if (!game.waveInProgress) {
-      setMessage("Skip is only available during a wave after every enemy has spawned.");
-      return;
-    }
-
-    if (game.enemiesSpawned < game.enemiesToSpawn) {
-      setMessage("Skip locked: wait until all enemies are already on the map.");
-      return;
-    }
-
-    if (game.enemies.length === 0) {
-      setMessage("No enemies left to skip. The next wave will start after the reward/questions finish.");
-      return;
-    }
-
     clearAutoWaveTimer();
+    if (!game.waveInProgress) {
+      launchWave(game);
+      setMessage(`Wave ${game.wave} started early.`);
+      syncStateFromRef();
+      return;
+    }
+    if (game.enemiesSpawned < game.enemiesToSpawn) {
+      const remaining = game.enemiesToSpawn - game.enemiesSpawned;
+      for (let i = 0; i < remaining; i++) game.enemies.push(makeEnemy(game.wave, game.enemiesSpawned + i));
+      game.enemiesSpawned = game.enemiesToSpawn;
+      setMessage("Skip used: all remaining enemies are now on the map.");
+      syncStateFromRef();
+      return;
+    }
     const nextWave = game.wave + 1;
     const extraEnemies = 8 + nextWave * 3;
     game.wave = nextWave;
     game.enemiesToSpawn += extraEnemies;
     game.lastSpawnTime = 0;
-    setMessage(`Skip used: Wave ${nextWave} will join early because every current enemy was already on the map.`);
+    setMessage(`Next wave stacked early. Wave ${nextWave} enemies are joining before the current enemies are gone.`);
     syncStateFromRef();
   }
 
@@ -3562,6 +3689,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     clearAutoWaveTimer();
     game.bonusQuestions = count;
     pauseGameForQuestion();
+    setMessage(`Wave cleared — answer ${count} bonus question${count === 1 ? "" : "s"} before the next wave.`);
     setAnswerFeedback(null);
     setQuestionModal(makeQuestionModal(questionIndex));
   }
