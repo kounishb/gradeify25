@@ -2,9 +2,10 @@
   min-height: 100vh;
   padding: 28px;
   background:
-    radial-gradient(circle at top, rgba(70, 0, 0, 0.18), transparent 34%),
-    radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.04), transparent 30%),
-    #050505;
+    radial-gradient(circle at 18% 0%, rgba(120, 0, 0, 0.2), transparent 34%),
+    radial-gradient(circle at 92% 22%, rgba(255, 255, 255, 0.035), transparent 22%),
+    radial-gradient(circle at 50% 100%, rgba(80, 0, 0, 0.16), transparent 38%),
+    #030303;
   color: #f3f3f3;
 }
 
@@ -16,31 +17,34 @@
 .shy-header {
   display: flex;
   justify-content: space-between;
-  gap: 24px;
   align-items: flex-end;
+  gap: 24px;
   margin-bottom: 18px;
 }
 
 .shy-kicker {
-  margin: 0 0 6px;
-  color: rgba(255, 160, 160, 0.82);
-  font-size: 13px;
-  letter-spacing: 0.16em;
+  margin: 0 0 8px;
+  color: rgba(255, 135, 135, 0.82);
+  font-size: 12px;
   text-transform: uppercase;
+  letter-spacing: 0.18em;
 }
 
 .shy-header h1 {
   margin: 0;
-  font-size: clamp(36px, 5vw, 64px);
-  line-height: 0.95;
+  font-size: clamp(38px, 5vw, 66px);
+  line-height: 0.94;
   letter-spacing: -0.06em;
-  text-shadow: 0 0 24px rgba(255, 0, 0, 0.18);
+  color: #ffffff;
+  text-shadow:
+    0 0 22px rgba(255, 0, 0, 0.18),
+    0 0 52px rgba(0, 0, 0, 0.9);
 }
 
 .shy-header p {
-  max-width: 720px;
+  max-width: 760px;
+  margin: 13px 0 0;
   color: rgba(255, 255, 255, 0.68);
-  margin: 12px 0 0;
   font-size: 15px;
   line-height: 1.55;
 }
@@ -52,72 +56,96 @@
 }
 
 .shy-actions button {
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(160, 20, 20, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(185, 24, 24, 0.95), rgba(115, 10, 10, 0.95));
   color: white;
   padding: 12px 16px;
   border-radius: 14px;
-  font-weight: 800;
+  font-weight: 850;
   cursor: pointer;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
-  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.48),
+    inset 0 0 20px rgba(255, 255, 255, 0.05);
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    filter 0.15s ease;
 }
 
 .shy-actions button:hover {
   transform: translateY(-1px);
-  background: rgba(190, 26, 26, 0.95);
   border-color: rgba(255, 255, 255, 0.28);
+  filter: brightness(1.08);
 }
 
 .shy-actions .shy-secondary {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.shy-actions .shy-secondary:hover {
-  background: rgba(255, 255, 255, 0.13);
-}
-
 .shy-game-card {
+  position: relative;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.025)),
-    rgba(0, 0, 0, 0.72);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018)),
+    rgba(0, 0, 0, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.11);
   border-radius: 26px;
   padding: 16px;
-  box-shadow:
-    0 24px 80px rgba(0, 0, 0, 0.62),
-    inset 0 0 60px rgba(255, 0, 0, 0.035);
   overflow: hidden;
+  box-shadow:
+    0 28px 90px rgba(0, 0, 0, 0.72),
+    inset 0 0 75px rgba(130, 0, 0, 0.045);
+}
+
+.shy-game-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 28px 28px;
+  opacity: 0.16;
+  mix-blend-mode: screen;
 }
 
 .shy-canvas {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   max-width: 980px;
   height: auto;
   margin: 0 auto;
   border-radius: 18px;
-  background: #030303;
+  background: #010101;
   border: 1px solid rgba(255, 255, 255, 0.08);
   cursor: crosshair;
-  image-rendering: auto;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.9),
+    0 18px 60px rgba(0, 0, 0, 0.7),
+    inset 0 0 45px rgba(120, 0, 0, 0.1);
 }
 
 .shy-controls {
+  position: relative;
+  z-index: 1;
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 9px;
   padding: 14px 4px 2px;
 }
 
 .shy-controls span {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.075);
+  background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.09);
   padding: 7px 10px;
   border-radius: 999px;
+  backdrop-filter: blur(8px);
 }
 
 .shy-notes {
@@ -128,20 +156,24 @@
 }
 
 .shy-notes > div {
-  background: rgba(255, 255, 255, 0.055);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+    rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 18px;
   padding: 16px;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.26);
 }
 
 .shy-notes h3 {
   margin: 0 0 8px;
   font-size: 15px;
+  color: rgba(255, 240, 240, 0.95);
 }
 
 .shy-notes p {
   margin: 0;
-  color: rgba(255, 255, 255, 0.66);
+  color: rgba(255, 255, 255, 0.64);
   font-size: 13px;
   line-height: 1.5;
 }

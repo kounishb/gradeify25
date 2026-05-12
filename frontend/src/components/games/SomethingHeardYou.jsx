@@ -4,31 +4,23 @@ import "../../styles/SomethingHeardYou.css";
 const CANVAS_W = 980;
 const CANVAS_H = 620;
 
-const WORLD_W = 2400;
-const WORLD_H = 1800;
+const WORLD_W = 2600;
+const WORLD_H = 1900;
 
-const PLAYER_RADIUS = 15;
-const MONSTER_RADIUS = 22;
+const PLAYER_RADIUS = 14;
+const MONSTER_RADIUS = 23;
 
 const ITEM_COUNT = 6;
-const BATTERY_DRAIN = 0.0035;
-const FEAR_DARK_GAIN = 0.012;
-const FEAR_MONSTER_GAIN = 0.08;
-const FEAR_DECAY = 0.018;
+
+const BATTERY_DRAIN = 0.0022;
+const FEAR_DARK_GAIN = 0.0035;
+const FEAR_MONSTER_GAIN = 0.026;
+const FEAR_DECAY = 0.006;
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const rand = (min, max) => Math.random() * (max - min) + min;
 const choice = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-function rectsOverlap(a, b, pad = 0) {
-  return (
-    a.x - pad < b.x + b.w &&
-    a.x + a.w + pad > b.x &&
-    a.y - pad < b.y + b.h &&
-    a.y + a.h + pad > b.y
-  );
-}
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 function pointInRect(p, r, pad = 0) {
   return (
@@ -39,6 +31,12 @@ function pointInRect(p, r, pad = 0) {
   );
 }
 
+function rectDistanceToPoint(rect, p) {
+  const cx = clamp(p.x, rect.x, rect.x + rect.w);
+  const cy = clamp(p.y, rect.y, rect.y + rect.h);
+  return Math.hypot(p.x - cx, p.y - cy);
+}
+
 function circleRectCollision(circle, rect, radius) {
   const closestX = clamp(circle.x, rect.x, rect.x + rect.w);
   const closestY = clamp(circle.y, rect.y, rect.y + rect.h);
@@ -47,207 +45,317 @@ function circleRectCollision(circle, rect, radius) {
   return dx * dx + dy * dy < radius * radius;
 }
 
-function makeRooms() {
-  const rooms = [
-    { x: 1030, y: 790, w: 340, h: 230, type: "spawn" },
-  ];
+function randomPointInRect(rect, pad = 42) {
+  return {
+    x: rand(rect.x + pad, rect.x + rect.w - pad),
+    y: rand(rect.y + pad, rect.y + rect.h - pad),
+  };
+}
 
-  let attempts = 0;
+function makeMazeMap() {
+  const rooms = [];
+  const corridors = [];
 
-  while (rooms.length < 18 && attempts < 900) {
-    attempts++;
-    const w = rand(220, 420);
-    const h = rand(180, 330);
-    const room = {
-      x: rand(120, WORLD_W - w - 120),
-      y: rand(120, WORLD_H - h - 120),
-      w,
-      h,
-      type: "normal",
-    };
+  const cols = 5;
+  const rows = 4;
+  const cellW = 440;
+  const cellH = 360;
+  const startX = 230;
+  const startY = 185;
 
-    if (!rooms.some((r) => rectsOverlap(room, r, 70))) {
-      rooms.push(room);
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const skip = Math.random() < 0.12 && !(row === 0 && col === 0) && !(row === rows - 1 && col === cols - 1);
+
+      if (skip) continue;
+
+      const w = rand(230, 330);
+      const h = rand(170, 260);
+      const x = startX + col * cellW + rand(-35, 35);
+      const y = startY + row * cellH + rand(-30, 30);
+
+      rooms.push({
+        id: `room-${row}-${col}`,
+        grid: { row, col },
+        x,
+        y,
+        w,
+        h,
+        type: row === 0 && col === 0 ? "spawn" : "room",
+        decay: Math.random(),
+      });
     }
   }
 
-  const corridors = [];
+  const byGrid = new Map();
+  rooms.forEach((r) => byGrid.set(`${r.grid.row}-${r.grid.col}`, r));
 
-  for (let i = 1; i < rooms.length; i++) {
-    const a = rooms[i - 1];
-    const b = rooms[i];
+  function connectRooms(a, b) {
+    if (!a || !b) return;
 
     const ax = a.x + a.w / 2;
     const ay = a.y + a.h / 2;
     const bx = b.x + b.w / 2;
     const by = b.y + b.h / 2;
 
-    if (Math.random() > 0.5) {
+    const horizontalFirst = Math.random() > 0.35;
+
+    if (horizontalFirst) {
       corridors.push({
-        x: Math.min(ax, bx),
-        y: ay - 28,
-        w: Math.abs(ax - bx),
-        h: 56,
-        type: "corridor",
+        id: `hall-${a.id}-${b.id}-h`,
+        x: Math.min(ax, bx) - 22,
+        y: ay - 24,
+        w: Math.abs(ax - bx) + 44,
+        h: 48,
+        type: "hallway",
+        decay: Math.random(),
       });
+
       corridors.push({
-        x: bx - 28,
-        y: Math.min(ay, by),
-        w: 56,
-        h: Math.abs(ay - by),
-        type: "corridor",
+        id: `hall-${a.id}-${b.id}-v`,
+        x: bx - 24,
+        y: Math.min(ay, by) - 22,
+        w: 48,
+        h: Math.abs(ay - by) + 44,
+        type: "hallway",
+        decay: Math.random(),
       });
     } else {
       corridors.push({
-        x: ax - 28,
-        y: Math.min(ay, by),
-        w: 56,
-        h: Math.abs(ay - by),
-        type: "corridor",
+        id: `hall-${a.id}-${b.id}-v`,
+        x: ax - 24,
+        y: Math.min(ay, by) - 22,
+        w: 48,
+        h: Math.abs(ay - by) + 44,
+        type: "hallway",
+        decay: Math.random(),
       });
+
       corridors.push({
-        x: Math.min(ax, bx),
-        y: by - 28,
-        w: Math.abs(ax - bx),
-        h: 56,
-        type: "corridor",
+        id: `hall-${a.id}-${b.id}-h`,
+        x: Math.min(ax, bx) - 22,
+        y: by - 24,
+        w: Math.abs(ax - bx) + 44,
+        h: 48,
+        type: "hallway",
+        decay: Math.random(),
       });
     }
   }
 
-  const walkable = [...rooms, ...corridors].map((r) => ({
-    ...r,
-    id: crypto.randomUUID?.() || Math.random().toString(36),
-  }));
+  for (let row = 0; row < rows; row++) {
+    const rowRooms = rooms
+      .filter((r) => r.grid.row === row)
+      .sort((a, b) => a.grid.col - b.grid.col);
 
-  const farRooms = rooms
-    .filter((r) => r.type !== "spawn")
+    for (let i = 1; i < rowRooms.length; i++) {
+      connectRooms(rowRooms[i - 1], rowRooms[i]);
+    }
+  }
+
+  for (let col = 0; col < cols; col++) {
+    const colRooms = rooms
+      .filter((r) => r.grid.col === col)
+      .sort((a, b) => a.grid.row - b.grid.row);
+
+    for (let i = 1; i < colRooms.length; i++) {
+      if (Math.random() > 0.22 || i === 1) {
+        connectRooms(colRooms[i - 1], colRooms[i]);
+      }
+    }
+  }
+
+  for (let i = 0; i < 5; i++) {
+    const a = choice(rooms);
+    const b = choice(rooms);
+
+    if (!a || !b || a.id === b.id) continue;
+
+    const gridDistance = Math.abs(a.grid.row - b.grid.row) + Math.abs(a.grid.col - b.grid.col);
+
+    if (gridDistance <= 2 && Math.random() > 0.45) {
+      connectRooms(a, b);
+    }
+  }
+
+  const walkable = [...rooms, ...corridors];
+
+  const spawnRoom = byGrid.get("0-0") || rooms[0];
+
+  const exitRoom = [...rooms]
+    .filter((r) => r.id !== spawnRoom.id)
     .sort((a, b) => {
       const ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 };
       const bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
-      const spawn = { x: 1200, y: 900 };
-      return dist(bc, spawn) - dist(ac, spawn);
-    });
+      const sc = { x: spawnRoom.x + spawnRoom.w / 2, y: spawnRoom.y + spawnRoom.h / 2 };
+      return dist(bc, sc) - dist(ac, sc);
+    })[0];
 
-  const exitRoom = farRooms[0] || rooms[rooms.length - 1];
-
-  return { rooms, corridors, walkable, exitRoom };
-}
-
-function randomPointInRoom(room, pad = 45) {
   return {
-    x: rand(room.x + pad, room.x + room.w - pad),
-    y: rand(room.y + pad, room.y + room.h - pad),
+    rooms,
+    corridors,
+    walkable,
+    spawnRoom,
+    exitRoom,
   };
 }
 
-function generateRun() {
-  const map = makeRooms();
+function getZoneAt(map, p, pad = 0) {
+  const rooms = map.rooms.filter((zone) => pointInRect(p, zone, pad));
+  if (rooms.length) return rooms[0];
 
-  const normalRooms = map.rooms.filter((r) => r.type !== "spawn");
-  const shuffled = [...normalRooms].sort(() => Math.random() - 0.5);
+  const halls = map.corridors.filter((zone) => pointInRect(p, zone, pad));
+  if (halls.length) return halls[0];
 
-  const items = shuffled.slice(0, ITEM_COUNT).map((room, i) => ({
-    id: `sig-${i}`,
-    ...randomPointInRoom(room),
+  return null;
+}
+
+function zonesTouch(a, b) {
+  if (!a || !b) return false;
+
+  return !(
+    a.x > b.x + b.w + 4 ||
+    a.x + a.w + 4 < b.x ||
+    a.y > b.y + b.h + 4 ||
+    a.y + a.h + 4 < b.y
+  );
+}
+
+function sameVisibilityZone(map, a, b) {
+  const az = getZoneAt(map, a, 2);
+  const bz = getZoneAt(map, b, 2);
+
+  if (!az || !bz) return false;
+  if (az.id === bz.id) return true;
+
+  return false;
+}
+
+function createRun() {
+  const map = makeMazeMap();
+  const spawn = map.spawnRoom;
+
+  const player = {
+    x: spawn.x + spawn.w / 2,
+    y: spawn.y + spawn.h / 2,
+    angle: 0,
+    hp: 3,
+    fear: 18,
+    battery: 100,
+    stamina: 100,
+    hidden: false,
+    invuln: 0,
+    flashlightOff: false,
+  };
+
+  const farRooms = [...map.rooms]
+    .filter((r) => r.id !== map.spawnRoom.id)
+    .sort((a, b) => {
+      const ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 };
+      const bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+      return dist(bc, player) - dist(ac, player);
+    });
+
+  const itemRooms = [...farRooms].sort(() => Math.random() - 0.5).slice(0, ITEM_COUNT);
+
+  const items = itemRooms.map((room, index) => ({
+    id: `fragment-${index}`,
+    ...randomPointInRect(room),
     collected: false,
-    label: choice(["tape", "idol", "bone", "mask", "coin", "eye", "key"]),
     pulse: Math.random() * Math.PI * 2,
   }));
 
-  const batteries = shuffled.slice(ITEM_COUNT, ITEM_COUNT + 7).map((room, i) => ({
-    id: `bat-${i}`,
-    ...randomPointInRoom(room),
-    collected: false,
-  }));
+  const restRooms = [...map.rooms].filter((r) => !itemRooms.some((ir) => ir.id === r.id));
 
-  const medkits = shuffled.slice(ITEM_COUNT + 7, ITEM_COUNT + 10).map((room, i) => ({
-    id: `med-${i}`,
-    ...randomPointInRoom(room),
-    collected: false,
-  }));
+  const batteries = restRooms
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 7)
+    .map((room, index) => ({
+      id: `battery-${index}`,
+      ...randomPointInRect(room),
+      collected: false,
+    }));
 
-  const hidingSpots = shuffled.slice(ITEM_COUNT + 10, ITEM_COUNT + 16).map((room, i) => ({
-    id: `hide-${i}`,
-    ...randomPointInRoom(room),
-    r: 24,
-  }));
+  const medkits = restRooms
+    .sort(() => Math.random() - 0.5)
+    .slice(7, 10)
+    .map((room, index) => ({
+      id: `medkit-${index}`,
+      ...randomPointInRect(room),
+      collected: false,
+    }));
 
-  const spawn = map.rooms.find((r) => r.type === "spawn");
-  const exit = {
-    x: map.exitRoom.x + map.exitRoom.w / 2,
-    y: map.exitRoom.y + map.exitRoom.h / 2,
-    active: false,
-  };
+  const hidingSpots = restRooms
+    .sort(() => Math.random() - 0.5)
+    .slice(10, 19)
+    .map((room, index) => ({
+      id: `hide-${index}`,
+      ...randomPointInRect(room),
+      r: 24,
+    }));
 
-  const monsterRoom = shuffled[shuffled.length - 1] || map.exitRoom;
+  const monsterRoom = farRooms[0] || map.exitRoom;
 
   return {
     map,
-    player: {
-      x: spawn.x + spawn.w / 2,
-      y: spawn.y + spawn.h / 2,
-      angle: 0,
-      hp: 3,
-      fear: 8,
-      battery: 100,
-      stamina: 100,
-      hidden: false,
-      invuln: 0,
-    },
+    player,
     monster: {
       x: monsterRoom.x + monsterRoom.w / 2,
       y: monsterRoom.y + monsterRoom.h / 2,
       mode: "stalk",
       target: null,
-      lastSeen: null,
-      speed: 1.15,
+      speed: 2.65,
       anger: 0,
       stun: 0,
-      blink: 0,
+      visibleFlash: 0,
     },
     items,
     batteries,
     medkits,
     hidingSpots,
-    exit,
+    exit: {
+      x: map.exitRoom.x + map.exitRoom.w / 2,
+      y: map.exitRoom.y + map.exitRoom.h / 2,
+      active: false,
+    },
+    noisePulses: [],
+    hallucinations: [],
     collected: 0,
+    finalPhase: false,
     won: false,
     dead: false,
-    finalPhase: false,
-    message: "Find the signal fragments. Do not let it hear you.",
     scare: null,
-    noisePulses: [],
-    hauntTimer: rand(5000, 10000),
-    glitch: 0,
+    message: "Find 6 fragments. Use the static compass if you get lost.",
+    hauntTimer: rand(4800, 8500),
     time: 0,
+    glitch: 0,
+    objectiveBlink: 0,
   };
 }
 
-export default function SomethingHeardYou() {
+export default function SomethingHeardYou({ onExit }) {
   const canvasRef = useRef(null);
   const keysRef = useRef({});
   const mouseRef = useRef({ x: CANVAS_W / 2, y: CANVAS_H / 2 });
+  const runRef = useRef(null);
   const rafRef = useRef(null);
   const lastRef = useRef(performance.now());
-  const runRef = useRef(null);
 
-  const [run, setRun] = useState(() => generateRun());
   const [started, setStarted] = useState(false);
-  const [muted, setMuted] = useState(false);
+  const [run, setRun] = useState(() => createRun());
 
   const horrorLines = useMemo(
     () => [
-      "Something moved in the dark.",
-      "The walls are closer than before.",
-      "You hear breathing, but not yours.",
-      "Do not run.",
-      "It heard that.",
-      "The hallway was not this long.",
-      "Your flashlight flickers.",
-      "There is something behind you.",
-      "The exit sign points nowhere.",
-      "It is learning your footsteps.",
+      "Something is listening.",
+      "The dark is not empty.",
+      "Do not sprint unless you have to.",
+      "The walls swallowed the sound.",
+      "You hear footsteps copying yours.",
+      "It is close, but not close enough to see.",
+      "Your flashlight catches a shape, then nothing.",
+      "The hallway bends the wrong way.",
+      "That door was not open before.",
+      "It only needs to hear you once.",
     ],
     []
   );
@@ -257,67 +365,12 @@ export default function SomethingHeardYou() {
   }, [run]);
 
   function restart() {
-    const fresh = generateRun();
+    const fresh = createRun();
     runRef.current = fresh;
     setRun(fresh);
     setStarted(true);
     lastRef.current = performance.now();
   }
-
-  useEffect(() => {
-    const down = (e) => {
-      keysRef.current[e.key.toLowerCase()] = true;
-
-      if (["w", "a", "s", "d", " ", "shift", "e", "f"].includes(e.key.toLowerCase())) {
-        e.preventDefault();
-      }
-
-      if (e.key.toLowerCase() === "f") {
-        const r = runRef.current;
-        if (!r || r.dead || r.won) return;
-        r.player.flashlightOff = !r.player.flashlightOff;
-      }
-
-      if (e.key.toLowerCase() === "e") {
-        interact();
-      }
-
-      if (e.key === " ") {
-        const r = runRef.current;
-        if (!r || r.dead || r.won) return;
-        const nearHide = r.hidingSpots.find((h) => dist(h, r.player) < 45);
-        if (nearHide) {
-          r.player.hidden = !r.player.hidden;
-          r.message = r.player.hidden ? "You hold your breath." : "You step back out.";
-          if (!r.player.hidden) createNoise(r, r.player.x, r.player.y, 210);
-        }
-      }
-    };
-
-    const up = (e) => {
-      keysRef.current[e.key.toLowerCase()] = false;
-    };
-
-    const move = (e) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      mouseRef.current = {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
-      };
-    };
-
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
-    window.addEventListener("mousemove", move);
-
-    return () => {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
-      window.removeEventListener("mousemove", move);
-    };
-  }, []);
 
   function isWalkable(r, x, y, radius = PLAYER_RADIUS) {
     return r.map.walkable.some((zone) => circleRectCollision({ x, y }, zone, radius));
@@ -327,18 +380,30 @@ export default function SomethingHeardYou() {
     r.noisePulses.push({
       x,
       y,
-      r: 5,
+      r: 4,
       max: power,
-      alpha: 0.8,
+      alpha: 0.82,
     });
 
     const d = Math.hypot(r.monster.x - x, r.monster.y - y);
-    if (d < power + 120 && r.monster.stun <= 0) {
+
+    if (d < power + 130) {
       r.monster.target = { x, y };
-      r.monster.mode = d < power * 0.75 ? "chase" : "investigate";
-      r.monster.anger += 10;
-      r.message = "It heard you.";
+      r.monster.mode = "investigate";
+      r.monster.anger = clamp(r.monster.anger + 16, 0, 100);
+      r.message = "It heard that.";
     }
+  }
+
+  function triggerScare(r, text = "RUN") {
+    r.scare = {
+      text,
+      timer: 1050,
+      seed: Math.random(),
+    };
+
+    r.player.fear = clamp(r.player.fear + 24, 0, 100);
+    r.glitch = 1;
   }
 
   function interact() {
@@ -351,82 +416,211 @@ export default function SomethingHeardYou() {
       if (!item.collected && dist(p, item) < 42) {
         item.collected = true;
         r.collected += 1;
-        r.player.fear = clamp(r.player.fear + 10, 0, 100);
-        r.glitch = 0.8;
-        createNoise(r, p.x, p.y, 250);
+        r.glitch = 0.75;
+        p.fear = clamp(p.fear + 8, 0, 100);
+
+        createNoise(r, p.x, p.y, 230);
 
         if (r.collected >= ITEM_COUNT) {
           r.finalPhase = true;
           r.exit.active = true;
-          r.monster.mode = "chase";
-          r.monster.speed = 1.95;
-          r.message = "The signal is complete. Run to the exit.";
-          triggerScare(r, "THE DARK HEARD YOU");
+          r.monster.mode = "investigate";
+          r.monster.target = { x: p.x, y: p.y };
+          r.monster.speed = 3.25;
+          r.message = "All fragments collected. The exit is awake. Run.";
+          triggerScare(r, "IT KNOWS");
         } else {
-          r.message = `${ITEM_COUNT - r.collected} fragments remain.`;
-          if (Math.random() < 0.35) triggerScare(r, choice(["DON'T TURN AROUND", "IT IS CLOSER", "RUN"]));
+          r.message = `${ITEM_COUNT - r.collected} fragments remain. Follow the static.`;
+          if (Math.random() < 0.32) {
+            triggerScare(r, choice(["BEHIND YOU", "NO SIGNAL", "IT HEARD YOU"]));
+          }
         }
 
         return;
       }
     }
 
-    for (const bat of r.batteries) {
-      if (!bat.collected && dist(p, bat) < 38) {
-        bat.collected = true;
-        p.battery = clamp(p.battery + 32, 0, 100);
-        r.message = "Battery recovered.";
-        createNoise(r, p.x, p.y, 120);
+    for (const battery of r.batteries) {
+      if (!battery.collected && dist(p, battery) < 38) {
+        battery.collected = true;
+        p.battery = clamp(p.battery + 35, 0, 100);
+        r.message = "Battery found.";
+        createNoise(r, p.x, p.y, 100);
         return;
       }
     }
 
-    for (const med of r.medkits) {
-      if (!med.collected && dist(p, med) < 38) {
-        med.collected = true;
+    for (const medkit of r.medkits) {
+      if (!medkit.collected && dist(p, medkit) < 38) {
+        medkit.collected = true;
         p.hp = clamp(p.hp + 1, 0, 3);
-        p.fear = clamp(p.fear - 18, 0, 100);
-        r.message = "You steady yourself.";
-        createNoise(r, p.x, p.y, 120);
+        p.fear = clamp(p.fear - 15, 0, 100);
+        r.message = "Your breathing steadies.";
+        createNoise(r, p.x, p.y, 100);
         return;
       }
     }
 
-    if (r.exit.active && dist(p, r.exit) < 55) {
+    if (r.exit.active && dist(p, r.exit) < 58) {
       r.won = true;
-      r.message = "You escaped, but something followed the signal out.";
+      r.message = "You escaped. The dark did not.";
     }
   }
 
-  function triggerScare(r, text = "LOOK") {
-    r.scare = {
-      text,
-      timer: 850,
-      faceSeed: Math.random(),
-    };
-    r.player.fear = clamp(r.player.fear + 22, 0, 100);
-    r.glitch = 1;
+  function getObjective(r) {
+    if (r.exit.active) return r.exit;
+
+    const remaining = r.items.filter((item) => !item.collected);
+    if (!remaining.length) return r.exit;
+
+    return remaining.sort((a, b) => dist(a, r.player) - dist(b, r.player))[0];
+  }
+
+  function updateMonster(r, dt) {
+    const p = r.player;
+    const m = r.monster;
+
+    if (m.stun > 0) {
+      m.stun -= dt;
+      return;
+    }
+
+    const sameZone = sameVisibilityZone(r.map, p, m);
+    const d = dist(p, m);
+
+    if (!p.hidden && sameZone && d < (r.finalPhase ? 560 : 440)) {
+      m.mode = "chase";
+      m.target = { x: p.x, y: p.y };
+      m.anger = clamp(m.anger + 0.12 * dt, 0, 100);
+    } else if (m.mode === "chase") {
+      m.mode = "investigate";
+      m.target = { x: p.x, y: p.y };
+    }
+
+    if (m.mode === "stalk") {
+      if (!m.target || dist(m, m.target) < 38 || Math.random() < 0.006) {
+        const playerZone = getZoneAt(r.map, p, 5);
+
+        const possible = r.map.rooms
+          .filter((room) => room.id !== playerZone?.id)
+          .map((room) => ({
+            room,
+            d: dist({ x: room.x + room.w / 2, y: room.y + room.h / 2 }, p),
+          }))
+          .filter((entry) => entry.d > 260 && entry.d < 980)
+          .sort(() => Math.random() - 0.5);
+
+        const selected = possible[0]?.room || choice(r.map.rooms);
+        m.target = randomPointInRect(selected, 55);
+      }
+
+      moveMonsterToward(r, m.target, m.speed * 0.58, dt);
+    }
+
+    if (m.mode === "investigate") {
+      if (m.target) {
+        moveMonsterToward(r, m.target, m.speed * 0.86, dt);
+      }
+
+      if (!m.target || dist(m, m.target) < 42) {
+        m.mode = "stalk";
+        m.target = null;
+      }
+    }
+
+    if (m.mode === "chase") {
+      m.target = { x: p.x, y: p.y };
+      moveMonsterToward(r, m.target, m.speed * (r.finalPhase ? 1.24 : 1.08), dt);
+
+      if (Math.random() < 0.025) {
+        r.message = choice(["RUN.", "IT SEES YOU.", "DO NOT LOOK BACK."]);
+      }
+    }
+
+    m.anger = clamp(m.anger - dt * 0.003, 0, 100);
+  }
+
+  function moveMonsterToward(r, target, speed, dt) {
+    if (!target) return;
+
+    const m = r.monster;
+    const angle = Math.atan2(target.y - m.y, target.x - m.x);
+    const step = speed * (dt / 16.67);
+
+    const nx = m.x + Math.cos(angle) * step;
+    const ny = m.y + Math.sin(angle) * step;
+
+    if (isWalkable(r, nx, m.y, MONSTER_RADIUS)) {
+      m.x = nx;
+    } else {
+      m.x += Math.cos(angle + rand(-1.7, 1.7)) * step * 0.42;
+    }
+
+    if (isWalkable(r, m.x, ny, MONSTER_RADIUS)) {
+      m.y = ny;
+    } else {
+      m.y += Math.sin(angle + rand(-1.7, 1.7)) * step * 0.42;
+    }
+  }
+
+  function haunt(r) {
+    const p = r.player;
+    const roll = Math.random();
+
+    r.message = choice(horrorLines);
+    r.glitch = Math.max(r.glitch, rand(0.18, 0.5));
+
+    if (roll < 0.18) {
+      const angle = rand(0, Math.PI * 2);
+      r.hallucinations.push({
+        x: p.x + Math.cos(angle) * rand(140, 230),
+        y: p.y + Math.sin(angle) * rand(140, 230),
+        timer: rand(550, 950),
+        type: "eyes",
+      });
+    } else if (roll < 0.35) {
+      const behind = {
+        x: p.x - Math.cos(p.angle) * rand(140, 240),
+        y: p.y - Math.sin(p.angle) * rand(140, 240),
+      };
+      createNoise(r, behind.x, behind.y, 150);
+      r.message = "Footsteps behind you.";
+    } else if (roll < 0.52) {
+      p.fear = clamp(p.fear + rand(5, 11), 0, 100);
+    } else if (roll < 0.68) {
+      r.monster.mode = "investigate";
+      r.monster.target = {
+        x: p.x + rand(-220, 220),
+        y: p.y + rand(-220, 220),
+      };
+    } else if (roll < 0.84 && p.fear > 42) {
+      triggerScare(r, choice(["LOOK", "MOVE", "FOUND YOU"]));
+    } else {
+      r.message = "Silence. Too much silence.";
+    }
   }
 
   function updateGame(dtMs) {
     const r = runRef.current;
     if (!r || !started || r.dead || r.won) return;
 
-    const dt = Math.min(dtMs, 33);
+    const dt = Math.min(dtMs, 34);
     r.time += dt;
-    r.glitch = Math.max(0, r.glitch - dt / 900);
+    r.objectiveBlink += dt;
+    r.glitch = Math.max(0, r.glitch - dt / 1200);
 
     const p = r.player;
-    const m = r.monster;
     const keys = keysRef.current;
+    const cam = getCamera(r);
 
     if (p.invuln > 0) p.invuln -= dt;
-    if (m.stun > 0) m.stun -= dt;
 
-    const cam = getCamera(r);
-    const mx = mouseRef.current.x + cam.x;
-    const my = mouseRef.current.y + cam.y;
-    p.angle = Math.atan2(my - p.y, mx - p.x);
+    const worldMouse = {
+      x: mouseRef.current.x + cam.x,
+      y: mouseRef.current.y + cam.y,
+    };
+
+    p.angle = Math.atan2(worldMouse.y - p.y, worldMouse.x - p.x);
 
     let dx = 0;
     let dy = 0;
@@ -443,31 +637,28 @@ export default function SomethingHeardYou() {
     dx /= len;
     dy /= len;
 
-    const sprinting = keys.shift && p.stamina > 5 && moving && !p.hidden;
-    const speed = sprinting ? 3.65 : 2.15;
+    const sprinting = moving && keys.shift && p.stamina > 8 && !p.hidden;
+    const speed = sprinting ? 3.45 : 2.05;
 
     if (sprinting) {
-      p.stamina = clamp(p.stamina - dt * 0.08, 0, 100);
-      if (Math.random() < 0.05) createNoise(r, p.x, p.y, 170);
+      p.stamina = clamp(p.stamina - dt * 0.07, 0, 100);
+      if (Math.random() < 0.052) createNoise(r, p.x, p.y, 170);
     } else {
-      p.stamina = clamp(p.stamina + dt * 0.035, 0, 100);
+      p.stamina = clamp(p.stamina + dt * 0.026, 0, 100);
     }
 
-    if (moving && Math.random() < (sprinting ? 0.06 : 0.018)) {
-      createNoise(r, p.x, p.y, sprinting ? 160 : 75);
+    if (moving && Math.random() < (sprinting ? 0.055 : 0.012)) {
+      createNoise(r, p.x, p.y, sprinting ? 150 : 65);
     }
 
     const nx = p.x + dx * speed * (dt / 16.67);
     const ny = p.y + dy * speed * (dt / 16.67);
 
-    if (isWalkable(r, nx, p.y)) p.x = nx;
-    if (isWalkable(r, p.x, ny)) p.y = ny;
-
-    p.x = clamp(p.x, 20, WORLD_W - 20);
-    p.y = clamp(p.y, 20, WORLD_H - 20);
+    if (isWalkable(r, nx, p.y, PLAYER_RADIUS)) p.x = nx;
+    if (isWalkable(r, p.x, ny, PLAYER_RADIUS)) p.y = ny;
 
     if (!p.flashlightOff && p.battery > 0) {
-      p.battery = clamp(p.battery - BATTERY_DRAIN * dt * (r.finalPhase ? 1.4 : 1), 0, 100);
+      p.battery = clamp(p.battery - BATTERY_DRAIN * dt * (r.finalPhase ? 1.28 : 1), 0, 100);
     }
 
     if (p.battery <= 0) {
@@ -476,49 +667,71 @@ export default function SomethingHeardYou() {
 
     updateMonster(r, dt);
 
-    const monsterDistance = dist(p, m);
+    const sameZone = sameVisibilityZone(r.map, p, r.monster);
+    const monsterDistance = dist(p, r.monster);
 
-    if (monsterDistance < 280 && !p.hidden) {
-      p.fear = clamp(p.fear + FEAR_MONSTER_GAIN * dt * (1 - monsterDistance / 300), 0, 100);
+    if (!p.hidden && sameZone && monsterDistance < 460) {
+      p.fear = clamp(
+        p.fear + FEAR_MONSTER_GAIN * dt * (1 - monsterDistance / 500),
+        0,
+        100
+      );
     } else if (p.flashlightOff || p.battery <= 0) {
       p.fear = clamp(p.fear + FEAR_DARK_GAIN * dt, 0, 100);
     } else {
       p.fear = clamp(p.fear - FEAR_DECAY * dt, 0, 100);
     }
 
-    if (monsterDistance < PLAYER_RADIUS + MONSTER_RADIUS + 6 && p.invuln <= 0) {
-      if (p.hidden && Math.random() > 0.45) {
-        r.message = "It passed inches away.";
-        m.mode = "stalk";
-        m.target = null;
+    if (monsterDistance < PLAYER_RADIUS + MONSTER_RADIUS + 8 && p.invuln <= 0) {
+      if (p.hidden && Math.random() > 0.5) {
+        r.message = "It walked past you.";
+        r.monster.mode = "stalk";
+        r.monster.target = null;
         p.fear = clamp(p.fear + 18, 0, 100);
       } else {
         p.hp -= 1;
         p.invuln = 1800;
         p.hidden = false;
-        p.fear = clamp(p.fear + 35, 0, 100);
+        p.fear = clamp(p.fear + 36, 0, 100);
         triggerScare(r, "CAUGHT");
-        m.x += rand(-140, 140);
-        m.y += rand(-140, 140);
+
+        const safeRooms = r.map.rooms
+          .filter((room) => dist({ x: room.x + room.w / 2, y: room.y + room.h / 2 }, p) > 360)
+          .sort(() => Math.random() - 0.5);
+
+        const room = safeRooms[0] || choice(r.map.rooms);
+        const pos = randomPointInRect(room, 60);
+
+        r.monster.x = pos.x;
+        r.monster.y = pos.y;
+        r.monster.mode = "stalk";
+        r.monster.target = null;
 
         if (p.hp <= 0) {
           r.dead = true;
-          r.message = "No one heard you scream.";
+          r.message = "The dark learned your name.";
         }
       }
     }
 
     for (const pulse of r.noisePulses) {
-      pulse.r += dt * 0.35;
-      pulse.alpha -= dt * 0.0012;
+      pulse.r += dt * 0.34;
+      pulse.alpha -= dt * 0.0011;
     }
 
     r.noisePulses = r.noisePulses.filter((pulse) => pulse.alpha > 0 && pulse.r < pulse.max);
 
+    for (const h of r.hallucinations) {
+      h.timer -= dt;
+    }
+
+    r.hallucinations = r.hallucinations.filter((h) => h.timer > 0);
+
     r.hauntTimer -= dt;
+
     if (r.hauntTimer <= 0) {
-      runHauntEvent(r, horrorLines);
-      r.hauntTimer = rand(r.finalPhase ? 2500 : 5500, r.finalPhase ? 6500 : 13000);
+      haunt(r);
+      r.hauntTimer = rand(r.finalPhase ? 2300 : 5200, r.finalPhase ? 6000 : 12000);
     }
 
     if (r.scare) {
@@ -529,116 +742,9 @@ export default function SomethingHeardYou() {
     setRun({ ...r });
   }
 
-  function updateMonster(r, dt) {
-    const p = r.player;
-    const m = r.monster;
-
-    if (m.stun > 0) return;
-
-    const d = dist(p, m);
-    const canSensePlayer = !p.hidden && d < (r.finalPhase ? 420 : 280 + m.anger * 2);
-
-    if (canSensePlayer && Math.random() < 0.025) {
-      m.mode = r.finalPhase || d < 170 || p.fear > 65 ? "chase" : "stalk";
-      m.target = { x: p.x, y: p.y };
-    }
-
-    if (m.mode === "stalk") {
-      if (!m.target || dist(m, m.target) < 40 || Math.random() < 0.008) {
-        const nearbyRooms = r.map.rooms
-          .map((room) => ({
-            room,
-            d: dist(
-              { x: room.x + room.w / 2, y: room.y + room.h / 2 },
-              p
-            ),
-          }))
-          .filter((entry) => entry.d > 260 && entry.d < 850)
-          .sort(() => Math.random() - 0.5);
-
-        const selected = nearbyRooms[0]?.room || choice(r.map.rooms);
-        m.target = randomPointInRoom(selected, 50);
-      }
-
-      moveMonsterToward(r, m.target, m.speed * 0.55, dt);
-    }
-
-    if (m.mode === "investigate") {
-      if (m.target) moveMonsterToward(r, m.target, m.speed * 0.85, dt);
-
-      if (!m.target || dist(m, m.target) < 38) {
-        m.mode = "stalk";
-        m.target = null;
-      }
-    }
-
-    if (m.mode === "chase") {
-      m.target = { x: p.x, y: p.y };
-      moveMonsterToward(r, m.target, m.speed * (r.finalPhase ? 1.3 : 1), dt);
-
-      if (d > 620 && !r.finalPhase) {
-        m.mode = "stalk";
-        m.target = null;
-      }
-    }
-
-    m.anger = clamp(m.anger - dt * 0.002, 0, 100);
-  }
-
-  function moveMonsterToward(r, target, speed, dt) {
-    const m = r.monster;
-    if (!target) return;
-
-    const angle = Math.atan2(target.y - m.y, target.x - m.x);
-    const step = speed * (dt / 16.67);
-
-    const nx = m.x + Math.cos(angle) * step;
-    const ny = m.y + Math.sin(angle) * step;
-
-    if (isWalkable(r, nx, m.y, MONSTER_RADIUS)) {
-      m.x = nx;
-    } else {
-      m.x += Math.cos(angle + rand(-1.4, 1.4)) * step * 0.35;
-    }
-
-    if (isWalkable(r, m.x, ny, MONSTER_RADIUS)) {
-      m.y = ny;
-    } else {
-      m.y += Math.sin(angle + rand(-1.4, 1.4)) * step * 0.35;
-    }
-  }
-
-  function runHauntEvent(r, lines) {
-    const p = r.player;
-    const event = Math.random();
-
-    r.message = choice(lines);
-
-    if (event < 0.25) {
-      r.glitch = 0.65;
-    } else if (event < 0.45) {
-      const behind = {
-        x: p.x - Math.cos(p.angle) * rand(120, 220),
-        y: p.y - Math.sin(p.angle) * rand(120, 220),
-      };
-      createNoise(r, behind.x, behind.y, 180);
-    } else if (event < 0.62) {
-      r.monster.mode = "investigate";
-      r.monster.target = {
-        x: p.x + rand(-160, 160),
-        y: p.y + rand(-160, 160),
-      };
-    } else if (event < 0.78) {
-      r.player.fear = clamp(r.player.fear + rand(6, 14), 0, 100);
-    } else if (event < 0.9 && r.player.fear > 45) {
-      triggerScare(r, choice(["NO SIGNAL", "IT SAW YOU", "HIDE"]));
-    } else {
-      r.message = "Silence.";
-    }
-  }
-
   function getCamera(r) {
-    const shake = r.glitch * 8 + (r.player.fear > 75 ? rand(-2, 2) : 0);
+    const fearShake = r.player.fear > 68 ? (r.player.fear - 68) * 0.08 : 0;
+    const shake = r.glitch * 9 + fearShake;
 
     return {
       x: clamp(r.player.x - CANVAS_W / 2 + rand(-shake, shake), 0, WORLD_W - CANVAS_W),
@@ -659,6 +765,7 @@ export default function SomethingHeardYou() {
     drawHidingSpots(ctx, r);
     drawExit(ctx, r);
     drawNoise(ctx, r);
+    drawHallucinations(ctx, r);
     drawMonster(ctx, r);
     drawPlayer(ctx, r);
 
@@ -670,36 +777,58 @@ export default function SomethingHeardYou() {
   }
 
   function drawWorld(ctx, r) {
-    ctx.fillStyle = "#070707";
+    ctx.fillStyle = "#020202";
     ctx.fillRect(0, 0, WORLD_W, WORLD_H);
 
     for (const zone of r.map.walkable) {
-      const isCorridor = zone.type === "corridor";
-      ctx.fillStyle = isCorridor ? "#151515" : "#1c1b1b";
+      const isHall = zone.type === "hallway";
+
+      ctx.fillStyle = isHall ? "#101010" : "#191818";
       ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
 
-      ctx.strokeStyle = isCorridor ? "rgba(255,255,255,0.035)" : "rgba(255,255,255,0.06)";
+      ctx.strokeStyle = isHall ? "rgba(255,255,255,0.035)" : "rgba(255,255,255,0.065)";
       ctx.lineWidth = 2;
       ctx.strokeRect(zone.x, zone.y, zone.w, zone.h);
 
-      if (!isCorridor) {
-        for (let i = 0; i < 4; i++) {
-          ctx.fillStyle = "rgba(255,255,255,0.025)";
-          ctx.fillRect(
-            zone.x + 25 + i * 70,
-            zone.y + 24,
-            38,
-            8
-          );
+      const stainCount = isHall ? 2 : 6;
+
+      for (let i = 0; i < stainCount; i++) {
+        const sx = zone.x + ((i * 79 + zone.decay * 233) % Math.max(1, zone.w - 30)) + 15;
+        const sy = zone.y + ((i * 47 + zone.decay * 181) % Math.max(1, zone.h - 30)) + 15;
+
+        ctx.fillStyle = i % 3 === 0 ? "rgba(80,0,0,0.18)" : "rgba(255,255,255,0.025)";
+        ctx.beginPath();
+        ctx.ellipse(sx, sy, rand(8, 22), rand(4, 13), rand(0, Math.PI), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      if (!isHall) {
+        for (let i = 0; i < 3; i++) {
+          const lx = zone.x + 35 + i * 76;
+          const ly = zone.y + 26;
+          ctx.fillStyle = "rgba(255,255,210,0.045)";
+          ctx.fillRect(lx, ly, 44, 7);
+        }
+
+        ctx.strokeStyle = "rgba(255,255,255,0.05)";
+        ctx.lineWidth = 1;
+
+        for (let i = 0; i < 5; i++) {
+          const x = zone.x + 20 + i * 60;
+          ctx.beginPath();
+          ctx.moveTo(x, zone.y + zone.h - 16);
+          ctx.lineTo(x + rand(12, 28), zone.y + zone.h - rand(25, 55));
+          ctx.stroke();
         }
       }
     }
 
-    for (let i = 0; i < 130; i++) {
+    for (let i = 0; i < 160; i++) {
       const x = (i * 173) % WORLD_W;
-      const y = (i * 91) % WORLD_H;
-      ctx.fillStyle = "rgba(255,255,255,0.025)";
-      ctx.fillRect(x, y, 2, 2);
+      const y = (i * 97) % WORLD_H;
+
+      ctx.fillStyle = "rgba(255,255,255,0.022)";
+      ctx.fillRect(x, y, 1.5, 1.5);
     }
   }
 
@@ -707,45 +836,56 @@ export default function SomethingHeardYou() {
     for (const item of r.items) {
       if (item.collected) continue;
 
-      item.pulse += 0.03;
-      const glow = 8 + Math.sin(item.pulse) * 4;
+      item.pulse += 0.04;
+      const glow = 12 + Math.sin(item.pulse) * 5;
 
       ctx.save();
       ctx.translate(item.x, item.y);
-      ctx.shadowColor = "rgba(255, 70, 70, 0.8)";
+      ctx.shadowColor = "rgba(255,0,0,0.95)";
       ctx.shadowBlur = glow;
-      ctx.fillStyle = "#9e1b1b";
+
+      ctx.fillStyle = "#b01818";
       ctx.beginPath();
-      ctx.moveTo(0, -13);
-      ctx.lineTo(10, 0);
-      ctx.lineTo(0, 13);
-      ctx.lineTo(-10, 0);
+      ctx.moveTo(0, -15);
+      ctx.lineTo(12, -4);
+      ctx.lineTo(8, 13);
+      ctx.lineTo(-8, 13);
+      ctx.lineTo(-12, -4);
       ctx.closePath();
       ctx.fill();
 
-      ctx.fillStyle = "rgba(255,255,255,0.65)";
-      ctx.fillRect(-3, -3, 6, 6);
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.beginPath();
+      ctx.arc(0, 0, 3, 0, Math.PI * 2);
+      ctx.fill();
+
       ctx.restore();
     }
 
-    for (const bat of r.batteries) {
-      if (bat.collected) continue;
+    for (const battery of r.batteries) {
+      if (battery.collected) continue;
+
       ctx.save();
-      ctx.translate(bat.x, bat.y);
-      ctx.fillStyle = "#d6d6aa";
+      ctx.translate(battery.x, battery.y);
+      ctx.shadowColor = "rgba(240,230,160,0.6)";
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = "#d9d1a0";
       ctx.fillRect(-10, -6, 20, 12);
-      ctx.fillStyle = "#8b8b61";
+      ctx.fillStyle = "#77704a";
       ctx.fillRect(10, -3, 4, 6);
       ctx.restore();
     }
 
-    for (const med of r.medkits) {
-      if (med.collected) continue;
+    for (const medkit of r.medkits) {
+      if (medkit.collected) continue;
+
       ctx.save();
-      ctx.translate(med.x, med.y);
-      ctx.fillStyle = "#d8d8d8";
+      ctx.translate(medkit.x, medkit.y);
+      ctx.shadowColor = "rgba(255,255,255,0.4)";
+      ctx.shadowBlur = 7;
+      ctx.fillStyle = "#d7d7d7";
       ctx.fillRect(-12, -10, 24, 20);
-      ctx.fillStyle = "#8b1111";
+      ctx.fillStyle = "#801010";
       ctx.fillRect(-3, -8, 6, 16);
       ctx.fillRect(-8, -3, 16, 6);
       ctx.restore();
@@ -756,14 +896,17 @@ export default function SomethingHeardYou() {
     for (const h of r.hidingSpots) {
       ctx.save();
       ctx.translate(h.x, h.y);
-      ctx.fillStyle = "#101010";
-      ctx.strokeStyle = "rgba(255,255,255,0.13)";
+
+      ctx.fillStyle = "#070707";
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
       ctx.lineWidth = 2;
-      ctx.fillRect(-18, -26, 36, 52);
-      ctx.strokeRect(-18, -26, 36, 52);
-      ctx.fillStyle = "rgba(255,255,255,0.14)";
-      ctx.fillRect(-3, -18, 2, 36);
-      ctx.fillRect(6, -2, 3, 3);
+      ctx.fillRect(-19, -28, 38, 56);
+      ctx.strokeRect(-19, -28, 38, 56);
+
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.fillRect(-3, -21, 2, 42);
+      ctx.fillRect(7, -2, 3, 3);
+
       ctx.restore();
     }
   }
@@ -773,24 +916,48 @@ export default function SomethingHeardYou() {
 
     ctx.save();
     ctx.translate(r.exit.x, r.exit.y);
-    ctx.shadowColor = "rgba(210, 255, 210, 0.8)";
-    ctx.shadowBlur = 18;
-    ctx.fillStyle = "#c9ffd3";
-    ctx.fillRect(-32, -42, 64, 84);
-    ctx.fillStyle = "#0c1a0f";
-    ctx.font = "bold 13px Arial";
+    ctx.shadowColor = "rgba(230,255,230,0.95)";
+    ctx.shadowBlur = 24;
+
+    ctx.fillStyle = "#d8ffe2";
+    ctx.fillRect(-36, -48, 72, 96);
+
+    ctx.fillStyle = "#041208";
+    ctx.font = "bold 14px Arial";
     ctx.textAlign = "center";
-    ctx.fillText("EXIT", 0, -8);
+    ctx.fillText("EXIT", 0, -7);
+
     ctx.restore();
   }
 
   function drawNoise(ctx, r) {
     for (const pulse of r.noisePulses) {
-      ctx.strokeStyle = `rgba(255,255,255,${pulse.alpha * 0.18})`;
+      ctx.strokeStyle = `rgba(255,255,255,${pulse.alpha * 0.15})`;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(pulse.x, pulse.y, pulse.r, 0, Math.PI * 2);
       ctx.stroke();
+    }
+  }
+
+  function drawHallucinations(ctx, r) {
+    for (const h of r.hallucinations) {
+      ctx.save();
+      ctx.translate(h.x, h.y);
+      ctx.globalAlpha = clamp(h.timer / 900, 0, 0.85);
+
+      ctx.fillStyle = "rgba(0,0,0,0.95)";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 32, 46, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(255,255,255,0.82)";
+      ctx.beginPath();
+      ctx.arc(-10, -8, 4, 0, Math.PI * 2);
+      ctx.arc(10, -8, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
     }
   }
 
@@ -801,17 +968,15 @@ export default function SomethingHeardYou() {
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
 
-    if (p.hidden) {
-      ctx.globalAlpha = 0.45;
-    }
+    if (p.hidden) ctx.globalAlpha = 0.42;
 
-    ctx.fillStyle = p.invuln > 0 ? "#f0e4e4" : "#d7d7d7";
+    ctx.fillStyle = p.invuln > 0 ? "#ffffff" : "#d8d8d8";
     ctx.beginPath();
     ctx.arc(0, 0, PLAYER_RADIUS, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#1a1a1a";
-    ctx.fillRect(5, -5, 17, 10);
+    ctx.fillStyle = "#111";
+    ctx.fillRect(5, -5, 18, 10);
 
     ctx.restore();
   }
@@ -820,193 +985,263 @@ export default function SomethingHeardYou() {
     const m = r.monster;
     const p = r.player;
 
+    const sameZone = sameVisibilityZone(r.map, p, m);
     const d = dist(m, p);
-    const visible =
-      r.finalPhase ||
-      d < 210 ||
-      r.player.fear > 60 ||
-      Math.random() < 0.97;
 
-    if (!visible) return;
+    const shouldReveal =
+      r.finalPhase ||
+      sameZone ||
+      d < 115 ||
+      r.player.fear > 72 ||
+      r.monster.mode === "chase";
+
+    if (!shouldReveal) return;
 
     ctx.save();
     ctx.translate(m.x, m.y);
 
-    const flicker = Math.random() < 0.12 ? rand(0.3, 1) : 1;
-    ctx.globalAlpha = clamp((260 - d) / 220, 0.16, 0.95) * flicker;
+    const flicker = Math.random() < 0.18 ? rand(0.25, 0.9) : 1;
+    ctx.globalAlpha = clamp((420 - d) / 350, 0.18, 0.98) * flicker;
 
     ctx.shadowColor = "rgba(0,0,0,1)";
-    ctx.shadowBlur = 25;
+    ctx.shadowBlur = 28;
 
-    ctx.fillStyle = "#050505";
+    ctx.fillStyle = "#010101";
     ctx.beginPath();
-    ctx.ellipse(0, 0, 18, 32, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 4, 22, 38, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#0b0b0b";
     ctx.beginPath();
-    ctx.arc(0, -30, 17, 0, Math.PI * 2);
+    ctx.ellipse(0, -32, 18, 24, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.strokeStyle = "rgba(255,255,255,0.16)";
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(-6, -33, 2.6, 0, Math.PI * 2);
-    ctx.arc(6, -33, 2.6, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = "rgba(255,255,255,0.2)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(-13, -8);
-    ctx.lineTo(-30, 24);
-    ctx.moveTo(13, -8);
-    ctx.lineTo(30, 24);
+    ctx.moveTo(-16, -4);
+    ctx.lineTo(-38, 34);
+    ctx.moveTo(16, -4);
+    ctx.lineTo(38, 34);
+    ctx.moveTo(-10, 34);
+    ctx.lineTo(-18, 64);
+    ctx.moveTo(10, 34);
+    ctx.lineTo(18, 64);
     ctx.stroke();
+
+    ctx.fillStyle = "rgba(255,255,255,0.86)";
+    ctx.beginPath();
+    ctx.arc(-7, -36, 3.2, 0, Math.PI * 2);
+    ctx.arc(7, -36, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (m.mode === "chase") {
+      ctx.fillStyle = "rgba(160,0,0,0.38)";
+      ctx.beginPath();
+      ctx.arc(0, -36, 23, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.restore();
   }
 
   function drawLighting(ctx, r, cam) {
-  const p = r.player;
+    const p = r.player;
 
-  const px = p.x - cam.x;
-  const py = p.y - cam.y;
+    const px = p.x - cam.x;
+    const py = p.y - cam.y;
 
-  const darkness = document.createElement("canvas");
-  darkness.width = CANVAS_W;
-  darkness.height = CANVAS_H;
+    const darkness = document.createElement("canvas");
+    darkness.width = CANVAS_W;
+    darkness.height = CANVAS_H;
 
-  const dctx = darkness.getContext("2d");
+    const dctx = darkness.getContext("2d");
 
-  dctx.fillStyle = "rgba(0,0,0,0.94)";
-  dctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    dctx.fillStyle = "rgba(0,0,0,0.965)";
+    dctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  dctx.globalCompositeOperation = "destination-out";
+    const currentZone = getZoneAt(r.map, p, 6);
 
-  const baseRadius = p.flashlightOff ? 65 : 120 + p.battery * 0.9;
-  const fearPenalty = p.fear * 0.45;
-  const radius = clamp(baseRadius - fearPenalty, 45, 210);
+    const revealZones = r.map.walkable.filter((zone) => {
+      if (!currentZone) return rectDistanceToPoint(zone, p) < 110;
+      if (zone.id === currentZone.id) return true;
+      if (zonesTouch(zone, currentZone) && rectDistanceToPoint(zone, p) < 90) return true;
+      return false;
+    });
 
-  const playerGlow = dctx.createRadialGradient(px, py, 10, px, py, radius);
-  playerGlow.addColorStop(0, "rgba(255,255,255,0.95)");
-  playerGlow.addColorStop(0.55, "rgba(255,255,255,0.45)");
-  playerGlow.addColorStop(1, "rgba(255,255,255,0)");
+    dctx.globalCompositeOperation = "destination-out";
 
-  dctx.fillStyle = playerGlow;
-  dctx.beginPath();
-  dctx.arc(px, py, radius, 0, Math.PI * 2);
-  dctx.fill();
+    for (const zone of revealZones) {
+      dctx.save();
 
-  if (!p.flashlightOff && p.battery > 0) {
-    const flicker = Math.random() < p.fear / 700 ? rand(0.55, 0.9) : 1;
-    const angle = p.angle;
-    const coneLen = clamp(340 + p.battery * 1.2 - p.fear * 1.1, 150, 460) * flicker;
-    const coneWidth = 0.5;
+      dctx.beginPath();
+      dctx.rect(zone.x - cam.x, zone.y - cam.y, zone.w, zone.h);
+      dctx.clip();
 
-    const coneGlow = dctx.createRadialGradient(px, py, 20, px, py, coneLen);
-    coneGlow.addColorStop(0, "rgba(255,255,255,0.8)");
-    coneGlow.addColorStop(0.55, "rgba(255,255,255,0.4)");
-    coneGlow.addColorStop(1, "rgba(255,255,255,0)");
+      const baseRadius = p.flashlightOff ? 56 : 86 + p.battery * 0.55;
+      const fearPenalty = p.fear * 0.36;
+      const radius = clamp(baseRadius - fearPenalty, 34, 132);
 
-    dctx.fillStyle = coneGlow;
-    dctx.beginPath();
-    dctx.moveTo(px, py);
-    dctx.arc(px, py, coneLen, angle - coneWidth, angle + coneWidth);
-    dctx.closePath();
-    dctx.fill();
+      const playerGlow = dctx.createRadialGradient(px, py, 8, px, py, radius);
+      playerGlow.addColorStop(0, "rgba(255,255,255,0.92)");
+      playerGlow.addColorStop(0.5, "rgba(255,255,255,0.32)");
+      playerGlow.addColorStop(1, "rgba(255,255,255,0)");
+
+      dctx.fillStyle = playerGlow;
+      dctx.beginPath();
+      dctx.arc(px, py, radius, 0, Math.PI * 2);
+      dctx.fill();
+
+      if (!p.flashlightOff && p.battery > 0) {
+        const flicker = Math.random() < p.fear / 620 ? rand(0.45, 0.9) : 1;
+        const coneLen = clamp(230 + p.battery * 0.95 - p.fear * 1.2, 105, 330) * flicker;
+        const coneWidth = 0.42;
+
+        const coneGlow = dctx.createRadialGradient(px, py, 16, px, py, coneLen);
+        coneGlow.addColorStop(0, "rgba(255,255,255,0.75)");
+        coneGlow.addColorStop(0.42, "rgba(255,255,255,0.34)");
+        coneGlow.addColorStop(1, "rgba(255,255,255,0)");
+
+        dctx.fillStyle = coneGlow;
+        dctx.beginPath();
+        dctx.moveTo(px, py);
+        dctx.arc(px, py, coneLen, p.angle - coneWidth, p.angle + coneWidth);
+        dctx.closePath();
+        dctx.fill();
+      }
+
+      dctx.restore();
+    }
+
+    dctx.globalCompositeOperation = "source-over";
+    ctx.drawImage(darkness, 0, 0);
+
+    const vignette = ctx.createRadialGradient(
+      CANVAS_W / 2,
+      CANVAS_H / 2,
+      70,
+      CANVAS_W / 2,
+      CANVAS_H / 2,
+      620
+    );
+
+    vignette.addColorStop(0, "rgba(0,0,0,0.02)");
+    vignette.addColorStop(0.55, "rgba(0,0,0,0.28)");
+    vignette.addColorStop(1, "rgba(0,0,0,0.9)");
+
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   }
-
-  dctx.globalCompositeOperation = "source-over";
-
-  ctx.drawImage(darkness, 0, 0);
-
-  const vignette = ctx.createRadialGradient(
-    CANVAS_W / 2,
-    CANVAS_H / 2,
-    140,
-    CANVAS_W / 2,
-    CANVAS_H / 2,
-    620
-  );
-
-  vignette.addColorStop(0, "rgba(0,0,0,0)");
-  vignette.addColorStop(0.7, "rgba(0,0,0,0.22)");
-  vignette.addColorStop(1, "rgba(0,0,0,0.78)");
-
-  ctx.fillStyle = vignette;
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-}
 
   function drawHUD(ctx, r) {
     const p = r.player;
+    const objective = getObjective(r);
+    const objectiveDistance = objective ? Math.round(dist(p, objective)) : 0;
 
     ctx.save();
 
-    ctx.fillStyle = "rgba(0,0,0,0.45)";
-    ctx.fillRect(18, 18, 280, 128);
+    ctx.fillStyle = "rgba(0,0,0,0.52)";
+    ctx.fillRect(18, 18, 302, 146);
 
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    ctx.strokeRect(18, 18, 280, 128);
+    ctx.strokeStyle = "rgba(255,255,255,0.13)";
+    ctx.strokeRect(18, 18, 302, 146);
 
-    ctx.fillStyle = "#f3f3f3";
+    ctx.fillStyle = "#f4f4f4";
     ctx.font = "bold 18px Arial";
     ctx.fillText("SOMETHING HEARD YOU", 34, 45);
 
-    drawBar(ctx, 34, 62, 220, 12, p.battery, "#e5e0b8", "Battery");
-    drawBar(ctx, 34, 88, 220, 12, 100 - p.fear, "#b8d5e5", "Calm");
-    drawBar(ctx, 34, 114, 220, 12, p.stamina, "#d3d3d3", "Stamina");
+    drawBar(ctx, 34, 64, 218, 12, p.battery, "#d8d0a3", "Battery");
+    drawBar(ctx, 34, 91, 218, 12, 100 - p.fear, "#a9c7da", "Calm");
+    drawBar(ctx, 34, 118, 218, 12, p.stamina, "#d6d6d6", "Stamina");
 
     ctx.fillStyle = "#f3f3f3";
     ctx.font = "14px Arial";
-    ctx.fillText(`Health: ${"♥".repeat(Math.max(0, p.hp))}`, 34, 139);
+    ctx.fillText(`Health: ${"♥".repeat(Math.max(0, p.hp))}`, 34, 148);
 
     ctx.textAlign = "right";
-    ctx.fillText(`Fragments: ${r.collected}/${ITEM_COUNT}`, CANVAS_W - 34, 38);
+    ctx.fillStyle = "#f3f3f3";
+    ctx.font = "14px Arial";
+    ctx.fillText(`Fragments: ${r.collected}/${ITEM_COUNT}`, CANVAS_W - 34, 37);
+
+    drawObjectiveCompass(ctx, r, objective, objectiveDistance);
 
     if (r.finalPhase) {
-      ctx.fillStyle = "rgba(160,0,0,0.35)";
-      ctx.fillRect(CANVAS_W / 2 - 150, 20, 300, 36);
-      ctx.strokeStyle = "rgba(255,80,80,0.45)";
-      ctx.strokeRect(CANVAS_W / 2 - 150, 20, 300, 36);
       ctx.textAlign = "center";
-      ctx.fillStyle = "#ffd6d6";
-      ctx.font = "bold 17px Arial";
-      ctx.fillText("RUN TO THE EXIT", CANVAS_W / 2, 44);
+      ctx.fillStyle = "rgba(140,0,0,0.42)";
+      ctx.fillRect(CANVAS_W / 2 - 164, 20, 328, 42);
+      ctx.strokeStyle = "rgba(255,70,70,0.52)";
+      ctx.strokeRect(CANVAS_W / 2 - 164, 20, 328, 42);
+
+      ctx.fillStyle = "#ffd8d8";
+      ctx.font = "bold 18px Arial";
+      ctx.fillText("THE EXIT IS OPEN. RUN.", CANVAS_W / 2, 47);
     }
 
     if (r.message) {
       ctx.textAlign = "center";
-      ctx.fillStyle = "rgba(0,0,0,0.55)";
-      ctx.fillRect(CANVAS_W / 2 - 280, CANVAS_H - 72, 560, 42);
-      ctx.strokeStyle = "rgba(255,255,255,0.1)";
-      ctx.strokeRect(CANVAS_W / 2 - 280, CANVAS_H - 72, 560, 42);
+      ctx.fillStyle = "rgba(0,0,0,0.64)";
+      ctx.fillRect(CANVAS_W / 2 - 312, CANVAS_H - 74, 624, 44);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.11)";
+      ctx.strokeRect(CANVAS_W / 2 - 312, CANVAS_H - 74, 624, 44);
 
       ctx.fillStyle = "#eeeeee";
       ctx.font = "15px Arial";
-      ctx.fillText(r.message, CANVAS_W / 2, CANVAS_H - 45);
+      ctx.fillText(r.message, CANVAS_W / 2, CANVAS_H - 46);
     }
 
     if (p.hidden) {
       ctx.textAlign = "center";
-      ctx.fillStyle = "rgba(200,220,255,0.85)";
+      ctx.fillStyle = "rgba(220,230,255,0.9)";
       ctx.font = "bold 15px Arial";
-      ctx.fillText("HIDING — HOLD STILL", CANVAS_W / 2, 80);
+      ctx.fillText("HIDING — DO NOT MOVE", CANVAS_W / 2, 82);
     }
 
     ctx.restore();
   }
 
+  function drawObjectiveCompass(ctx, r, objective, distance) {
+    if (!objective) return;
+
+    const p = r.player;
+    const angle = Math.atan2(objective.y - p.y, objective.x - p.x);
+    const pulse = 0.65 + Math.sin(r.objectiveBlink / 210) * 0.25;
+
+    ctx.save();
+    ctx.translate(CANVAS_W - 82, 88);
+    ctx.rotate(angle);
+
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = r.exit.active ? "#d9ffe2" : "#ffb8b8";
+    ctx.beginPath();
+    ctx.moveTo(22, 0);
+    ctx.lineTo(-10, -10);
+    ctx.lineTo(-4, 0);
+    ctx.lineTo(-10, 10);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "12px Arial";
+    ctx.fillText(r.exit.active ? "EXIT" : "STATIC", CANVAS_W - 82, 122);
+    ctx.fillText(`${distance}m`, CANVAS_W - 82, 139);
+    ctx.restore();
+  }
+
   function drawBar(ctx, x, y, w, h, value, color, label) {
-    ctx.fillStyle = "rgba(255,255,255,0.09)";
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
     ctx.fillRect(x, y, w, h);
 
     ctx.fillStyle = color;
     ctx.fillRect(x, y, w * clamp(value / 100, 0, 1), h);
 
-    ctx.strokeStyle = "rgba(255,255,255,0.16)";
+    ctx.strokeStyle = "rgba(255,255,255,0.17)";
     ctx.strokeRect(x, y, w, h);
 
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = "11px Arial";
     ctx.fillText(label, x + w + 12, y + 10);
   }
@@ -1014,101 +1249,197 @@ export default function SomethingHeardYou() {
   function drawOverlays(ctx, r) {
     const fear = r.player.fear / 100;
 
-    if (fear > 0.35) {
+    ctx.save();
+    ctx.globalAlpha = 0.12 + fear * 0.16;
+
+    for (let i = 0; i < 80; i++) {
+      const x = (i * 97 + r.time * 0.015) % CANVAS_W;
+      const y = (i * 53 + r.time * 0.027) % CANVAS_H;
+
+      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      ctx.fillRect(x, y, 1, 1);
+    }
+
+    ctx.restore();
+
+    if (fear > 0.45) {
       ctx.save();
-      ctx.globalAlpha = (fear - 0.35) * 0.35;
-      for (let i = 0; i < 22; i++) {
-        ctx.fillStyle = "rgba(255,255,255,0.14)";
-        ctx.fillRect(rand(0, CANVAS_W), rand(0, CANVAS_H), rand(1, 3), rand(1, 3));
-      }
+      ctx.globalAlpha = (fear - 0.45) * 0.4;
+      ctx.fillStyle = "rgba(120,0,0,0.22)";
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
       ctx.restore();
     }
 
     if (r.glitch > 0) {
       ctx.save();
-      ctx.globalAlpha = r.glitch * 0.2;
-      for (let i = 0; i < 8; i++) {
-        ctx.fillStyle = i % 2 ? "rgba(255,0,0,0.5)" : "rgba(255,255,255,0.3)";
+      ctx.globalAlpha = r.glitch * 0.22;
+
+      for (let i = 0; i < 10; i++) {
+        ctx.fillStyle = i % 2 ? "rgba(255,0,0,0.42)" : "rgba(255,255,255,0.28)";
         ctx.fillRect(0, rand(0, CANVAS_H), CANVAS_W, rand(2, 8));
       }
+
       ctx.restore();
     }
 
     if (r.scare) {
-      const alpha = clamp(r.scare.timer / 850, 0, 1);
+      const alpha = clamp(r.scare.timer / 1050, 0, 1);
+      const grow = 1 + (1 - alpha) * 1.4;
 
       ctx.save();
-      ctx.fillStyle = `rgba(0,0,0,${0.35 + alpha * 0.3})`;
+
+      ctx.fillStyle = `rgba(0,0,0,${0.36 + alpha * 0.38})`;
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-      ctx.translate(CANVAS_W / 2, CANVAS_H / 2);
-      ctx.scale(1 + (1 - alpha) * 0.7, 1 + (1 - alpha) * 0.7);
+      ctx.translate(CANVAS_W / 2 + rand(-8, 8), CANVAS_H / 2 + rand(-8, 8));
+      ctx.scale(grow, grow);
 
-      ctx.fillStyle = `rgba(15,15,15,${0.92})`;
+      ctx.fillStyle = "rgba(5,5,5,0.98)";
       ctx.beginPath();
-      ctx.ellipse(0, -20, 100, 145, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, -22, 118, 162, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = `rgba(255,255,255,${0.8})`;
+      ctx.fillStyle = `rgba(255,255,255,${0.9})`;
       ctx.beginPath();
-      ctx.arc(-36, -48, 12, 0, Math.PI * 2);
-      ctx.arc(36, -48, 12, 0, Math.PI * 2);
+      ctx.ellipse(-42, -58, 18, 28, -0.2, 0, Math.PI * 2);
+      ctx.ellipse(42, -58, 18, 28, 0.2, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = "rgba(0,0,0,0.9)";
+      ctx.fillStyle = "rgba(0,0,0,0.95)";
       ctx.beginPath();
-      ctx.arc(-36, -48, 5, 0, Math.PI * 2);
-      ctx.arc(36, -48, 5, 0, Math.PI * 2);
+      ctx.arc(-42, -56, 7, 0, Math.PI * 2);
+      ctx.arc(42, -56, 7, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = `rgba(255,255,255,${0.5})`;
+      ctx.strokeStyle = "rgba(255,255,255,0.45)";
       ctx.lineWidth = 5;
       ctx.beginPath();
-      ctx.moveTo(-42, 38);
-      ctx.quadraticCurveTo(0, 70, 42, 38);
+      ctx.moveTo(-55, 35);
+      ctx.quadraticCurveTo(0, 95, 55, 35);
       ctx.stroke();
+
+      for (let i = 0; i < 9; i++) {
+        ctx.strokeStyle = "rgba(255,255,255,0.2)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-45 + i * 11, 39);
+        ctx.lineTo(-51 + i * 12, 78);
+        ctx.stroke();
+      }
 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
 
       ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-      ctx.font = "bold 44px Arial";
+      ctx.font = "bold 54px Arial";
       ctx.textAlign = "center";
-      ctx.fillText(r.scare.text, CANVAS_W / 2, CANVAS_H - 95);
+      ctx.fillText(r.scare.text, CANVAS_W / 2, CANVAS_H - 86);
 
       ctx.restore();
     }
 
-    if (r.dead || r.won || !started) {
+    if (!started || r.dead || r.won) {
       ctx.save();
-      ctx.fillStyle = "rgba(0,0,0,0.82)";
+
+      ctx.fillStyle = "rgba(0,0,0,0.86)";
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
       ctx.textAlign = "center";
       ctx.fillStyle = "#f4f4f4";
-      ctx.font = "bold 46px Arial";
+      ctx.font = "bold 48px Arial";
 
       if (!started) {
-        ctx.fillText("SOMETHING HEARD YOU", CANVAS_W / 2, CANVAS_H / 2 - 74);
+        ctx.fillText("SOMETHING HEARD YOU", CANVAS_W / 2, CANVAS_H / 2 - 86);
+
         ctx.font = "18px Arial";
         ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.fillText("A top-down horror roguelike. Move quietly. Stay in the light.", CANVAS_W / 2, CANVAS_H / 2 - 28);
-        ctx.fillText("WASD move • Mouse aim • Shift sprint • E interact • F flashlight • Space hide", CANVAS_W / 2, CANVAS_H / 2 + 5);
-        ctx.fillText("Collect all fragments, then escape.", CANVAS_W / 2, CANVAS_H / 2 + 38);
-      } else if (r.dead) {
-        ctx.fillText("YOU WERE HEARD", CANVAS_W / 2, CANVAS_H / 2 - 45);
+        ctx.fillText("A dark horror roguelike. Follow the static. Do not let it hear you.", CANVAS_W / 2, CANVAS_H / 2 - 34);
+        ctx.fillText("WASD move • Mouse aim • Shift sprint • E interact • F flashlight • Space hide", CANVAS_W / 2, CANVAS_H / 2);
+        ctx.fillText("Collect 6 fragments. Then escape.", CANVAS_W / 2, CANVAS_H / 2 + 34);
+      }
+
+      if (r.dead) {
+        ctx.fillText("YOU WERE HEARD", CANVAS_W / 2, CANVAS_H / 2 - 42);
+
         ctx.font = "18px Arial";
         ctx.fillStyle = "rgba(255,255,255,0.75)";
-        ctx.fillText("No one heard you scream.", CANVAS_W / 2, CANVAS_H / 2 - 5);
-      } else if (r.won) {
-        ctx.fillText("YOU ESCAPED", CANVAS_W / 2, CANVAS_H / 2 - 45);
+        ctx.fillText("The dark learned your name.", CANVAS_W / 2, CANVAS_H / 2);
+      }
+
+      if (r.won) {
+        ctx.fillText("YOU ESCAPED", CANVAS_W / 2, CANVAS_H / 2 - 42);
+
         ctx.font = "18px Arial";
         ctx.fillStyle = "rgba(255,255,255,0.75)";
-        ctx.fillText("But the signal is still active.", CANVAS_W / 2, CANVAS_H / 2 - 5);
+        ctx.fillText("But the signal is still active.", CANVAS_W / 2, CANVAS_H / 2);
       }
 
       ctx.restore();
     }
   }
+
+  useEffect(() => {
+    const down = (e) => {
+      const key = e.key.toLowerCase();
+      keysRef.current[key] = true;
+
+      if (["w", "a", "s", "d", " ", "shift", "e", "f"].includes(key)) {
+        e.preventDefault();
+      }
+
+      if (key === "f") {
+        const r = runRef.current;
+        if (!r || r.dead || r.won) return;
+
+        r.player.flashlightOff = !r.player.flashlightOff;
+        r.message = r.player.flashlightOff ? "You turned off the light." : "The flashlight flickers on.";
+      }
+
+      if (key === "e") {
+        interact();
+      }
+
+      if (key === " ") {
+        const r = runRef.current;
+        if (!r || r.dead || r.won) return;
+
+        const nearHide = r.hidingSpots.find((spot) => dist(spot, r.player) < 45);
+
+        if (nearHide) {
+          r.player.hidden = !r.player.hidden;
+          r.message = r.player.hidden ? "You hold your breath." : "You step out.";
+          if (!r.player.hidden) createNoise(r, r.player.x, r.player.y, 185);
+        } else {
+          r.message = "No hiding spot nearby.";
+        }
+      }
+    };
+
+    const up = (e) => {
+      keysRef.current[e.key.toLowerCase()] = false;
+    };
+
+    const move = (e) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+
+      mouseRef.current = {
+        x: ((e.clientX - rect.left) / rect.width) * CANVAS_W,
+        y: ((e.clientY - rect.top) / rect.height) * CANVAS_H,
+      };
+    };
+
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("mousemove", move);
+
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("mousemove", move);
+    };
+  }, []);
 
   useEffect(() => {
     const tick = (now) => {
@@ -1120,7 +1451,9 @@ export default function SomethingHeardYou() {
       const ctx = canvasRef.current?.getContext("2d");
       const r = runRef.current;
 
-      if (ctx && r) drawGame(ctx, r);
+      if (ctx && r) {
+        drawGame(ctx, r);
+      }
 
       rafRef.current = requestAnimationFrame(tick);
     };
@@ -1138,8 +1471,9 @@ export default function SomethingHeardYou() {
             <p className="shy-kicker">Final hidden game</p>
             <h1>Something Heard You</h1>
             <p>
-              A dark horror roguelike with randomized rooms, a stalking monster,
-              jump scares, flashlight survival, fear, and a final escape phase.
+              A dark roguelike horror game with a maze layout, flashlight
+              survival, fear, noise, jump scares, and a creature that only fully
+              chases when it shares your hallway.
             </p>
           </div>
 
@@ -1147,12 +1481,12 @@ export default function SomethingHeardYou() {
             <button onClick={started ? restart : () => setStarted(true)}>
               {started ? "Restart Run" : "Start Run"}
             </button>
-            <button
-              className="shy-secondary"
-              onClick={() => setMuted((m) => !m)}
-            >
-              {muted ? "Muted" : "Atmosphere On"}
-            </button>
+
+            {onExit && (
+              <button className="shy-secondary" onClick={onExit}>
+                Back to Games
+              </button>
+            )}
           </div>
         </div>
 
@@ -1179,24 +1513,26 @@ export default function SomethingHeardYou() {
 
         <div className="shy-notes">
           <div>
-            <h3>How to win</h3>
+            <h3>Goal</h3>
             <p>
-              Collect all six fragments. After the last one, the exit appears
-              and the monster becomes aggressive.
+              Collect 6 fragments. The compass points toward the nearest one.
+              After that, follow it to the exit.
             </p>
           </div>
+
           <div>
-            <h3>How horror works</h3>
+            <h3>Monster</h3>
             <p>
-              Running creates noise. Darkness raises fear. High fear causes
-              glitches, fake warnings, jump scares, and worse visibility.
+              It moves fast, but it only fully chases when it shares your room
+              or hallway. Running still attracts it.
             </p>
           </div>
+
           <div>
-            <h3>Tip</h3>
+            <h3>Survival</h3>
             <p>
-              Use hiding spots, but do not rely on them. Sometimes it passes by.
-              Sometimes it checks.
+              Darkness and close encounters raise fear. High fear causes worse
+              visibility, glitches, haunt events, and jump scares.
             </p>
           </div>
         </div>
