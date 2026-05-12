@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import TowerDefenseGame from "../components/games/TowerDefenseGame";
 import FlashcardDash from "../components/games/FlashcardDash";
+import SomethingHeardYou from "../components/games/SomethingHeardYou";
 import "../styles/Games.css";
 
 function normalizeFlashcards(cards = []) {
@@ -289,6 +290,10 @@ export default function Games() {
     );
   }
 
+  if (activeGame === "something-heard-you") {
+    return <SomethingHeardYou onExit={() => setActiveGame(null)} />;
+  }
+
   return (
     <div className="games-page">
       <div className="games-hero">
@@ -407,13 +412,42 @@ export default function Games() {
           </button>
         </div>
 
-        <div className="game-card locked-game-card">
-          <span className="game-pill muted">Coming Soon</span>
-          <h2>Quiz Dungeon</h2>
-          <p>
-            A 2D dungeon crawler where correct answers deal damage and unlock
-            rooms.
+        <div className="game-card featured-game-card horror-game-card">
+          <div className="game-card-top">
+            <div>
+              <p className="game-label">Final Game</p>
+              <h2>Something Heard You</h2>
+            </div>
+            <span className="game-pill">Horror Roguelike</span>
+          </div>
+
+          <p className="game-description">
+            A dark survival horror roguelike with randomized rooms, flashlight
+            survival, fear, noise, jump scares, and a monster that hunts by
+            sound.
           </p>
+
+          <div className="game-details-row">
+            <div>
+              <strong>6</strong>
+              <span>Fragments</span>
+            </div>
+            <div>
+              <strong>1</strong>
+              <span>Monster</span>
+            </div>
+            <div>
+              <strong>∞</strong>
+              <span>Runs</span>
+            </div>
+          </div>
+
+          <button
+            className="start-game-btn horror-game-btn"
+            onClick={() => setActiveGame("something-heard-you")}
+          >
+            Start Something Heard You
+          </button>
         </div>
       </div>
     </div>

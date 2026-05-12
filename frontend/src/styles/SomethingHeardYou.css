@@ -1,0 +1,170 @@
+.shy-page {
+  min-height: 100vh;
+  padding: 28px;
+  background:
+    radial-gradient(circle at top, rgba(70, 0, 0, 0.18), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.04), transparent 30%),
+    #050505;
+  color: #f3f3f3;
+}
+
+.shy-shell {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.shy-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-end;
+  margin-bottom: 18px;
+}
+
+.shy-kicker {
+  margin: 0 0 6px;
+  color: rgba(255, 160, 160, 0.82);
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.shy-header h1 {
+  margin: 0;
+  font-size: clamp(36px, 5vw, 64px);
+  line-height: 0.95;
+  letter-spacing: -0.06em;
+  text-shadow: 0 0 24px rgba(255, 0, 0, 0.18);
+}
+
+.shy-header p {
+  max-width: 720px;
+  color: rgba(255, 255, 255, 0.68);
+  margin: 12px 0 0;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.shy-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.shy-actions button {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(160, 20, 20, 0.9);
+  color: white;
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.shy-actions button:hover {
+  transform: translateY(-1px);
+  background: rgba(190, 26, 26, 0.95);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.shy-actions .shy-secondary {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.shy-actions .shy-secondary:hover {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.shy-game-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.025)),
+    rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 26px;
+  padding: 16px;
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.62),
+    inset 0 0 60px rgba(255, 0, 0, 0.035);
+  overflow: hidden;
+}
+
+.shy-canvas {
+  display: block;
+  width: 100%;
+  max-width: 980px;
+  height: auto;
+  margin: 0 auto;
+  border-radius: 18px;
+  background: #030303;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: crosshair;
+  image-rendering: auto;
+}
+
+.shy-controls {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 4px 2px;
+}
+
+.shy-controls span {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.075);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  padding: 7px 10px;
+  border-radius: 999px;
+}
+
+.shy-notes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.shy-notes > div {
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.shy-notes h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.shy-notes p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 850px) {
+  .shy-page {
+    padding: 18px;
+  }
+
+  .shy-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .shy-actions {
+    width: 100%;
+  }
+
+  .shy-actions button {
+    flex: 1;
+  }
+
+  .shy-notes {
+    grid-template-columns: 1fr;
+  }
+}
