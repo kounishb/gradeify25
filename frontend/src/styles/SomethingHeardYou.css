@@ -1,254 +1,136 @@
-@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Crimson+Pro:ital,wght@0,300;0,400;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Crimson+Pro:ital,wght@0,400;0,700;1,400&display=swap');
 
 :root {
-  --blood:      #8b1a1a;
-  --blood-dim:  rgba(139, 26, 26, 0.75);
-  --void:       #020103;
-  --surface:    #0b0a10;
-  --border:     rgba(180, 60, 60, 0.22);
-  --text:       #e8dede;
-  --text-dim:   rgba(220, 200, 200, 0.55);
-  --mono:       'Share Tech Mono', 'Courier New', monospace;
-  --serif:      'Crimson Pro', Georgia, serif;
+  --void:     #020103;
+  --text:     #e8dede;
+  --text-dim: rgba(220,200,200,0.55);
+  --red:      rgba(165,22,22,0.9);
+  --border:   rgba(165,50,50,0.28);
+  --mono:     'Share Tech Mono','Courier New',monospace;
+  --serif:    'Crimson Pro',Georgia,serif;
 }
 
-/* Page */
 .shy-page {
   min-height: 100vh;
-  padding: 32px 28px;
+  padding: 30px 28px;
   background:
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(100, 0, 0, 0.14), transparent),
-    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(40, 0, 0, 0.12), transparent),
+    radial-gradient(ellipse 80% 50% at 50% -8%, rgba(90,0,0,0.16), transparent),
+    radial-gradient(ellipse 55% 38% at 100% 100%, rgba(35,0,0,0.12), transparent),
     var(--void);
   color: var(--text);
   font-family: var(--mono);
 }
 
-/* Page-wide subtle scanlines */
+/* Full-page scanline overlay */
 .shy-page::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.055) 2px,
-    rgba(0, 0, 0, 0.055) 3px
-  );
-  pointer-events: none;
-  z-index: 1000;
+  content:'';
+  position:fixed;inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.05) 2px,rgba(0,0,0,0.05) 3px);
+  pointer-events:none;z-index:1000;
 }
 
-.shy-shell {
-  max-width: 1120px;
-  margin: 0 auto;
-}
+.shy-shell { max-width:1120px; margin:0 auto; }
 
 /* Header */
 .shy-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 28px;
-  align-items: flex-end;
-  margin-bottom: 20px;
+  display:flex; justify-content:space-between; gap:28px;
+  align-items:flex-end; margin-bottom:20px;
 }
-
 .shy-kicker {
-  margin: 0 0 8px;
-  color: rgba(180, 60, 60, 0.72);
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
+  margin:0 0 8px;
+  color:rgba(175,55,55,0.75);
+  font-family:var(--mono); font-size:11px; letter-spacing:.22em; text-transform:uppercase;
 }
-
 .shy-header h1 {
-  margin: 0;
-  font-family: var(--serif);
-  font-size: clamp(38px, 5.2vw, 68px);
-  font-weight: 700;
-  font-style: italic;
-  line-height: 0.92;
-  letter-spacing: -0.03em;
-  color: var(--text);
-  text-shadow:
-    0 0 40px rgba(180, 30, 30, 0.22),
-    0 2px 0 rgba(0, 0, 0, 0.85);
+  margin:0;
+  font-family:var(--serif); font-size:clamp(38px,5.2vw,68px);
+  font-weight:700; font-style:italic; line-height:.92; letter-spacing:-.03em;
+  text-shadow:0 0 40px rgba(170,25,25,.22),0 2px 0 rgba(0,0,0,.85);
 }
-
 .shy-header p {
-  max-width: 680px;
-  color: var(--text-dim);
-  margin: 14px 0 0;
-  font-family: var(--mono);
-  font-size: 13px;
-  line-height: 1.7;
+  max-width:680px; color:var(--text-dim); margin:14px 0 0;
+  font-family:var(--mono); font-size:13px; line-height:1.7;
 }
 
 /* Buttons */
-.shy-actions {
-  display: flex;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
+.shy-actions { display:flex; gap:10px; flex-shrink:0; }
 .shy-actions button {
-  border: 1px solid rgba(200, 60, 60, 0.35);
-  background: linear-gradient(180deg, rgba(155, 22, 22, 0.88), rgba(105, 10, 10, 0.95));
-  color: var(--text);
-  padding: 12px 20px;
-  border-radius: 4px;
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: bold;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  cursor: pointer;
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.52),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  transition: all 0.13s ease;
+  border:1px solid rgba(195,55,55,.38);
+  background:linear-gradient(180deg,rgba(150,20,20,.9),rgba(100,8,8,.95));
+  color:var(--text); padding:12px 22px; border-radius:4px;
+  font-family:var(--mono); font-size:12px; font-weight:bold;
+  letter-spacing:.08em; text-transform:uppercase; cursor:pointer;
+  box-shadow:0 4px 20px rgba(0,0,0,.52),inset 0 1px 0 rgba(255,255,255,.06);
+  transition:all .13s ease;
 }
-
 .shy-actions button:hover {
-  transform: translateY(-2px);
-  background: linear-gradient(180deg, rgba(185, 30, 30, 0.92), rgba(138, 14, 14, 1));
-  border-color: rgba(230, 90, 90, 0.45);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55), 0 0 14px rgba(160, 20, 20, 0.28);
+  transform:translateY(-2px);
+  background:linear-gradient(180deg,rgba(185,28,28,.92),rgba(135,12,12,1));
+  border-color:rgba(225,85,85,.48);
+  box-shadow:0 8px 28px rgba(0,0,0,.55),0 0 14px rgba(155,18,18,.28);
 }
-
-.shy-actions button:active { transform: translateY(0); }
-
+.shy-actions button:active { transform:translateY(0); }
 .shy-actions .shy-secondary {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.1);
+  background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.1);
 }
-
-.shy-actions .shy-secondary:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.18);
-}
+.shy-actions .shy-secondary:hover { background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18); }
 
 /* Game card */
 .shy-game-card {
-  position: relative;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.01)),
-    rgba(0, 0, 0, 0.68);
-  border: 1px solid rgba(180, 55, 55, 0.22);
-  border-radius: 8px;
-  padding: 14px;
-  box-shadow:
-    0 32px 80px rgba(0, 0, 0, 0.72),
-    0 0 0 1px rgba(0, 0, 0, 0.5),
-    inset 0 0 80px rgba(90, 0, 0, 0.045);
-  overflow: hidden;
+  position:relative;
+  background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.01)),rgba(0,0,0,.65);
+  border:1px solid var(--border); border-radius:8px; padding:14px;
+  box-shadow:0 32px 80px rgba(0,0,0,.72),0 0 0 1px rgba(0,0,0,.5),inset 0 0 80px rgba(80,0,0,.04);
+  overflow:hidden;
 }
-
 /* Corner bracket accents */
-.shy-game-card::before,
-.shy-game-card::after {
-  content: '';
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border-color: rgba(180, 55, 55, 0.55);
-  border-style: solid;
-  pointer-events: none;
-  z-index: 2;
+.shy-game-card::before,.shy-game-card::after {
+  content:''; position:absolute; width:14px; height:14px;
+  border-color:rgba(175,50,50,.55); border-style:solid; pointer-events:none; z-index:2;
 }
-.shy-game-card::before { top: 8px; left: 8px; border-width: 1px 0 0 1px; }
-.shy-game-card::after  { bottom: 8px; right: 8px; border-width: 0 1px 1px 0; }
+.shy-game-card::before { top:8px;left:8px;border-width:1px 0 0 1px; }
+.shy-game-card::after  { bottom:8px;right:8px;border-width:0 1px 1px 0; }
 
 /* Canvas */
 .shy-canvas {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  max-width: 980px;
-  height: auto;
-  margin: 0 auto;
-  border-radius: 4px;
-  background: #020103;
-  border: 1px solid rgba(180, 55, 55, 0.2);
-  cursor: crosshair;
-  box-shadow:
-    inset 0 0 40px rgba(80, 0, 0, 0.22),
-    0 12px 48px rgba(0, 0, 0, 0.6);
+  position:relative; z-index:1; display:block;
+  width:100%; max-width:980px; height:auto; margin:0 auto;
+  border-radius:4px; background:#020103;
+  border:1px solid rgba(165,50,50,.22); cursor:crosshair;
+  box-shadow:inset 0 0 40px rgba(70,0,0,.2),0 12px 48px rgba(0,0,0,.6);
 }
 
-/* Controls strip */
+/* Controls */
 .shy-controls {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px 4px 2px;
+  position:relative;z-index:1;display:flex;justify-content:center;
+  flex-wrap:wrap;gap:8px;padding:12px 4px 2px;
 }
-
 .shy-controls span {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: rgba(200, 170, 170, 0.6);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  padding: 5px 10px;
-  border-radius: 3px;
-  letter-spacing: 0.04em;
+  font-family:var(--mono);font-size:11px;color:rgba(200,170,170,.62);
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);
+  padding:5px 10px;border-radius:3px;letter-spacing:.04em;
 }
 
-/* Info notes */
-.shy-notes {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-top: 14px;
+/* Notes */
+.shy-notes { display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px; }
+.shy-notes>div {
+  position:relative;background:rgba(255,255,255,.025);
+  border:1px solid rgba(165,50,50,.18);border-radius:6px;padding:16px 18px;overflow:hidden;
 }
-
-.shy-notes > div {
-  position: relative;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(180, 55, 55, 0.16);
-  border-radius: 6px;
-  padding: 16px 18px;
-  overflow: hidden;
+.shy-notes>div::before {
+  content:'';position:absolute;top:0;left:0;width:100%;height:2px;
+  background:linear-gradient(90deg,rgba(135,18,18,.68),transparent);
 }
-
-.shy-notes > div::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 2px;
-  background: linear-gradient(90deg, rgba(140, 20, 20, 0.65), transparent);
-}
-
 .shy-notes h3 {
-  margin: 0 0 8px;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: bold;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgba(200, 78, 78, 0.82);
+  margin:0 0 8px;font-family:var(--mono);font-size:11px;font-weight:bold;
+  letter-spacing:.14em;text-transform:uppercase;color:rgba(195,75,75,.85);
 }
+.shy-notes p { margin:0;color:var(--text-dim);font-family:var(--mono);font-size:12px;line-height:1.65; }
 
-.shy-notes p {
-  margin: 0;
-  color: var(--text-dim);
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.65;
-}
-
-/* Responsive */
-@media (max-width: 860px) {
-  .shy-page { padding: 18px 16px; }
-  .shy-header { flex-direction: column; align-items: flex-start; gap: 16px; }
-  .shy-actions { width: 100%; }
-  .shy-actions button { flex: 1; }
-  .shy-notes { grid-template-columns: 1fr; }
+@media(max-width:860px){
+  .shy-page{padding:18px 16px;}
+  .shy-header{flex-direction:column;align-items:flex-start;gap:16px;}
+  .shy-actions{width:100%;}
+  .shy-actions button{flex:1;}
+  .shy-notes{grid-template-columns:1fr;}
 }
