@@ -3,7 +3,7 @@ import "../../styles/TowerDefenseGame.css";
 
 const CANVAS_WIDTH = 980;
 const CANVAS_HEIGHT = 560;
-const MAX_TOWER_LEVEL = 4;
+const MAX_TOWER_LEVEL = 5;
 
 const PATH = [
   { x: 0, y: 300 },
@@ -29,9 +29,10 @@ const TOWER_TYPES = {
     description: "Balanced starter tower",
     upgradeText: [
       "Standard cannon shots.",
-      "Stronger cannonballs.",
+      "Ricochet cannonballs occasionally chip nearby enemies.",
       "Double cannon unlocked.",
-      "Armor breaker against tanks.",
+      "Armor breaker against tanks plus shrapnel splash.",
+      "Siege quake: cannon hits briefly stun clustered enemies.",
     ],
   },
   freeze: {
@@ -46,9 +47,10 @@ const TOWER_TYPES = {
     description: "Slows enemies",
     upgradeText: [
       "Slows one enemy.",
-      "Longer freeze duration.",
+      "Brittle ice: frozen enemies take extra damage.",
       "Freeze splash unlocked.",
-      "Deep freeze slows harder.",
+      "Deep freeze slows harder and lasts longer.",
+      "Ice prison: freeze blasts can briefly lock enemies in place.",
     ],
   },
   splash: {
@@ -62,9 +64,10 @@ const TOWER_TYPES = {
     description: "Area damage",
     upgradeText: [
       "Large arcing explosion.",
-      "Wider blast radius.",
+      "Craters slow enemies after impact.",
       "Burn damage unlocked.",
-      "Heavy shell explosion.",
+      "Heavy shell explosion with bigger burn zones.",
+      "Cluster barrage: shells split into mini-bombs after impact.",
     ],
   },
   sniper: {
@@ -77,9 +80,10 @@ const TOWER_TYPES = {
     description: "Long range, high damage",
     upgradeText: [
       "Long range single shot.",
-      "Higher damage.",
+      "Ricochet rounds bounce to a second target.",
       "Tank piercer unlocked.",
       "Executes weak enemies.",
+      "Marked shot: high-value kills pay bonus coins and pierce farther.",
     ],
   },
   rapid: {
@@ -92,9 +96,10 @@ const TOWER_TYPES = {
     description: "Fast low-damage shots",
     upgradeText: [
       "Very fast shots.",
-      "Faster firing.",
+      "Overdrive: firing at enemies ramps attack speed temporarily.",
       "Double shot unlocked.",
       "Triple shot unlocked.",
+      "Bullet storm: every few volleys sprays extra shots at nearby enemies.",
     ],
   },
   laser: {
@@ -107,9 +112,10 @@ const TOWER_TYPES = {
     description: "Continuous beam damage",
     upgradeText: [
       "Continuous beam damage.",
-      "More range and damage.",
+      "Melt armor: beam targets become vulnerable to all damage.",
       "Chain beam unlocked.",
       "Stronger chain beam.",
+      "Prism nova: periodically bursts beams into nearby enemies.",
     ],
   },
   support: {
@@ -127,8 +133,9 @@ const TOWER_TYPES = {
     upgradeText: [
       "Nearby towers get damage, range, and attack speed buffs.",
       "Stronger buff aura.",
-      "Wider command aura.",
+      "Command pulse: periodically overclocks nearby towers.",
       "Max aura: major range, damage, and speed boosts.",
+      "Battle network: boosted towers gain even faster cooldowns during waves.",
     ],
   },
   nuke: {
@@ -159,10 +166,11 @@ const TOWER_TYPES = {
     superDuration: 1150,
     description: "Every third hit chains explosions; every tenth shot groups enemies",
     upgradeText: [
-      "Every 3rd shot marks enemies to explode. Every 10th shot pulls enemies together.",
+      "Every 3rd shot marks enemies to explode. Every 20th shot pulls enemies together.",
       "Bigger chain blast, stronger knockback, and stronger pull.",
       "Faster reload, larger chain radius, and longer pull duration.",
-      "Huge chain reactions through packed enemies with a powerful super pull.",
+      "Chain reactions re-prime faster inside packed groups.",
+      "Infinite fuse: chain blasts re-mark nearby enemies with stronger repeat explosions.",
     ],
   },
 };
@@ -202,7 +210,7 @@ function makeEnemy(wave, index) {
     speed: isBoss ? 0.72 + wave * 0.015 : isFast ? 1.85 + wave * 0.045 : isTank ? 0.88 + wave * 0.026 : 1.12 + wave * 0.038,
     reward: isBoss ? 48 : isTank ? 17 : isFast ? 10 : isShielded ? 13 : 8,
     type: isBoss ? "boss" : isTank ? "tank" : isFast ? "fast" : isShielded ? "shield" : "normal",
-    slowUntil: 0, slowAmount: 1, burnUntil: 0, burnDps: 0, reachedBase: false,
+    slowUntil: 0, slowAmount: 1, burnUntil: 0, burnDps: 0, brittleUntil: 0, brittleMultiplier: 1, stunUntil: 0, reachedBase: false,
   };
 }
 
@@ -229,40 +237,97 @@ function getTowerStats(tower) {
     splashRadius: base.splashRadius || 0,
     slowDuration: base.slowDuration || 0,
     slowAmount: base.slowAmount || 1,
-    multiShot: 1, burnDps: 0, burnDuration: 0, chain: 0, tankPierce: false, execute: false,
-    buffDamage: base.buffDamage || 1, buffRange: base.buffRange || 1, buffFireRate: base.buffFireRate || 1,
-    knockback: base.knockback || 0, explodeDelay: base.explodeDelay || 0, explosionRadius: base.explosionRadius || 0, chainDamage: base.chainDamage || 0,
-    superEvery: base.superEvery || 0, superRadius: base.superRadius || 0, superPull: base.superPull || 0, superDuration: base.superDuration || 0,
+    multiShot: 1,
+    burnDps: 0,
+    burnDuration: 0,
+    chain: 0,
+    tankPierce: false,
+    execute: false,
+    ricochet: 0,
+    bountyBonus: 0,
+    brittleMultiplier: 1,
+    brittleDuration: 0,
+    stunDuration: 0,
+    craterSlowAmount: 1,
+    craterSlowDuration: 0,
+    clusterBombs: 0,
+    shrapnelRadius: 0,
+    shrapnelDamage: 0,
+    rampMax: 0,
+    stormEvery: 0,
+    stormShots: 0,
+    meltMultiplier: 1,
+    meltDuration: 0,
+    prismNovaEvery: 0,
+    prismNovaRadius: 0,
+    prismNovaDamage: 0,
+    buffDamage: base.buffDamage || 1,
+    buffRange: base.buffRange || 1,
+    buffFireRate: base.buffFireRate || 1,
+    commandPulseEvery: 0,
+    commandPulseDuration: 0,
+    networkFireRateBonus: 1,
+    knockback: base.knockback || 0,
+    explodeDelay: base.explodeDelay || 0,
+    explosionRadius: base.explosionRadius || 0,
+    chainDamage: base.chainDamage || 0,
+    superEvery: base.superEvery || 0,
+    superRadius: base.superRadius || 0,
+    superPull: base.superPull || 0,
+    superDuration: base.superDuration || 0,
   };
-  if (tower.type === "basic") { if (level >= 3) stats.multiShot = 2; if (level >= 4) stats.tankPierce = true; }
+
+  if (tower.type === "basic") {
+    if (level >= 2) stats.ricochet = 1;
+    if (level >= 3) stats.multiShot = 2;
+    if (level >= 4) { stats.tankPierce = true; stats.shrapnelRadius = 46; stats.shrapnelDamage = stats.damage * 0.32; }
+    if (level >= 5) { stats.stunDuration = 360; stats.shrapnelRadius = 70; stats.shrapnelDamage = stats.damage * 0.45; }
+  }
+
   if (tower.type === "freeze") {
     stats.slowDuration = base.slowDuration + (level - 1) * 360;
     stats.slowAmount = Math.max(0.28, base.slowAmount - (level - 1) * 0.055);
+    if (level >= 2) { stats.brittleMultiplier = 1.18 + (level - 2) * 0.06; stats.brittleDuration = 1200 + level * 160; }
     if (level >= 3) stats.splashRadius = 42;
     if (level >= 4) stats.splashRadius = 60;
+    if (level >= 5) { stats.splashRadius = 82; stats.stunDuration = 520; stats.slowAmount = 0.22; }
   }
+
   if (tower.type === "splash") {
     stats.range = base.range + (level - 1) * 14;
     stats.splashRadius = base.splashRadius + (level - 1) * 18;
+    if (level >= 2) { stats.craterSlowAmount = 0.66; stats.craterSlowDuration = 900 + level * 120; }
     if (level >= 3) { stats.burnDps = 7 + level * 2; stats.burnDuration = 1500 + level * 350; }
+    if (level >= 4) { stats.splashRadius += 12; stats.burnDps += 7; }
+    if (level >= 5) { stats.clusterBombs = 4; stats.splashRadius += 16; }
   }
+
   if (tower.type === "sniper") {
     stats.range = base.range + (level - 1) * 22;
-    stats.fireRate = Math.max(820, base.fireRate - (level - 1) * 115);
+    stats.fireRate = Math.max(760, base.fireRate - (level - 1) * 120);
+    if (level >= 2) stats.ricochet = 1;
     if (level >= 3) stats.tankPierce = true;
     if (level >= 4) stats.execute = true;
+    if (level >= 5) { stats.ricochet = 2; stats.bountyBonus = 10; stats.damage *= 1.2; }
   }
+
   if (tower.type === "rapid") {
     stats.fireRate = Math.max(105, base.fireRate - (level - 1) * 30);
+    if (level >= 2) stats.rampMax = 0.36;
     if (level >= 3) stats.multiShot = 2;
     if (level >= 4) stats.multiShot = 3;
+    if (level >= 5) { stats.stormEvery = 7; stats.stormShots = 5; stats.fireRate = Math.max(82, stats.fireRate - 20); }
   }
+
   if (tower.type === "laser") {
     stats.range = base.range + (level - 1) * 18;
     stats.damage = base.damage * (1 + (level - 1) * 0.32);
     stats.chain = level >= 3 ? level - 2 : 0;
     stats.fireRate = 0;
+    if (level >= 2) { stats.meltMultiplier = 1.16 + (level - 2) * 0.04; stats.meltDuration = 1000 + level * 160; }
+    if (level >= 5) { stats.prismNovaEvery = 1350; stats.prismNovaRadius = 122; stats.prismNovaDamage = stats.damage * 0.9; stats.chain = 3; }
   }
+
   if (tower.type === "support") {
     stats.range = base.range + (level - 1) * 24;
     stats.damage = 0;
@@ -270,18 +335,24 @@ function getTowerStats(tower) {
     stats.buffDamage = base.buffDamage + (level - 1) * 0.07;
     stats.buffRange = base.buffRange + (level - 1) * 0.035;
     stats.buffFireRate = Math.max(0.72, base.buffFireRate - (level - 1) * 0.045);
+    if (level >= 3) { stats.commandPulseEvery = 2300; stats.commandPulseDuration = 900 + level * 120; }
+    if (level >= 5) stats.networkFireRateBonus = 0.88;
   }
+
   if (tower.type === "chain") {
     stats.range = base.range + (level - 1) * 13;
     stats.damage = base.damage * (1 + (level - 1) * 0.34);
-    stats.fireRate = Math.max(820, base.fireRate - (level - 1) * 95);
+    stats.fireRate = Math.max(760, base.fireRate - (level - 1) * 105);
     stats.knockback = base.knockback + (level - 1) * 5;
-    stats.explodeDelay = Math.max(480, base.explodeDelay - (level - 1) * 55);
+    stats.explodeDelay = Math.max(390, base.explodeDelay - (level - 1) * 65);
     stats.explosionRadius = base.explosionRadius + (level - 1) * 12;
     stats.chainDamage = base.chainDamage * (1 + (level - 1) * 0.3);
     stats.superPull = base.superPull + (level - 1) * 0.08;
     stats.superDuration = base.superDuration + (level - 1) * 140;
+    if (level >= 4) stats.chainDamage *= 1.12;
+    if (level >= 5) { stats.explosionRadius += 18; stats.chainDamage *= 1.25; stats.superPull += 0.16; }
   }
+
   return stats;
 }
 
@@ -1440,6 +1511,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   function updateVisualEffectsOnly(game, delta) { updateBeamsExplosionsAndPopups(game, delta); }
 
   function moveEnemy(enemy, delta, now) {
+    if (enemy.stunUntil && enemy.stunUntil > now) return;
     if (enemy.pathIndex >= PATH.length - 1) { enemy.reachedBase = true; return; }
     const current = PATH[enemy.pathIndex];
     const next = PATH[enemy.pathIndex + 1];
@@ -1478,10 +1550,11 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       if (supportTower.type !== "support" || supportTower.id === tower.id) return buff;
       const supportStats = getTowerStats(supportTower);
       if (distance(supportTower, tower) > supportStats.range) return buff;
+      const pulseBonus = tower.overclockUntil && tower.overclockUntil > performance.now() ? 0.82 : 1;
       return {
         damage: Math.max(buff.damage, supportStats.buffDamage),
         range: Math.max(buff.range, supportStats.buffRange),
-        fireRate: Math.min(buff.fireRate, supportStats.buffFireRate),
+        fireRate: Math.min(buff.fireRate, supportStats.buffFireRate * supportStats.networkFireRateBonus * pulseBonus),
       };
     }, { damage: 1, range: 1, fireRate: 1 });
   }
@@ -1499,6 +1572,23 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     let stats = getTowerStats(tower);
     if (tower.type === "support") {
       tower.angle = (tower.angle || 0) + 0.012;
+      const supportStats = getTowerStats(tower);
+      if (supportStats.commandPulseEvery && now - (tower.lastCommandPulse || 0) > supportStats.commandPulseEvery) {
+        tower.lastCommandPulse = now;
+        game.towers.forEach(otherTower => {
+          if (otherTower.id === tower.id || otherTower.type === "support") return;
+          if (distance(tower, otherTower) <= supportStats.range) {
+            otherTower.overclockUntil = now + supportStats.commandPulseDuration;
+            game.beams.push({
+              id: `beam-command-${Date.now()}-${Math.random()}`,
+              x1: tower.x, y1: tower.y - 18, x2: otherTower.x, y2: otherTower.y,
+              life: 260, maxLife: 260, width: 3 + tower.level, type: "support",
+            });
+          }
+        });
+        game.explosions.push({ id: `explosion-command-${Date.now()}-${Math.random()}`, x: tower.x, y: tower.y, radius: supportStats.range, life: 380, maxLife: 380, type: "support" });
+        game.damagePopups.push({ id: `popup-command-${Date.now()}-${Math.random()}`, x: tower.x, y: tower.y - 36, text: "OVERCLOCK", life: 720, color: "#d4ff7a" });
+      }
       return;
     }
     stats = applySupportBuffToStats(stats, getSupportBuffForTower(game, tower));
@@ -1509,11 +1599,22 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       tower.angle = angleTo(tower, enemiesInRange[0]);
     }
 
-    if (!enemiesInRange.length) return;
+    if (!enemiesInRange.length) {
+      if (tower.type === "rapid") tower.rapidHeat = Math.max(0, (tower.rapidHeat || 0) - delta * 0.0018);
+      return;
+    }
+    if (tower.type === "rapid" && stats.rampMax) {
+      tower.rapidHeat = Math.min(stats.rampMax, (tower.rapidHeat || 0) + delta * 0.00065);
+      stats.fireRate = Math.max(70, stats.fireRate * (1 - tower.rapidHeat));
+    }
     const target = enemiesInRange[0];
     if (tower.type === "laser") {
       const damage = stats.damage * (delta / 1000);
       applyDamage(game, target, damage, tower, now, { ...stats, silent: true });
+      if (stats.meltDuration) {
+        target.brittleUntil = Math.max(target.brittleUntil || 0, now + stats.meltDuration);
+        target.brittleMultiplier = Math.max(target.brittleMultiplier || 1, stats.meltMultiplier);
+      }
       game.beams.push({ id: `beam-${Date.now()}-${Math.random()}`, x1: tower.x, y1: tower.y, x2: target.x, y2: target.y, life: 46, maxLife: 46, width: 6 + tower.level, type: "laser" });
       if (now - tower.lastPopup > 450) {
         tower.lastPopup = now;
@@ -1523,8 +1624,24 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         const chainTargets = enemiesInRange.filter(e => e.id !== target.id && distance(e, target) <= 105).slice(0, stats.chain);
         chainTargets.forEach(e => {
           applyDamage(game, e, damage * 0.55, tower, now, { ...stats, silent: true });
+          if (stats.meltDuration) {
+            e.brittleUntil = Math.max(e.brittleUntil || 0, now + stats.meltDuration * 0.7);
+            e.brittleMultiplier = Math.max(e.brittleMultiplier || 1, stats.meltMultiplier - 0.04);
+          }
           game.beams.push({ id: `beam-chain-${Date.now()}-${Math.random()}`, x1: target.x, y1: target.y, x2: e.x, y2: e.y, life: 46, maxLife: 46, width: 3 + tower.level * 0.6, type: "laser-chain" });
         });
+      }
+      if (stats.prismNovaEvery && now - (tower.lastPrismNova || 0) > stats.prismNovaEvery) {
+        tower.lastPrismNova = now;
+        game.explosions.push({ id: `explosion-prism-${Date.now()}-${Math.random()}`, x: target.x, y: target.y, radius: stats.prismNovaRadius, life: 360, maxLife: 360, type: "prism" });
+        game.enemies
+          .filter(e => e.hp > 0 && e.id !== target.id && distance(e, target) <= stats.prismNovaRadius)
+          .slice(0, 8)
+          .forEach(e => {
+            applyDamage(game, e, stats.prismNovaDamage, tower, now, { ...stats, type: "prism" });
+            game.beams.push({ id: `beam-prism-${Date.now()}-${Math.random()}`, x1: target.x, y1: target.y, x2: e.x, y2: e.y, life: 170, maxLife: 170, width: 4, type: "laser-chain" });
+          });
+        game.damagePopups.push({ id: `popup-prism-${Date.now()}-${Math.random()}`, x: target.x, y: target.y - 28, text: "PRISM", life: 650, color: "#f3e5f5" });
       }
       return;
     }
@@ -1535,6 +1652,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       const nextShotCount = (tower.shotCount || 0) + 1 + index;
       const isChainPowerShot = tower.type === "chain" && nextShotCount % 3 === 0;
       const isChainSuperShot = tower.type === "chain" && stats.superEvery && nextShotCount % stats.superEvery === 0;
+      const isStormShot = tower.type === "rapid" && stats.stormEvery && nextShotCount % stats.stormEvery === 0;
       game.bullets.push({
         id: `bullet-${Date.now()}-${Math.random()}`,
         x: tower.x, y: tower.y, startX: tower.x, startY: tower.y,
@@ -1544,6 +1662,12 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         splashRadius: stats.splashRadius || 0, slowAmount: stats.slowAmount || 1,
         slowDuration: stats.slowDuration || 0, burnDps: stats.burnDps || 0,
         burnDuration: stats.burnDuration || 0, tankPierce: stats.tankPierce, execute: stats.execute,
+        ricochet: stats.ricochet || 0, bountyBonus: stats.bountyBonus || 0,
+        brittleMultiplier: stats.brittleMultiplier || 1, brittleDuration: stats.brittleDuration || 0,
+        stunDuration: stats.stunDuration || 0, craterSlowAmount: stats.craterSlowAmount || 1,
+        craterSlowDuration: stats.craterSlowDuration || 0, clusterBombs: stats.clusterBombs || 0,
+        shrapnelRadius: stats.shrapnelRadius || 0, shrapnelDamage: stats.shrapnelDamage || 0,
+        stormEvery: stats.stormEvery || 0, stormShots: stats.stormShots || 0, specialStorm: isStormShot,
         specialChain: isChainPowerShot,
         specialSuper: isChainSuperShot,
         knockback: isChainPowerShot ? stats.knockback : 0,
@@ -1582,6 +1706,10 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         else {
           const tower = game.towers.find(t => t.id === bullet.towerId);
           applyDamage(game, target, bullet.damage, tower, now, bullet);
+          applyBulletStatusEffects(target, bullet, now);
+          if (bullet.shrapnelRadius > 0) triggerShrapnel(game, target, tower, now, bullet);
+          if (bullet.ricochet > 0) triggerRicochet(game, target, tower, now, bullet);
+          if (bullet.specialStorm) triggerBulletStorm(game, target, tower, now, bullet);
           if (bullet.specialChain) {
             knockbackEnemy(target, bullet.knockback || 0);
             markEnemyToExplode(game, target, tower, now, bullet, 0);
@@ -1589,8 +1717,6 @@ export default function TowerDefenseGame({ studySet, onExit }) {
           if (bullet.specialSuper) {
             triggerChainSuper(game, target, tower, now, bullet);
           }
-          if (bullet.slowDuration > 0) { target.slowUntil = now + bullet.slowDuration; target.slowAmount = bullet.slowAmount; }
-          if (bullet.burnDuration > 0) { target.burnUntil = now + bullet.burnDuration; target.burnDps = bullet.burnDps; }
         }
         bullet.dead = true;
       } else { bullet.x += (dx / dist) * movement; bullet.y += (dy / dist) * movement; }
@@ -1607,10 +1733,97 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       if (dist <= radius) {
         const falloff = Math.max(0.55, 1 - dist / Math.max(1, radius) * 0.35);
         applyDamage(game, enemy, bullet.damage * falloff, tower, now, bullet);
-        if (bullet.slowDuration > 0) { enemy.slowUntil = now + bullet.slowDuration; enemy.slowAmount = bullet.slowAmount; }
-        if (bullet.burnDuration > 0) { enemy.burnUntil = now + bullet.burnDuration; enemy.burnDps = bullet.burnDps; }
+        applyBulletStatusEffects(enemy, bullet, now);
+        if (bullet.craterSlowDuration > 0) {
+          enemy.slowUntil = Math.max(enemy.slowUntil || 0, now + bullet.craterSlowDuration);
+          enemy.slowAmount = Math.min(enemy.slowAmount || 1, bullet.craterSlowAmount || 0.7);
+        }
       }
     });
+    triggerClusterBombs(game, center, tower, now, bullet);
+  }
+
+  function applyBulletStatusEffects(enemy, bullet, now) {
+    if (!enemy || enemy.hp <= 0) return;
+    if (bullet.slowDuration > 0) {
+      enemy.slowUntil = Math.max(enemy.slowUntil || 0, now + bullet.slowDuration);
+      enemy.slowAmount = Math.min(enemy.slowAmount || 1, bullet.slowAmount || 1);
+    }
+    if (bullet.burnDuration > 0) {
+      enemy.burnUntil = Math.max(enemy.burnUntil || 0, now + bullet.burnDuration);
+      enemy.burnDps = Math.max(enemy.burnDps || 0, bullet.burnDps || 0);
+    }
+    if (bullet.brittleDuration > 0) {
+      enemy.brittleUntil = Math.max(enemy.brittleUntil || 0, now + bullet.brittleDuration);
+      enemy.brittleMultiplier = Math.max(enemy.brittleMultiplier || 1, bullet.brittleMultiplier || 1);
+    }
+    if (bullet.stunDuration > 0) {
+      enemy.stunUntil = Math.max(enemy.stunUntil || 0, now + bullet.stunDuration);
+    }
+  }
+
+  function triggerShrapnel(game, centerEnemy, tower, now, source) {
+    const radius = source.shrapnelRadius || 0;
+    if (!radius) return;
+    game.explosions.push({ id: `explosion-shrapnel-${Date.now()}-${Math.random()}`, x: centerEnemy.x, y: centerEnemy.y, radius, life: 220, maxLife: 220, type: "shrapnel" });
+    game.enemies.forEach(enemy => {
+      if (enemy.hp <= 0 || enemy.id === centerEnemy.id) return;
+      const dist = distance(enemy, centerEnemy);
+      if (dist > radius) return;
+      const falloff = Math.max(0.45, 1 - dist / Math.max(1, radius) * 0.45);
+      applyDamage(game, enemy, (source.shrapnelDamage || source.damage * 0.25) * falloff, tower, now, { ...source, type: "shrapnel" });
+      if (source.stunDuration) enemy.stunUntil = Math.max(enemy.stunUntil || 0, now + source.stunDuration * 0.55);
+    });
+  }
+
+  function triggerRicochet(game, hitEnemy, tower, now, source) {
+    let origin = hitEnemy;
+    let remaining = source.ricochet || 0;
+    let damage = source.damage * 0.52;
+    const used = new Set([hitEnemy.id]);
+    while (remaining > 0) {
+      const next = game.enemies
+        .filter(e => e.hp > 0 && !used.has(e.id) && distance(origin, e) <= 120)
+        .sort((a, b) => distance(origin, a) - distance(origin, b))[0];
+      if (!next) break;
+      used.add(next.id);
+      applyDamage(game, next, damage, tower, now, { ...source, silent: false, type: "ricochet" });
+      applyBulletStatusEffects(next, source, now);
+      game.beams.push({ id: `beam-ricochet-${Date.now()}-${Math.random()}`, x1: origin.x, y1: origin.y, x2: next.x, y2: next.y, life: 155, maxLife: 155, width: 2.5, type: "ricochet" });
+      origin = next;
+      damage *= 0.72;
+      remaining -= 1;
+    }
+  }
+
+  function triggerBulletStorm(game, hitEnemy, tower, now, source) {
+    const targets = game.enemies
+      .filter(e => e.hp > 0 && distance(tower, e) <= 155)
+      .sort((a, b) => distance(hitEnemy, a) - distance(hitEnemy, b))
+      .slice(0, source.stormShots || 4);
+    if (!targets.length) return;
+    game.damagePopups.push({ id: `popup-storm-${Date.now()}-${Math.random()}`, x: tower.x, y: tower.y - 34, text: "STORM", life: 650, color: "#fff176" });
+    targets.forEach((enemy, i) => {
+      applyDamage(game, enemy, source.damage * 0.42, tower, now, { ...source, type: "storm" });
+      game.beams.push({ id: `beam-storm-${Date.now()}-${Math.random()}-${i}`, x1: tower.x, y1: tower.y, x2: enemy.x, y2: enemy.y, life: 130, maxLife: 130, width: 2.2, type: "storm" });
+    });
+  }
+
+  function triggerClusterBombs(game, center, tower, now, source) {
+    const count = source.clusterBombs || 0;
+    if (!count) return;
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2 + Math.random() * 0.35;
+      const r = 34 + Math.random() * 44;
+      const miniCenter = { x: center.x + Math.cos(a) * r, y: center.y + Math.sin(a) * r };
+      const radius = Math.max(34, (source.splashRadius || 60) * 0.45);
+      game.explosions.push({ id: `explosion-cluster-${Date.now()}-${Math.random()}`, x: miniCenter.x, y: miniCenter.y, radius, life: 260 + i * 20, maxLife: 260 + i * 20, type: "cluster" });
+      game.enemies.forEach(enemy => {
+        if (enemy.hp <= 0 || distance(enemy, miniCenter) > radius) return;
+        applyDamage(game, enemy, source.damage * 0.34, tower, now, { ...source, type: "cluster" });
+        if (source.burnDuration > 0) { enemy.burnUntil = Math.max(enemy.burnUntil || 0, now + source.burnDuration * 0.65); enemy.burnDps = Math.max(enemy.burnDps || 0, source.burnDps * 0.75); }
+      });
+    }
   }
 
   function knockbackEnemy(enemy, amount) {
@@ -1776,13 +1989,20 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     const wasAlive = enemy.hp > 0;
     let damage = rawDamage;
     if (source?.tankPierce && (enemy.type === "tank" || enemy.type === "boss")) damage *= 1.45;
+    if (enemy.brittleUntil && enemy.brittleUntil > now) damage *= enemy.brittleMultiplier || 1.15;
     if (source?.execute && enemy.hp / enemy.maxHp < 0.18) damage = enemy.hp + 1;
     if (enemy.type === "shield" && !source?.tankPierce) damage *= 0.68;
     enemy.hp -= damage;
     if (!source?.silent) {
       game.damagePopups.push({ id: `popup-${Date.now()}-${Math.random()}`, x: enemy.x, y: enemy.y - enemy.radius, text: Math.round(damage).toString(), life: 600, color: source?.execute && enemy.hp <= 0 ? "#f4b942" : "#ffffff" });
     }
-    if (tower && wasAlive && enemy.hp <= 0) tower.kills = (tower.kills || 0) + 1;
+    if (tower && wasAlive && enemy.hp <= 0) {
+      tower.kills = (tower.kills || 0) + 1;
+      if (source?.bountyBonus) {
+        game.coins += source.bountyBonus;
+        game.damagePopups.push({ id: `popup-bounty-${Date.now()}-${Math.random()}`, x: enemy.x, y: enemy.y - enemy.radius - 16, text: `+${source.bountyBonus}`, life: 650, color: "#f4b942" });
+      }
+    }
   }
 
   function updateBeamsExplosionsAndPopups(game, delta) {
@@ -2496,6 +2716,31 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         ctx.beginPath();
         ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
         ctx.fill();
+      }
+
+      // Brittle / armor melt vulnerability marker
+      if (enemy.brittleUntil > now) {
+        ctx.strokeStyle = "#fff59d";
+        ctx.lineWidth = 2;
+        ctx.shadowColor = "#fff176";
+        ctx.shadowBlur = 7;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(enemy.x, enemy.y, enemy.radius + 10, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.shadowBlur = 0;
+      }
+
+      // Stun / ice prison marker
+      if (enemy.stunUntil > now) {
+        ctx.fillStyle = "rgba(255,255,255,0.72)";
+        ctx.strokeStyle = "#bbdefb";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(enemy.x - enemy.radius - 4, enemy.y - enemy.radius - 4, (enemy.radius + 4) * 2, (enemy.radius + 4) * 2, 8);
+        ctx.fill();
+        ctx.stroke();
       }
 
       // Chainshot explode marker
