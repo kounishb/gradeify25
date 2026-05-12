@@ -87,19 +87,21 @@ const TOWER_TYPES = {
     ],
   },
   rapid: {
-    name: "Rapid",
-    icon: "⚡",
-    cost: 155,
-    damage: 7,
-    range: 102,
-    fireRate: 255,
-    description: "Fast low-damage shots",
+    name: "Chuck",
+    icon: "🚂",
+    cost: 160,
+    damage: 82,
+    range: 155,
+    fireRate: 0,
+    dashCooldown: 5000,
+    dashWidth: 34,
+    description: "Rail tower that dashes between placed poles",
     upgradeText: [
-      "Very fast shots.",
-      "Overdrive: firing at enemies ramps attack speed temporarily.",
-      "Double shot unlocked.",
-      "Triple shot unlocked.",
-      "Bullet storm: every few volleys sprays extra shots at nearby enemies.",
+      "Place a second pole for free. Chuck dashes between poles every few seconds.",
+      "Adds a third pole slot and stronger dash damage.",
+      "Electric rails: dash paths slow and zap enemies they cross.",
+      "Express route: wider dash hitbox and stronger pole impact blasts.",
+      "Ghost train: hitting groups makes the next dash recharge much faster.",
     ],
   },
   laser: {
@@ -153,7 +155,7 @@ const TOWER_TYPES = {
     name: "Damian",
     icon: "🧨",
     cost: 250,
-    damage: 23,
+    damage: 25,
     range: 128,
     fireRate: 1220,
     knockback: 18,
@@ -312,11 +314,17 @@ function getTowerStats(tower) {
   }
 
   if (tower.type === "rapid") {
-    stats.fireRate = Math.max(105, base.fireRate - (level - 1) * 30);
-    if (level >= 2) stats.rampMax = 0.36;
-    if (level >= 3) stats.multiShot = 2;
-    if (level >= 4) stats.multiShot = 3;
-    if (level >= 5) { stats.stormEvery = 7; stats.stormShots = 5; stats.fireRate = Math.max(82, stats.fireRate - 20); }
+    stats.damage = base.damage * (1 + (level - 1) * 0.44);
+    stats.range = base.range + (level - 1) * 18;
+    stats.fireRate = 0;
+    stats.dashCooldown = Math.max(3100, base.dashCooldown - (level - 1) * 420);
+    stats.dashWidth = base.dashWidth + (level - 1) * 7;
+    stats.maxPoles = Math.min(6, level + 1);
+    stats.poleImpactRadius = level >= 4 ? 58 + level * 4 : 34 + level * 3;
+    stats.poleImpactDamage = level >= 4 ? stats.damage * 0.5 : stats.damage * 0.24;
+    stats.railSlowAmount = level >= 3 ? 0.62 : 1;
+    stats.railSlowDuration = level >= 3 ? 900 + level * 150 : 0;
+    stats.fastRechargeHits = level >= 5 ? 3 : 9999;
   }
 
   if (tower.type === "laser") {
@@ -1212,6 +1220,102 @@ function drawChainTower(ctx, tower) {
   ctx.shadowBlur = 0;
 }
 
+
+function drawChuckTower(ctx, tower) {
+  const poles = Array.isArray(tower.poles) && tower.poles.length ? tower.poles : [{ x: tower.x, y: tower.y }];
+  const lv = tower.level || 1;
+  const time = performance.now();
+
+  // Rail lines between poles
+  if (poles.length >= 2) {
+    ctx.save();
+    ctx.lineCap = "round";
+    for (let i = 0; i < poles.length; i++) {
+      const a = poles[i];
+      const b = poles[(i + 1) % poles.length];
+      if (i === poles.length - 1 && poles.length < 3) continue;
+      ctx.strokeStyle = "rgba(55, 65, 81, 0.45)";
+      ctx.lineWidth = 9;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.strokeStyle = "rgba(255, 202, 40, 0.82)";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([10, 8]);
+      ctx.lineDashOffset = -time * 0.035;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  // Poles
+  poles.forEach((pole, i) => {
+    const isCurrent = i === (tower.currentPoleIndex || 0);
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = "#000";
+    ctx.beginPath(); ctx.ellipse(pole.x, pole.y + 16, 17, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+
+    const mastG = ctx.createLinearGradient(pole.x - 8, pole.y - 28, pole.x + 8, pole.y + 18);
+    mastG.addColorStop(0, "#fff8c6");
+    mastG.addColorStop(0.45, "#f59e0b");
+    mastG.addColorStop(1, "#92400e");
+    ctx.fillStyle = mastG;
+    ctx.strokeStyle = isCurrent ? "#fff176" : "#78350f";
+    ctx.lineWidth = isCurrent ? 3 : 2;
+    ctx.shadowColor = isCurrent ? "#ffca28" : "transparent";
+    ctx.shadowBlur = isCurrent ? 14 : 0;
+    ctx.beginPath();
+    ctx.roundRect(pole.x - 8, pole.y - 25 - lv, 16, 42 + lv * 2, 6);
+    ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = "#374151";
+    ctx.strokeStyle = "#111827";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(pole.x, pole.y - 30 - lv, 12 + lv, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#fef3c7";
+    ctx.font = "bold 10px 'Nunito', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(i + 1, pole.x, pole.y - 26 - lv);
+
+    // Electric cap
+    ctx.strokeStyle = "rgba(255,241,118,0.9)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(pole.x - 12, pole.y - 43 - lv);
+    ctx.lineTo(pole.x + 12, pole.y - 43 - lv);
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  // Small Chuck engine riding at current pole
+  const current = poles[tower.currentPoleIndex || 0] || poles[0];
+  const next = poles[((tower.currentPoleIndex || 0) + 1) % poles.length] || { x: current.x + 1, y: current.y };
+  const angle = angleTo(current, next);
+  ctx.save();
+  ctx.translate(current.x, current.y - 2);
+  ctx.rotate(angle);
+  const bodyG = ctx.createLinearGradient(-16, -12, 18, 12);
+  bodyG.addColorStop(0, "#fde68a");
+  bodyG.addColorStop(0.45, "#f97316");
+  bodyG.addColorStop(1, "#7c2d12");
+  ctx.fillStyle = bodyG;
+  ctx.strokeStyle = "#431407";
+  ctx.lineWidth = 2;
+  ctx.shadowColor = "rgba(249,115,22,0.5)";
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.roundRect(-17, -11, 34 + lv * 2, 22, 8);
+  ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#111827";
+  ctx.beginPath(); ctx.arc(-8, 11, 5, 0, Math.PI * 2); ctx.arc(10, 11, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#fef3c7";
+  ctx.beginPath(); ctx.arc(16 + lv * 2, 0, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
 // ─── MAIN COMPONENT ─────────────────────────────────────────────────────────
 
 export default function TowerDefenseGame({ studySet, onExit }) {
@@ -1238,11 +1342,12 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   const [score, setScore] = useState(0);
   const [isRunning, setIsRunning] = useState(true);
   const [gameOver, setGameOver] = useState(false);
-  const [message, setMessage] = useState("Drag towers from the bottom bar onto the map. Answer questions to earn coins.");
+  const [message, setMessage] = useState("Drag towers from the bottom bar onto the map. Clear waves to earn coins, then answer limited bonus questions.");
   const [questionModal, setQuestionModal] = useState(null);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [streak, setStreak] = useState(0);
   const [answerFeedback, setAnswerFeedback] = useState(null);
+  const [bonusQuestions, setBonusQuestions] = useState(0);
 
   const selectedTower = useMemo(() => {
     const game = gameRef.current;
@@ -1268,6 +1373,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     setWave(game.wave);
     setScore(game.score);
     setGameOver(game.gameOver);
+    setBonusQuestions(game.bonusQuestions || 0);
   }
 
   function pauseGameForQuestion() {
@@ -1309,6 +1415,43 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     return { left: `${(point.x / CANVAS_WIDTH) * 100}%`, top: `${(point.y / CANVAS_HEIGHT) * 100}%` };
   }
 
+
+  function getChuckPoles(tower) {
+    if (!tower) return [];
+    if (!Array.isArray(tower.poles) || tower.poles.length === 0) {
+      tower.poles = [{ id: `pole-${tower.id}-0`, x: tower.x, y: tower.y }];
+    }
+    return tower.poles;
+  }
+
+  function canAddChuckPole(tower) {
+    if (!tower || tower.type !== "rapid") return false;
+    return getChuckPoles(tower).length < (getTowerStats(tower).maxPoles || 2);
+  }
+
+  function canPlaceChuckPole(point, tower) {
+    const game = gameRef.current;
+    if (!game || !tower || tower.type !== "rapid" || !point?.inside) return false;
+    if (!canAddChuckPole(tower)) return false;
+    if (point.x < 28 || point.x > CANVAS_WIDTH - 28) return false;
+    if (point.y < 28 || point.y > CANVAS_HEIGHT - 28) return false;
+    const poles = getChuckPoles(tower);
+    if (poles.some(p => distance(p, point) < 58)) return false;
+    if (game.towers.some(t => t.id !== tower.id && distance(t, point) < 46)) return false;
+    return true;
+  }
+
+  function addChuckPole(tower, point) {
+    if (!canPlaceChuckPole(point, tower)) return false;
+    const poles = getChuckPoles(tower);
+    poles.push({ id: `pole-${tower.id}-${Date.now()}-${poles.length}`, x: point.x, y: point.y });
+    setMessage(poles.length < (getTowerStats(tower).maxPoles || 2)
+      ? `Chuck pole added (${poles.length}/${getTowerStats(tower).maxPoles}). Click another empty spot to add the next pole.`
+      : `Chuck route complete (${poles.length}/${getTowerStats(tower).maxPoles} poles).`);
+    syncStateFromRef();
+    return true;
+  }
+
   function canPlaceTower(point, type) {
     const game = gameRef.current;
     if (!game || !point?.inside) return false;
@@ -1316,7 +1459,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     if (point.x < 28 || point.x > CANVAS_WIDTH - 28) return false;
     if (point.y < 28 || point.y > CANVAS_HEIGHT - 28) return false;
     if (TOWER_TYPES[type]?.isConsumable) return true;
-    if (isTooCloseToPath(point)) return false;
+    if (type !== "rapid" && isTooCloseToPath(point)) return false;
     return !game.towers.some(t => distance(t, point) < 52);
   }
 
@@ -1339,11 +1482,16 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       spent: towerType.cost, kills: 0,
       targetPriority: "first",
     };
+    if (type === "rapid") {
+      newTower.poles = [{ id: `pole-${Date.now()}-0`, x: point.x, y: point.y }];
+      newTower.currentPoleIndex = 0;
+      newTower.lastDash = 0;
+    }
     game.towers.push(newTower);
     game.coins -= towerType.cost;
     setSelectedTowerId(newTower.id);
     selectedTowerIdRef.current = newTower.id;
-    setMessage(`${towerType.name} placed.`);
+    setMessage(type === "rapid" ? "Chuck pole placed. Click an empty map spot to add the free second pole." : `${towerType.name} placed.`);
     syncStateFromRef();
     return true;
   }
@@ -1390,7 +1538,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   function launchWave(game) {
     game.waveInProgress = true;
     game.nextWaveReady = false;
-    game.enemiesToSpawn = 9 + game.wave * 4;
+    game.enemiesToSpawn = 6 + game.wave * 3;
     game.enemiesSpawned = 0;
     game.lastSpawnTime = 0;
   }
@@ -1409,13 +1557,13 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   function resetGame() {
     clearAutoWaveTimer();
     const initialGame = {
-      coins: 150, baseHealth: 18, wave: 1, score: 0, gameOver: false,
+      coins: 260, baseHealth: 22, wave: 1, score: 0, gameOver: false,
       towers: [], enemies: [], bullets: [], beams: [], explosions: [], vortices: [], damagePopups: [],
       waveInProgress: false, enemiesToSpawn: 0, enemiesSpawned: 0,
-      lastSpawnTime: 0, nextWaveReady: true, lastFrame: performance.now(),
+      lastSpawnTime: 0, nextWaveReady: true, bonusQuestions: 0, lastFrame: performance.now(),
     };
     gameRef.current = initialGame;
-    setCoins(150); setBaseHealth(18); setWave(1); setScore(0);
+    setCoins(260); setBaseHealth(22); setWave(1); setScore(0); setBonusQuestions(0);
     setGameOver(false); setIsRunning(true); isRunningRef.current = true;
     wasRunningBeforeQuestionRef.current = true;
     setQuestionIndex(0); setStreak(0); setQuestionModal(null); setAnswerFeedback(null);
@@ -1437,10 +1585,19 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       const point = getCanvasPointFromEvent(e);
       if (!point) return;
       const clickedTower = [...game.towers].reverse().find(t => distance(t, point) <= 30);
+      const selected = selectedTowerIdRef.current ? game.towers.find(t => t.id === selectedTowerIdRef.current) : null;
+      if (selected?.type === "rapid" && !clickedTower && canPlaceChuckPole(point, selected)) {
+        addChuckPole(selected, point);
+        return;
+      }
       if (clickedTower) {
         setSelectedTowerId(clickedTower.id);
         selectedTowerIdRef.current = clickedTower.id;
-        setMessage(`${TOWER_TYPES[clickedTower.type].name} selected.`);
+        if (clickedTower.type === "rapid" && canAddChuckPole(clickedTower)) {
+          setMessage(`${TOWER_TYPES[clickedTower.type].name} selected. Click an empty map spot to place pole ${getChuckPoles(clickedTower).length + 1}/${getTowerStats(clickedTower).maxPoles}.`);
+        } else {
+          setMessage(`${TOWER_TYPES[clickedTower.type].name} selected.`);
+        }
       } else {
         setSelectedTowerId(null);
         selectedTowerIdRef.current = null;
@@ -1471,7 +1628,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
 
   function updateGame(game, now, delta) {
     if (game.waveInProgress && game.enemiesSpawned < game.enemiesToSpawn) {
-      if (now - game.lastSpawnTime > Math.max(390, 690 - game.wave * 12)) {
+      if (now - game.lastSpawnTime > Math.max(430, 760 - game.wave * 12)) {
         game.enemies.push(makeEnemy(game.wave, game.enemiesSpawned));
         game.enemiesSpawned += 1;
         game.lastSpawnTime = now;
@@ -1501,10 +1658,17 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     updateBeamsExplosionsAndPopups(game, delta);
     removeDefeatedEnemies(game);
     if (game.waveInProgress && game.enemiesSpawned >= game.enemiesToSpawn && game.enemies.length === 0) {
-      game.waveInProgress = false; game.nextWaveReady = true; game.wave += 1; game.coins += 28;
-      setMessage(`Wave cleared. Bonus +28 coins. Next wave starts soon.`);
+      const clearedWave = game.wave;
+      const waveReward = 95 + clearedWave * 24;
+      const questionRewardCount = clearedWave % 5 === 0 ? 4 : 3;
+      game.waveInProgress = false;
+      game.nextWaveReady = true;
+      game.wave += 1;
+      game.coins += waveReward;
+      game.bonusQuestions = questionRewardCount;
+      setMessage(`Wave ${clearedWave} cleared. +${waveReward} coins. You unlocked ${questionRewardCount} bonus questions before the next wave.`);
       syncStateFromRef();
-      scheduleAutoWave(2700, `Wave ${game.wave} started automatically.`);
+      scheduleAutoWave(5200, `Wave ${game.wave} started automatically.`);
     }
   }
 
@@ -1568,6 +1732,49 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     };
   }
 
+
+  function fireChuckTower(game, tower, now, delta, stats) {
+    const poles = getChuckPoles(tower);
+    if (poles.length < 2) {
+      tower.angle = (tower.angle || 0) + 0.01;
+      return;
+    }
+    if (!tower.currentPoleIndex || tower.currentPoleIndex >= poles.length) tower.currentPoleIndex = 0;
+    const current = poles[tower.currentPoleIndex];
+    const nextIndex = (tower.currentPoleIndex + 1) % poles.length;
+    const next = poles[nextIndex];
+    tower.angle = angleTo(current, next);
+    if (now - (tower.lastDash || 0) < stats.dashCooldown) return;
+
+    tower.lastDash = now;
+    tower.currentPoleIndex = nextIndex;
+    const hitEnemies = game.enemies.filter(enemy => enemy.hp > 0 && pointToSegmentDistance(enemy, current, next) <= stats.dashWidth + enemy.radius);
+    hitEnemies.forEach(enemy => {
+      applyDamage(game, enemy, stats.damage, tower, now, { ...stats, type: "chuck" });
+      if (stats.railSlowDuration) {
+        enemy.slowUntil = Math.max(enemy.slowUntil || 0, now + stats.railSlowDuration);
+        enemy.slowAmount = Math.min(enemy.slowAmount || 1, stats.railSlowAmount || 0.65);
+      }
+      enemy.stunUntil = Math.max(enemy.stunUntil || 0, now + 70);
+    });
+
+    if (stats.poleImpactRadius) {
+      [current, next].forEach((pole, i) => {
+        game.explosions.push({ id: `explosion-chuck-pole-${Date.now()}-${Math.random()}-${i}`, x: pole.x, y: pole.y, radius: stats.poleImpactRadius, life: 270, maxLife: 270, type: "chuck" });
+        game.enemies.forEach(enemy => {
+          if (enemy.hp <= 0 || distance(enemy, pole) > stats.poleImpactRadius) return;
+          applyDamage(game, enemy, stats.poleImpactDamage, tower, now, { ...stats, type: "chuck", silent: true });
+        });
+      });
+    }
+
+    game.beams.push({ id: `beam-chuck-${Date.now()}-${Math.random()}`, x1: current.x, y1: current.y, x2: next.x, y2: next.y, life: 360, maxLife: 360, width: Math.max(6, stats.dashWidth * 0.26), type: "chuck" });
+    game.damagePopups.push({ id: `popup-chuck-${Date.now()}-${Math.random()}`, x: (current.x + next.x) / 2, y: (current.y + next.y) / 2 - 22, text: hitEnemies.length >= 3 ? "GHOST TRAIN" : "DASH", life: 650, color: "#fff176" });
+    if (hitEnemies.length >= (stats.fastRechargeHits || 9999)) {
+      tower.lastDash = now - stats.dashCooldown * 0.72;
+    }
+  }
+
   function fireTower(game, tower, now, delta) {
     let stats = getTowerStats(tower);
     if (tower.type === "support") {
@@ -1594,19 +1801,17 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     stats = applySupportBuffToStats(stats, getSupportBuffForTower(game, tower));
     const enemiesInRange = getEnemiesInRange(game, tower, stats);
 
+    if (tower.type === "rapid") {
+      fireChuckTower(game, tower, now, delta, stats);
+      return;
+    }
+
     // Always rotate barrel toward primary target every frame
     if (enemiesInRange.length > 0) {
       tower.angle = angleTo(tower, enemiesInRange[0]);
     }
 
-    if (!enemiesInRange.length) {
-      if (tower.type === "rapid") tower.rapidHeat = Math.max(0, (tower.rapidHeat || 0) - delta * 0.0018);
-      return;
-    }
-    if (tower.type === "rapid" && stats.rampMax) {
-      tower.rapidHeat = Math.min(stats.rampMax, (tower.rapidHeat || 0) + delta * 0.00065);
-      stats.fireRate = Math.max(70, stats.fireRate * (1 - tower.rapidHeat));
-    }
+    if (!enemiesInRange.length) return;
     const target = enemiesInRange[0];
     if (tower.type === "laser") {
       const damage = stats.damage * (delta / 1000);
@@ -2017,7 +2222,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   function removeDefeatedEnemies(game) {
     const defeated = game.enemies.filter(e => e.hp <= 0);
     if (defeated.length > 0) {
-      defeated.forEach(e => { game.coins += e.reward; game.score += e.reward * 10; });
+      defeated.forEach(e => { game.score += e.reward * 10; });
       game.enemies = game.enemies.filter(e => e.hp > 0);
       syncStateFromRef();
     }
@@ -2444,7 +2649,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       else if (tower.type === "freeze") drawFrostTower(ctx, tower);
       else if (tower.type === "splash") drawMortarTower(ctx, tower);
       else if (tower.type === "sniper") drawSniperTower(ctx, tower);
-      else if (tower.type === "rapid") drawRapidTower(ctx, tower);
+      else if (tower.type === "rapid") drawChuckTower(ctx, tower);
       else if (tower.type === "laser") drawLaserTower(ctx, tower);
       else if (tower.type === "support") drawSupportTower(ctx, tower);
       else if (tower.type === "chain") drawChainTower(ctx, tower);
@@ -2957,8 +3162,10 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       const alpha = Math.max(0.2, beam.life / beam.maxLife);
       ctx.globalAlpha = alpha;
       const isChain = beam.type === "laser-chain";
+      const isChuck = beam.type === "chuck";
+      const isSupport = beam.type === "support";
       // Outer glow
-      ctx.strokeStyle = isChain ? "#ce93d8" : "#7b1fa2";
+      ctx.strokeStyle = isChuck ? "#f59e0b" : isSupport ? "#d4ff7a" : isChain ? "#ce93d8" : "#7b1fa2";
       ctx.lineWidth = beam.width * 2.5;
       ctx.lineCap = "round";
       ctx.globalAlpha = alpha * 0.2;
@@ -2968,9 +3175,9 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       ctx.stroke();
       // Core beam
       ctx.globalAlpha = alpha;
-      ctx.strokeStyle = isChain ? "#e040fb" : "#9c27b0";
+      ctx.strokeStyle = isChuck ? "#ffca28" : isSupport ? "#8bc34a" : isChain ? "#e040fb" : "#9c27b0";
       ctx.lineWidth = beam.width;
-      ctx.shadowColor = isChain ? "#e040fb" : "#9c27b0";
+      ctx.shadowColor = isChuck ? "#f59e0b" : isSupport ? "#d4ff7a" : isChain ? "#e040fb" : "#9c27b0";
       ctx.shadowBlur = 12;
       ctx.beginPath();
       ctx.moveTo(beam.x1, beam.y1);
@@ -3036,15 +3243,20 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       const alpha = Math.max(0, explosion.life / explosion.maxLife);
       ctx.save();
       // Dirt/smoke cloud
-      ctx.globalAlpha = alpha * (explosion.type === "nuke" ? 0.25 : explosion.type === "vortex" ? 0.34 : 0.4);
-      ctx.fillStyle = explosion.type === "chain" || explosion.type === "vortex" ? "#ff7043" : explosion.type === "nuke" ? "#fff176" : "#8d6e63";
+      ctx.globalAlpha = alpha * (explosion.type === "nuke" ? 0.25 : explosion.type === "vortex" ? 0.34 : explosion.type === "chuck" ? 0.32 : 0.4);
+      ctx.fillStyle = explosion.type === "chuck" ? "#f59e0b" : explosion.type === "chain" || explosion.type === "vortex" ? "#ff7043" : explosion.type === "nuke" ? "#fff176" : "#8d6e63";
       ctx.beginPath();
       ctx.arc(explosion.x, explosion.y, radius * 1.1, 0, Math.PI * 2);
       ctx.fill();
       // Fire core
       ctx.globalAlpha = alpha * (explosion.type === "nuke" ? 0.55 : 0.7);
       const fg = ctx.createRadialGradient(explosion.x, explosion.y, 0, explosion.x, explosion.y, radius * 0.8);
-      if (explosion.type === "nuke") {
+      if (explosion.type === "chuck") {
+        fg.addColorStop(0, "#fffde7");
+        fg.addColorStop(0.25, "#ffca28");
+        fg.addColorStop(0.66, "#f97316");
+        fg.addColorStop(1, "rgba(124,45,18,0)");
+      } else if (explosion.type === "nuke") {
         fg.addColorStop(0, "#ffffff");
         fg.addColorStop(0.22, "#fff176");
         fg.addColorStop(0.55, "#ff9800");
@@ -3071,7 +3283,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       ctx.fill();
       // Shockwave ring
       ctx.globalAlpha = alpha * (explosion.type === "nuke" ? 0.85 : 0.5);
-      ctx.strokeStyle = explosion.type === "chain" || explosion.type === "vortex" ? "#ff7043" : explosion.type === "nuke" ? "#fff176" : "#ff9800";
+      ctx.strokeStyle = explosion.type === "chuck" ? "#ffca28" : explosion.type === "chain" || explosion.type === "vortex" ? "#ff7043" : explosion.type === "nuke" ? "#fff176" : "#ff9800";
       ctx.lineWidth = explosion.type === "nuke" ? 7 + progress * 5 : 4 + progress * 3;
       ctx.beginPath();
       ctx.arc(explosion.x, explosion.y, radius, 0, Math.PI * 2);
@@ -3204,7 +3416,11 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   }
 
   function openQuestion() {
+    const game = gameRef.current;
     if (!questions.length) { setMessage("No study questions found."); return; }
+    if (!game || game.gameOver) return;
+    if (game.waveInProgress) { setMessage("Finish the wave first. Bonus questions unlock after you clear it."); return; }
+    if ((game.bonusQuestions || 0) <= 0) { setMessage("No bonus questions available. Clear a wave to unlock a few."); return; }
     pauseGameForQuestion();
     setAnswerFeedback(null);
     setQuestionModal(makeQuestionModal(questionIndex));
@@ -3222,25 +3438,30 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     const isCorrect = choice === questionModal.question.correctAnswer;
     const timeTaken = Date.now() - questionModal.startedAt;
     let earned = 0;
+    game.bonusQuestions = Math.max(0, (game.bonusQuestions || 0) - 1);
     if (isCorrect) {
-      const speedBonus = timeTaken < 6000 ? 10 : 0;
-      const streakBonus = streak >= 3 ? 10 : 0;
-      earned = 42 + speedBonus + streakBonus;
+      const speedBonus = timeTaken < 6000 ? 6 : 0;
+      const streakBonus = streak >= 2 ? 6 : 0;
+      earned = 28 + speedBonus + streakBonus;
       game.coins += earned;
       game.score += earned * 4;
       setStreak(prev => prev + 1);
-      setMessage(`Correct! +${earned} coins.`);
+      setMessage(`Correct! +${earned} bonus coins. ${game.bonusQuestions} bonus question${game.bonusQuestions === 1 ? "" : "s"} left.`);
     } else {
-      earned = 2;
-      game.coins += earned;
+      earned = 0;
       setStreak(0);
-      setMessage(`Wrong. +2 coins. Correct answer: ${questionModal.question.correctAnswer}`);
+      setMessage(`Wrong. No coins earned. Correct answer: ${questionModal.question.correctAnswer}. ${game.bonusQuestions} bonus question${game.bonusQuestions === 1 ? "" : "s"} left.`);
     }
     syncStateFromRef();
     setAnswerFeedback({ isCorrect, selectedChoice: choice, correctAnswer: questionModal.question.correctAnswer, earned });
   }
 
   function continueAfterAnswer() {
+    const game = gameRef.current;
+    if (!game || (game.bonusQuestions || 0) <= 0) {
+      closeQuestions();
+      return;
+    }
     const nextIndex = (questionIndex + 1) % Math.max(questions.length, 1);
     setQuestionIndex(nextIndex);
     setAnswerFeedback(null);
@@ -3268,7 +3489,11 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     game.coins -= upgradeCost;
     tower.level += 1;
     tower.spent = (tower.spent || TOWER_TYPES[tower.type].cost) + upgradeCost;
-    setMessage(`${TOWER_TYPES[tower.type].name} upgraded to level ${tower.level}. ${TOWER_TYPES[tower.type].upgradeText[tower.level - 1]}`);
+    if (tower.type === "rapid" && canAddChuckPole(tower)) {
+      setMessage(`${TOWER_TYPES[tower.type].name} upgraded to level ${tower.level}. Click an empty map spot to add pole ${getChuckPoles(tower).length + 1}/${getTowerStats(tower).maxPoles}.`);
+    } else {
+      setMessage(`${TOWER_TYPES[tower.type].name} upgraded to level ${tower.level}. ${TOWER_TYPES[tower.type].upgradeText[tower.level - 1]}`);
+    }
     syncStateFromRef();
   }
 
@@ -3296,7 +3521,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
           <h1>{studySet?.title || "Tower Defense"}</h1>
         </div>
         <div className="td-header-actions">
-          <button className="td-quiz-btn" onClick={openQuestion}>⚡ Answer Questions</button>
+          <button className="td-quiz-btn" onClick={openQuestion} disabled={bonusQuestions <= 0 || gameOver}>⚡ Bonus Questions ({bonusQuestions})</button>
           <button onClick={() => {
             setIsRunning(prev => {
               const next = !prev;
@@ -3335,8 +3560,14 @@ export default function TowerDefenseGame({ studySet, onExit }) {
                 <div><span>Kills</span><strong>{selectedTower.kills || 0}</strong></div>
               </div>
 
+              {selectedTower.type === "rapid" && (
+                <p>{canAddChuckPole(selectedTower)
+                  ? `Click an empty map spot to add pole ${getChuckPoles(selectedTower).length + 1}/${getTowerStats(selectedTower).maxPoles}. Poles are free after placement/upgrades.`
+                  : `Route ready: ${getChuckPoles(selectedTower).length}/${getTowerStats(selectedTower).maxPoles} poles. Chuck dashes around the route automatically.`}</p>
+              )}
+
               {/* Target priority selector */}
-              {selectedTower.type !== "support" && (
+              {selectedTower.type !== "support" && selectedTower.type !== "rapid" && (
                 <div className="tower-priority-row">
                   <span className="tower-priority-label">🎯 Target</span>
                   <div className="tower-priority-btns">
@@ -3377,7 +3608,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
             <div><span>Wave</span><strong>{wave}</strong></div>
             <div><span>Coins</span><strong>{coins}</strong></div>
             <div><span>Health</span><strong style={{ color: baseHealth > 8 ? "#2e7d32" : "#c62828" }}>{baseHealth}</strong></div>
-            <div><span>Streak</span><strong style={{ color: streak >= 3 ? "#c8862a" : "inherit" }}>{streak}</strong></div>
+            <div><span>Bonus Qs</span><strong style={{ color: bonusQuestions > 0 ? "#c8862a" : "inherit" }}>{bonusQuestions}</strong></div>
           </div>
           <div className="td-tower-dock">
             {Object.entries(TOWER_TYPES).map(([key, tower]) => (
@@ -3403,7 +3634,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
         <div className="question-backdrop">
           <div className="question-modal">
             <div className="question-modal-header">
-              <p>🌿 Earn Coins — Game Paused</p>
+              <p>🌿 Bonus Question — {bonusQuestions} left</p>
               <button onClick={closeQuestions}>×</button>
             </div>
             <h2>{questionModal.question.question}</h2>
@@ -3424,8 +3655,8 @@ export default function TowerDefenseGame({ studySet, onExit }) {
             {answerFeedback && (
               <div className={answerFeedback.isCorrect ? "answer-feedback correct-box" : "answer-feedback wrong-box"}>
                 <strong>{answerFeedback.isCorrect ? "✓ Correct!" : "✗ Wrong answer"}</strong>
-                <p>{answerFeedback.isCorrect ? `Nice job! You earned ${answerFeedback.earned} coins.` : `The correct answer is: ${answerFeedback.correctAnswer}`}</p>
-                <button className="td-primary-btn" onClick={continueAfterAnswer}>Continue to Next Question →</button>
+                <p>{answerFeedback.isCorrect ? `Nice job! You earned ${answerFeedback.earned} bonus coins.` : `The correct answer is: ${answerFeedback.correctAnswer}`}</p>
+                <button className="td-primary-btn" onClick={continueAfterAnswer}>{bonusQuestions > 0 ? "Continue to Next Question →" : "Done — Resume Game"}</button>
               </div>
             )}
           </div>
