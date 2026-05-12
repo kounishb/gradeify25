@@ -1660,7 +1660,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   function resetGame() {
     clearAutoWaveTimer();
     const initialGame = {
-      coins: 280, baseHealth: 22, wave: 1, score: 0, gameOver: false,
+      coins: 300, baseHealth: 22, wave: 1, score: 0, gameOver: false,
       towers: [], enemies: [], bullets: [], beams: [], explosions: [], vortices: [], damagePopups: [],
       waveInProgress: false, enemiesToSpawn: 0, enemiesSpawned: 0,
       lastSpawnTime: 0, nextWaveReady: true, bonusQuestions: 0, speedMultiplier: 1, lastFrame: performance.now(),
@@ -2439,7 +2439,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     if (defeated.length > 0) {
       defeated.forEach(e => {
         game.score += e.reward * 10;
-        const killCoins = Math.max(2, Math.round(e.reward * (0.35 + game.wave * 0.018)));
+        const killCoins = Math.max(2, Math.round(e.reward * (0.5 + game.wave * 0.018)));
         game.coins += killCoins;
         game.damagePopups.push({
           id: `popup-coins-${Date.now()}-${Math.random()}`,
