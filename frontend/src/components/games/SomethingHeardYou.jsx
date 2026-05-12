@@ -867,70 +867,75 @@ export default function SomethingHeardYou() {
   }
 
   function drawLighting(ctx, r, cam) {
-    const p = r.player;
+  const p = r.player;
 
-    ctx.save();
+  const px = p.x - cam.x;
+  const py = p.y - cam.y;
 
-    ctx.fillStyle = "rgba(0,0,0,0.94)";
-    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  const darkness = document.createElement("canvas");
+  darkness.width = CANVAS_W;
+  darkness.height = CANVAS_H;
 
-    ctx.globalCompositeOperation = "destination-out";
+  const dctx = darkness.getContext("2d");
 
-    const px = p.x - cam.x;
-    const py = p.y - cam.y;
+  dctx.fillStyle = "rgba(0,0,0,0.94)";
+  dctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-    const baseRadius = p.flashlightOff ? 55 : 105 + p.battery * 0.85;
-    const fearPenalty = p.fear * 0.45;
-    const radius = clamp(baseRadius - fearPenalty, 38, 190);
+  dctx.globalCompositeOperation = "destination-out";
 
-    const gradient = ctx.createRadialGradient(px, py, 15, px, py, radius);
-    gradient.addColorStop(0, "rgba(255,255,255,0.9)");
-    gradient.addColorStop(0.55, "rgba(255,255,255,0.35)");
-    gradient.addColorStop(1, "rgba(255,255,255,0)");
+  const baseRadius = p.flashlightOff ? 65 : 120 + p.battery * 0.9;
+  const fearPenalty = p.fear * 0.45;
+  const radius = clamp(baseRadius - fearPenalty, 45, 210);
 
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(px, py, radius, 0, Math.PI * 2);
-    ctx.fill();
+  const playerGlow = dctx.createRadialGradient(px, py, 10, px, py, radius);
+  playerGlow.addColorStop(0, "rgba(255,255,255,0.95)");
+  playerGlow.addColorStop(0.55, "rgba(255,255,255,0.45)");
+  playerGlow.addColorStop(1, "rgba(255,255,255,0)");
 
-    if (!p.flashlightOff && p.battery > 0) {
-      const flicker = Math.random() < p.fear / 700 ? rand(0.55, 0.9) : 1;
-      const angle = p.angle;
-      const coneLen = clamp(330 + p.battery * 1.2 - p.fear * 1.2, 130, 430) * flicker;
-      const coneWidth = 0.52;
+  dctx.fillStyle = playerGlow;
+  dctx.beginPath();
+  dctx.arc(px, py, radius, 0, Math.PI * 2);
+  dctx.fill();
 
-      const grad = ctx.createRadialGradient(px, py, 10, px, py, coneLen);
-      grad.addColorStop(0, "rgba(255,255,255,0.55)");
-      grad.addColorStop(0.45, "rgba(255,255,255,0.24)");
-      grad.addColorStop(1, "rgba(255,255,255,0)");
+  if (!p.flashlightOff && p.battery > 0) {
+    const flicker = Math.random() < p.fear / 700 ? rand(0.55, 0.9) : 1;
+    const angle = p.angle;
+    const coneLen = clamp(340 + p.battery * 1.2 - p.fear * 1.1, 150, 460) * flicker;
+    const coneWidth = 0.5;
 
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.arc(px, py, coneLen, angle - coneWidth, angle + coneWidth);
-      ctx.closePath();
-      ctx.fill();
-    }
+    const coneGlow = dctx.createRadialGradient(px, py, 20, px, py, coneLen);
+    coneGlow.addColorStop(0, "rgba(255,255,255,0.8)");
+    coneGlow.addColorStop(0.55, "rgba(255,255,255,0.4)");
+    coneGlow.addColorStop(1, "rgba(255,255,255,0)");
 
-    ctx.globalCompositeOperation = "source-over";
-
-    const vignette = ctx.createRadialGradient(
-      CANVAS_W / 2,
-      CANVAS_H / 2,
-      120,
-      CANVAS_W / 2,
-      CANVAS_H / 2,
-      600
-    );
-    vignette.addColorStop(0, "rgba(0,0,0,0)");
-    vignette.addColorStop(0.7, "rgba(0,0,0,0.25)");
-    vignette.addColorStop(1, "rgba(0,0,0,0.82)");
-
-    ctx.fillStyle = vignette;
-    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-
-    ctx.restore();
+    dctx.fillStyle = coneGlow;
+    dctx.beginPath();
+    dctx.moveTo(px, py);
+    dctx.arc(px, py, coneLen, angle - coneWidth, angle + coneWidth);
+    dctx.closePath();
+    dctx.fill();
   }
+
+  dctx.globalCompositeOperation = "source-over";
+
+  ctx.drawImage(darkness, 0, 0);
+
+  const vignette = ctx.createRadialGradient(
+    CANVAS_W / 2,
+    CANVAS_H / 2,
+    140,
+    CANVAS_W / 2,
+    CANVAS_H / 2,
+    620
+  );
+
+  vignette.addColorStop(0, "rgba(0,0,0,0)");
+  vignette.addColorStop(0.7, "rgba(0,0,0,0.22)");
+  vignette.addColorStop(1, "rgba(0,0,0,0.78)");
+
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+}
 
   function drawHUD(ctx, r) {
     const p = r.player;
