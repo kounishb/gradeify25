@@ -94,10 +94,11 @@ const TOWER_TYPES = {
     range: 155,
     fireRate: 0,
     dashCooldown: 5000,
+    dashSpeed: 1.45,
     dashWidth: 34,
     description: "Rail tower that dashes between placed poles",
     upgradeText: [
-      "Place a second pole for free. Chuck dashes between poles every few seconds.",
+      "Place a second pole for free. Chuck visibly rides between poles every few seconds and only damages enemies he hits.",
       "Adds a third pole slot and stronger dash damage.",
       "Electric rails: dash paths slow and zap enemies they cross.",
       "Express route: wider dash hitbox and stronger pole impact blasts.",
@@ -155,13 +156,13 @@ const TOWER_TYPES = {
     name: "Damian",
     icon: "🧨",
     cost: 250,
-    damage: 25,
+    damage: 28,
     range: 128,
     fireRate: 1220,
     knockback: 18,
     explodeDelay: 720,
     explosionRadius: 60,
-    chainDamage: 15,
+    chainDamage: 25,
     superEvery: 20,
     superRadius: 300,
     superPull: 0.42,
@@ -318,6 +319,7 @@ function getTowerStats(tower) {
     stats.range = base.range + (level - 1) * 18;
     stats.fireRate = 0;
     stats.dashCooldown = Math.max(3100, base.dashCooldown - (level - 1) * 420);
+    stats.dashSpeed = (base.dashSpeed || 1.45) + (level - 1) * 0.16;
     stats.dashWidth = base.dashWidth + (level - 1) * 7;
     stats.maxPoles = Math.min(6, level + 1);
     stats.poleImpactRadius = level >= 4 ? 58 + level * 4 : 34 + level * 3;
@@ -1289,9 +1291,11 @@ function drawChuckTower(ctx, tower) {
     ctx.restore();
   });
 
-  // Small Chuck engine riding at current pole
-  const current = poles[tower.currentPoleIndex || 0] || poles[0];
-  const next = poles[((tower.currentPoleIndex || 0) + 1) % poles.length] || { x: current.x + 1, y: current.y };
+  // Small Chuck engine visibly riding along the current dash route
+  const current = tower.chuckDash ? { x: tower.chuckDash.x, y: tower.chuckDash.y } : (poles[tower.currentPoleIndex ?? 0] || poles[0]);
+  const route = tower.chuckDash?.route || null;
+  const nextPoleIndex = tower.chuckDash ? route[Math.min(tower.chuckDash.segment + 1, route.length - 1)] : ((tower.currentPoleIndex ?? 0) + 1) % poles.length;
+  const next = poles[nextPoleIndex] || { x: current.x + 1, y: current.y };
   const angle = angleTo(current, next);
   ctx.save();
   ctx.translate(current.x, current.y - 2);
@@ -1348,6 +1352,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   const [streak, setStreak] = useState(0);
   const [answerFeedback, setAnswerFeedback] = useState(null);
   const [bonusQuestions, setBonusQuestions] = useState(0);
+  const [gameSpeed, setGameSpeed] = useState(1);
 
   const selectedTower = useMemo(() => {
     const game = gameRef.current;
@@ -1435,6 +1440,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     if (!canAddChuckPole(tower)) return false;
     if (point.x < 28 || point.x > CANVAS_WIDTH - 28) return false;
     if (point.y < 28 || point.y > CANVAS_HEIGHT - 28) return false;
+    if (isTooCloseToPath(point)) return false;
     const poles = getChuckPoles(tower);
     if (poles.some(p => distance(p, point) < 58)) return false;
     if (game.towers.some(t => t.id !== tower.id && distance(t, point) < 46)) return false;
@@ -1459,7 +1465,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     if (point.x < 28 || point.x > CANVAS_WIDTH - 28) return false;
     if (point.y < 28 || point.y > CANVAS_HEIGHT - 28) return false;
     if (TOWER_TYPES[type]?.isConsumable) return true;
-    if (type !== "rapid" && isTooCloseToPath(point)) return false;
+    if (isTooCloseToPath(point)) return false;
     return !game.towers.some(t => distance(t, point) < 52);
   }
 
@@ -1560,10 +1566,10 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       coins: 260, baseHealth: 22, wave: 1, score: 0, gameOver: false,
       towers: [], enemies: [], bullets: [], beams: [], explosions: [], vortices: [], damagePopups: [],
       waveInProgress: false, enemiesToSpawn: 0, enemiesSpawned: 0,
-      lastSpawnTime: 0, nextWaveReady: true, bonusQuestions: 0, lastFrame: performance.now(),
+      lastSpawnTime: 0, nextWaveReady: true, bonusQuestions: 0, speedMultiplier: 1, lastFrame: performance.now(),
     };
     gameRef.current = initialGame;
-    setCoins(260); setBaseHealth(22); setWave(1); setScore(0); setBonusQuestions(0);
+    setCoins(260); setBaseHealth(22); setWave(1); setScore(0); setBonusQuestions(0); setGameSpeed(1);
     setGameOver(false); setIsRunning(true); isRunningRef.current = true;
     wasRunningBeforeQuestionRef.current = true;
     setQuestionIndex(0); setStreak(0); setQuestionModal(null); setAnswerFeedback(null);
@@ -1613,7 +1619,8 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
       if (!game || !ctx) { animationRef.current = requestAnimationFrame(gameLoop); return; }
-      const delta = Math.min(32, now - game.lastFrame);
+      const rawDelta = Math.min(32, now - game.lastFrame);
+      const delta = rawDelta * (game.speedMultiplier || 1);
       game.lastFrame = now;
       if (isRunningRef.current && !game.gameOver) updateGame(game, now, delta);
       else updateVisualEffectsOnly(game, delta);
@@ -1639,6 +1646,7 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       moveEnemy(enemy, delta, now);
     });
     updateVortices(game, now, delta);
+    updateChuckDashers(game, now, delta);
     const reached = game.enemies.filter(e => e.reachedBase);
     if (reached.length > 0) {
       game.baseHealth -= reached.reduce((t, e) => t + (e.type === "boss" ? 3 : e.type === "tank" ? 2 : 1), 0);
@@ -1666,9 +1674,9 @@ export default function TowerDefenseGame({ studySet, onExit }) {
       game.wave += 1;
       game.coins += waveReward;
       game.bonusQuestions = questionRewardCount;
-      setMessage(`Wave ${clearedWave} cleared. +${waveReward} coins. You unlocked ${questionRewardCount} bonus questions before the next wave.`);
+      setMessage(`Wave ${clearedWave} cleared. +${waveReward} coins. Answer ${questionRewardCount} bonus questions now before the next wave.`);
       syncStateFromRef();
-      scheduleAutoWave(5200, `Wave ${game.wave} started automatically.`);
+      openPostWaveQuestions(questionRewardCount);
     }
   }
 
@@ -1733,46 +1741,136 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   }
 
 
+  function buildChuckDashRoute(tower, poles) {
+    const startIndex = tower.currentPoleIndex ?? 0;
+    const route = [startIndex];
+    const remaining = new Set(poles.map((_, i) => i).filter(i => i !== startIndex));
+    while (remaining.size > 0) {
+      const current = poles[route[route.length - 1]];
+      let bestIndex = null;
+      let bestDist = Infinity;
+      remaining.forEach(i => {
+        const d = distance(current, poles[i]);
+        if (d < bestDist) { bestDist = d; bestIndex = i; }
+      });
+      route.push(bestIndex);
+      remaining.delete(bestIndex);
+    }
+    return route;
+  }
+
+  function triggerChuckPoleImpact(game, tower, pole, stats, now, label = "POLE HIT") {
+    if (!stats.poleImpactRadius) return;
+    game.explosions.push({ id: `explosion-chuck-pole-${Date.now()}-${Math.random()}`, x: pole.x, y: pole.y, radius: stats.poleImpactRadius, life: 270, maxLife: 270, type: "chuck" });
+    let hit = 0;
+    game.enemies.forEach(enemy => {
+      if (enemy.hp <= 0 || distance(enemy, pole) > stats.poleImpactRadius + enemy.radius) return;
+      hit += 1;
+      applyDamage(game, enemy, stats.poleImpactDamage, tower, now, { ...stats, type: "chuck", silent: true });
+      if (stats.railSlowDuration) {
+        enemy.slowUntil = Math.max(enemy.slowUntil || 0, now + stats.railSlowDuration);
+        enemy.slowAmount = Math.min(enemy.slowAmount || 1, stats.railSlowAmount || 0.65);
+      }
+    });
+    if (hit) game.damagePopups.push({ id: `popup-chuck-pole-${Date.now()}-${Math.random()}`, x: pole.x, y: pole.y - 36, text: label, life: 520, color: "#fff176" });
+  }
+
+  function startChuckDash(game, tower, now, stats) {
+    const poles = getChuckPoles(tower);
+    if (poles.length < 2) return false;
+    const route = buildChuckDashRoute(tower, poles);
+    if (route.length < 2) return false;
+    const start = poles[route[0]];
+    const next = poles[route[1]];
+    tower.chuckDash = {
+      route,
+      segment: 0,
+      x: start.x,
+      y: start.y,
+      hitEnemyIds: {},
+      totalHits: 0,
+      startedAt: now,
+    };
+    tower.lastDash = now;
+    tower.angle = angleTo(start, next);
+    game.damagePopups.push({ id: `popup-chuck-start-${Date.now()}-${Math.random()}`, x: start.x, y: start.y - 38, text: "ALL ABOARD", life: 620, color: "#fff176" });
+    return true;
+  }
+
+  function updateChuckDashers(game, now, delta) {
+    game.towers.forEach(tower => {
+      if (tower.type !== "rapid" || !tower.chuckDash) return;
+      const stats = getTowerStats(tower);
+      const poles = getChuckPoles(tower);
+      const dash = tower.chuckDash;
+      let remainingMove = stats.dashSpeed * delta;
+
+      while (remainingMove > 0 && tower.chuckDash) {
+        const from = poles[dash.route[dash.segment]];
+        const to = poles[dash.route[dash.segment + 1]];
+        if (!from || !to) { tower.chuckDash = null; break; }
+        tower.angle = angleTo({ x: dash.x, y: dash.y }, to);
+        const sweepStart = { x: dash.x, y: dash.y };
+        const dx = to.x - dash.x;
+        const dy = to.y - dash.y;
+        const distToNext = Math.hypot(dx, dy);
+        if (distToNext <= remainingMove) {
+          dash.x = to.x;
+          dash.y = to.y;
+          remainingMove -= distToNext;
+          tower.currentPoleIndex = dash.route[dash.segment + 1];
+          triggerChuckPoleImpact(game, tower, to, stats, now, dash.segment + 1 === dash.route.length - 1 ? "END STOP" : "NEXT STOP");
+          dash.segment += 1;
+          if (dash.segment >= dash.route.length - 1) {
+            // Let the collision sweep below run for the final segment before ending the dash.
+            remainingMove = 0;
+          }
+        } else {
+          dash.x += (dx / Math.max(1, distToNext)) * remainingMove;
+          dash.y += (dy / Math.max(1, distToNext)) * remainingMove;
+          remainingMove = 0;
+        }
+
+        const trainPoint = { x: dash.x, y: dash.y };
+        const prevPoint = sweepStart;
+        game.enemies.forEach(enemy => {
+          if (enemy.hp <= 0) return;
+          if (dash.hitEnemyIds[enemy.id]) return;
+          const sweptHit = pointToSegmentDistance(enemy, prevPoint, trainPoint) <= stats.dashWidth + enemy.radius;
+          if (!sweptHit) return;
+          dash.hitEnemyIds[enemy.id] = true;
+          dash.totalHits = (dash.totalHits || 0) + 1;
+          applyDamage(game, enemy, stats.damage, tower, now, { ...stats, type: "chuck" });
+          if (stats.railSlowDuration) {
+            enemy.slowUntil = Math.max(enemy.slowUntil || 0, now + stats.railSlowDuration);
+            enemy.slowAmount = Math.min(enemy.slowAmount || 1, stats.railSlowAmount || 0.65);
+          }
+          enemy.stunUntil = Math.max(enemy.stunUntil || 0, now + 70);
+        });
+        dash.prevPoint = { x: dash.x, y: dash.y };
+        if (dash.segment >= dash.route.length - 1) {
+          const hitCount = dash.totalHits || 0;
+          if (hitCount >= (stats.fastRechargeHits || 9999)) tower.lastDash = now - stats.dashCooldown * 0.72;
+          game.damagePopups.push({ id: `popup-chuck-end-${Date.now()}-${Math.random()}`, x: dash.x, y: dash.y - 42, text: hitCount >= 3 ? "GHOST TRAIN" : "ROUTE DONE", life: 650, color: "#fff176" });
+          tower.chuckDash = null;
+        }
+      }
+    });
+  }
+
   function fireChuckTower(game, tower, now, delta, stats) {
     const poles = getChuckPoles(tower);
     if (poles.length < 2) {
       tower.angle = (tower.angle || 0) + 0.01;
       return;
     }
-    if (!tower.currentPoleIndex || tower.currentPoleIndex >= poles.length) tower.currentPoleIndex = 0;
-    const current = poles[tower.currentPoleIndex];
-    const nextIndex = (tower.currentPoleIndex + 1) % poles.length;
-    const next = poles[nextIndex];
+    if (tower.chuckDash) return;
+    const current = poles[tower.currentPoleIndex ?? 0] || poles[0];
+    const route = buildChuckDashRoute(tower, poles);
+    const next = poles[route[1]] || poles[0];
     tower.angle = angleTo(current, next);
     if (now - (tower.lastDash || 0) < stats.dashCooldown) return;
-
-    tower.lastDash = now;
-    tower.currentPoleIndex = nextIndex;
-    const hitEnemies = game.enemies.filter(enemy => enemy.hp > 0 && pointToSegmentDistance(enemy, current, next) <= stats.dashWidth + enemy.radius);
-    hitEnemies.forEach(enemy => {
-      applyDamage(game, enemy, stats.damage, tower, now, { ...stats, type: "chuck" });
-      if (stats.railSlowDuration) {
-        enemy.slowUntil = Math.max(enemy.slowUntil || 0, now + stats.railSlowDuration);
-        enemy.slowAmount = Math.min(enemy.slowAmount || 1, stats.railSlowAmount || 0.65);
-      }
-      enemy.stunUntil = Math.max(enemy.stunUntil || 0, now + 70);
-    });
-
-    if (stats.poleImpactRadius) {
-      [current, next].forEach((pole, i) => {
-        game.explosions.push({ id: `explosion-chuck-pole-${Date.now()}-${Math.random()}-${i}`, x: pole.x, y: pole.y, radius: stats.poleImpactRadius, life: 270, maxLife: 270, type: "chuck" });
-        game.enemies.forEach(enemy => {
-          if (enemy.hp <= 0 || distance(enemy, pole) > stats.poleImpactRadius) return;
-          applyDamage(game, enemy, stats.poleImpactDamage, tower, now, { ...stats, type: "chuck", silent: true });
-        });
-      });
-    }
-
-    game.beams.push({ id: `beam-chuck-${Date.now()}-${Math.random()}`, x1: current.x, y1: current.y, x2: next.x, y2: next.y, life: 360, maxLife: 360, width: Math.max(6, stats.dashWidth * 0.26), type: "chuck" });
-    game.damagePopups.push({ id: `popup-chuck-${Date.now()}-${Math.random()}`, x: (current.x + next.x) / 2, y: (current.y + next.y) / 2 - 22, text: hitEnemies.length >= 3 ? "GHOST TRAIN" : "DASH", life: 650, color: "#fff176" });
-    if (hitEnemies.length >= (stats.fastRechargeHits || 9999)) {
-      tower.lastDash = now - stats.dashCooldown * 0.72;
-    }
+    startChuckDash(game, tower, now, stats);
   }
 
   function fireTower(game, tower, now, delta) {
@@ -3409,10 +3507,63 @@ export default function TowerDefenseGame({ studySet, onExit }) {
     syncStateFromRef();
   }
 
+  function toggleFastForward() {
+    const game = gameRef.current;
+    if (!game) return;
+    const next = (game.speedMultiplier || 1) === 1 ? 2 : 1;
+    game.speedMultiplier = next;
+    setGameSpeed(next);
+    setMessage(next === 2 ? "Fast forward on: 2x speed." : "Fast forward off: normal speed.");
+  }
+
+  function skipOrStackWave() {
+    const game = gameRef.current;
+    if (!game || game.gameOver) return;
+
+    if (!game.waveInProgress) {
+      setMessage("Skip is only available during a wave after every enemy has spawned.");
+      return;
+    }
+
+    if (game.enemiesSpawned < game.enemiesToSpawn) {
+      setMessage("Skip locked: wait until all enemies are already on the map.");
+      return;
+    }
+
+    if (game.enemies.length === 0) {
+      setMessage("No enemies left to skip. The next wave will start after the reward/questions finish.");
+      return;
+    }
+
+    clearAutoWaveTimer();
+    const nextWave = game.wave + 1;
+    const extraEnemies = 8 + nextWave * 3;
+    game.wave = nextWave;
+    game.enemiesToSpawn += extraEnemies;
+    game.lastSpawnTime = 0;
+    setMessage(`Skip used: Wave ${nextWave} will join early because every current enemy was already on the map.`);
+    syncStateFromRef();
+  }
+
   function makeQuestionModal(index) {
     if (!questions.length) return null;
     const q = questions[index % questions.length];
     return { question: q, choices: buildChoices(q, questions), startedAt: Date.now() };
+  }
+
+  function openPostWaveQuestions(count) {
+    const game = gameRef.current;
+    if (!questions.length) {
+      setMessage("Wave cleared, but no study questions were found. Next wave starts soon.");
+      scheduleAutoWave(2400, `Wave ${game?.wave || 1} started automatically.`);
+      return;
+    }
+    if (!game || game.gameOver) return;
+    clearAutoWaveTimer();
+    game.bonusQuestions = count;
+    pauseGameForQuestion();
+    setAnswerFeedback(null);
+    setQuestionModal(makeQuestionModal(questionIndex));
   }
 
   function openQuestion() {
@@ -3427,6 +3578,11 @@ export default function TowerDefenseGame({ studySet, onExit }) {
   }
 
   function closeQuestions() {
+    const game = gameRef.current;
+    if (game && !game.waveInProgress && game.nextWaveReady) {
+      game.bonusQuestions = 0;
+      setBonusQuestions(0);
+    }
     setQuestionModal(null);
     setAnswerFeedback(null);
     resumeAfterQuestionIfNeeded();
@@ -3534,6 +3690,8 @@ export default function TowerDefenseGame({ studySet, onExit }) {
               return next;
             });
           }}>{isRunning ? "⏸ Pause" : "▶ Resume"}</button>
+          <button onClick={toggleFastForward}>{gameSpeed === 2 ? "⏩ 2x On" : "⏩ Fast"}</button>
+          <button onClick={skipOrStackWave}>⏭ Skip</button>
           <button onClick={startWave}>▶▶ Send Wave</button>
           <button onClick={resetGame}>↺ Restart</button>
           <button className="secondary" onClick={onExit}>✕ Exit</button>
