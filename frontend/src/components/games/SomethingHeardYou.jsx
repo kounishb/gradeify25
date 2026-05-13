@@ -8,7 +8,7 @@ const WORLD_W  = 2600;
 const WORLD_H  = 1900;
 
 // Collision radius is LARGER than visual so the player never clips walls
-const PLAYER_RADIUS  = 18;
+const PLAYER_RADIUS  = 12;
 const MONSTER_RADIUS = 22;
 const ITEM_COUNT     = 6;
 
@@ -101,12 +101,12 @@ function makeMazeMap(floorNum=1){
     if(!a||!b) return;
     const ax=a.x+a.w/2,ay=a.y+a.h/2,bx=b.x+b.w/2,by=b.y+b.h/2;
     const hf=Math.random()>0.4;
-    if(hf){
-      corridors.push({id:`ch-${a.id}-${b.id}`,x:Math.min(ax,bx)-24,y:ay-26,w:Math.abs(ax-bx)+48,h:52,type:"hallway",decay:Math.random()});
-      corridors.push({id:`cv-${a.id}-${b.id}`,x:bx-26,y:Math.min(ay,by)-24,w:52,h:Math.abs(ay-by)+48,type:"hallway",decay:Math.random()});
+    if (hf) {
+      corridors.push({ id:`ch-${a.id}-${b.id}`, x:Math.min(ax,bx)-30, y:ay-30, w:Math.abs(ax-bx)+60, h:60, type:"hallway", decay:Math.random() });
+      corridors.push({ id:`cv-${a.id}-${b.id}`, x:bx-30, y:Math.min(ay,by)-30, w:60, h:Math.abs(ay-by)+60, type:"hallway", decay:Math.random() });
     } else {
-      corridors.push({id:`cv-${a.id}-${b.id}`,x:ax-26,y:Math.min(ay,by)-24,w:52,h:Math.abs(ay-by)+48,type:"hallway",decay:Math.random()});
-      corridors.push({id:`ch-${a.id}-${b.id}`,x:Math.min(ax,bx)-24,y:by-26,w:Math.abs(ax-bx)+48,h:52,type:"hallway",decay:Math.random()});
+      corridors.push({ id:`cv-${a.id}-${b.id}`, x:ax-30, y:Math.min(ay,by)-30, w:60, h:Math.abs(ay-by)+60, type:"hallway", decay:Math.random() });
+      corridors.push({ id:`ch-${a.id}-${b.id}`, x:Math.min(ax,bx)-30, y:by-30, w:Math.abs(ax-bx)+60, h:60, type:"hallway", decay:Math.random() });
     }
   }
   for(let row=0;row<rows;row++){
@@ -304,49 +304,66 @@ export default function SomethingHeardYou({onExit}){
   }
 
   // ── monster AI ────────────────────────────────────────────────────────────
-  function updateMonster(r,dt){
-    const p=r.player,m=r.monster;
-    if(m.stun>0){m.stun-=dt;return;}
-    m.limbPhase+=dt*0.009;
+  function updateMonster(r, dt) {
+  const p = r.player, m = r.monster;
+  if (m.stun > 0) { m.stun -= dt; return; }
+  m.limbPhase += dt * 0.009;
 
-    const same=sameZone(r.map,p,m);
-    const d=dist(p,m);
+  const same = sameZone(r.map, p, m);
+  const d = dist(p, m);
+  const chasing = m.mode === "chase" || r.finalPhase;
 
-    // Vision: chase if same zone + close
-    if(!p.hidden&&same&&d<(r.finalPhase?600:460)){
-      m.mode="chase";
-      m.target={x:p.x,y:p.y};
-      m.anger=clamp(m.anger+0.1*dt,0,100);
-    } else if(m.mode==="chase"&&(!same||d>550)){
-      // Lost player — switch to investigate last known position
-      m.mode="investigate";
-    }
+  // Proximity chase — locks on within radius even through walls
+  const proximityChase = !p.hidden && d < (r.finalPhase ? 280 : 200);
+  // Vision chase — same room/corridor and close enough
+  const visionChase = !p.hidden && same && d < (r.finalPhase ? 600 : 460);
 
-    const chaseSpd=r.finalPhase ? MONSTER_FINAL+(r.floorNum-1)*0.15 : m.baseChase;
-
-    if(m.mode==="stalk"){
-      if(!m.target||dist(m,m.target)<40||Math.random()<0.005){
-        const pz=getZoneAt(r.map,p,5);
-        const cands=r.map.rooms
-          .filter(room=>room.id!==pz?.id)
-          .map(room=>({room,d:dist({x:room.x+room.w/2,y:room.y+room.h/2},p)}))
-          .filter(e=>e.d>280&&e.d<1000).sort(()=>Math.random()-0.5);
-        m.target=randomPointInRect(cands[0]?.room||choice(r.map.rooms),55);
-      }
-      moveMonster(r,m.target,MONSTER_WALK+(r.floorNum-1)*0.08,dt);
-    }
-    if(m.mode==="investigate"){
-      if(m.target) moveMonster(r,m.target,MONSTER_INVEST+(r.floorNum-1)*0.1,dt);
-      if(!m.target||dist(m,m.target)<45){m.mode="stalk";m.target=null;}
-    }
-    if(m.mode==="chase"){
-      m.target={x:p.x,y:p.y};
-      moveMonster(r,m.target,chaseSpd,dt);
-      if(Math.random()<0.022) r.message=choice(["RUN.","IT SEES YOU.","DON'T STOP.","FASTER."]);
-    }
-    if(m.target) m.dirAngle=Math.atan2(m.target.y-m.y,m.target.x-m.x);
-    m.anger=clamp(m.anger-dt*0.003,0,100);
+  if (proximityChase || visionChase) {
+    m.mode = "chase";
+    m.target = { x: p.x, y: p.y };
+    m.anger = clamp(m.anger + 0.1 * dt, 0, 100);
+  } else if (m.mode === "chase" && !same && d > 580) {
+    // Lost the player — fall back to investigating last known position
+    m.mode = "investigate";
   }
+
+  const chaseSpd = r.finalPhase
+    ? MONSTER_FINAL + (r.floorNum - 1) * 0.15
+    : m.baseChase;
+
+  if (m.mode === "stalk") {
+    if (!m.target || dist(m, m.target) < 40 || Math.random() < 0.005) {
+      const pz = getZoneAt(r.map, p, 5);
+      const cands = r.map.rooms
+        .filter(room => room.id !== pz?.id)
+        .map(room => ({ room, d: dist({ x: room.x + room.w / 2, y: room.y + room.h / 2 }, p) }))
+        .filter(e => e.d > 280 && e.d < 1000)
+        .sort(() => Math.random() - 0.5);
+      m.target = randomPointInRect(cands[0]?.room || choice(r.map.rooms), 55);
+    }
+    moveMonster(r, m.target, MONSTER_WALK + (r.floorNum - 1) * 0.08, dt);
+  }
+
+  if (m.mode === "investigate") {
+    if (m.target) moveMonster(r, m.target, MONSTER_INVEST + (r.floorNum - 1) * 0.1, dt);
+    if (!m.target || dist(m, m.target) < 45) {
+      m.mode = "stalk";
+      m.target = null;
+    }
+  }
+
+  if (m.mode === "chase") {
+    // Always update target to current player position while chasing
+    m.target = { x: p.x, y: p.y };
+    moveMonster(r, m.target, chaseSpd, dt);
+    if (Math.random() < 0.022) {
+      r.message = choice(["RUN.", "IT SEES YOU.", "DON'T STOP.", "FASTER."]);
+    }
+  }
+
+  if (m.target) m.dirAngle = Math.atan2(m.target.y - m.y, m.target.x - m.x);
+  m.anger = clamp(m.anger - dt * 0.003, 0, 100);
+}
 
   function moveMonster(r,target,speed,dt){
     if(!target) return;
@@ -946,9 +963,9 @@ export default function SomethingHeardYou({onExit}){
 
     const cz=getZoneAt(r.map,p,6);
     const revealZones=r.map.walkable.filter(zone=>{
-      if(!cz) return rectDistToPoint(zone,p)<130;
+      if(!cz) return rectDistToPoint(zone,p)<160;
       if(zone.id===cz.id) return true;
-      if(zonesTouch(zone,cz)&&rectDistToPoint(zone,p)<105) return true;
+      if(zonesTouch(zone,cz)&&rectDistToPoint(zone,p)<160) return true;
       return false;
     });
 
@@ -958,8 +975,8 @@ export default function SomethingHeardYou({onExit}){
       dc.save();
       dc.beginPath();dc.rect(zone.x-cam.x,zone.y-cam.y,zone.w,zone.h);dc.clip();
 
-      const baseR=p.flashlightOff?72:115+p.battery*0.72;
-      const radius=clamp(baseR-p.fear*0.22,58,190);
+      const baseR = p.flashlightOff ? 85 : 130 + p.battery * 0.8;
+      const radius = clamp(baseR - p.fear * 0.18, 70, 210); 
 
       const amb=dc.createRadialGradient(px,py,8,px,py,radius);
       amb.addColorStop(0,"rgba(255,255,255,0.95)");
