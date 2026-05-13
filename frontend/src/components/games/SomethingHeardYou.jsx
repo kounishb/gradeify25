@@ -743,134 +743,196 @@ export default function SomethingHeardYou({onExit}){
   }
 
   // ── monster body (drawn after lighting) ───────────────────────────────────
-  function drawMonsterBody(ctx,r,cam){
-    const m=r.monster,p=r.player;
-    const same=sameZone(r.map,p,m);
-    const d=dist(m,p);
-    const chasing=m.mode==="chase"||r.finalPhase;
+  function drawMonsterBody(ctx, r, cam) {
+    const m = r.monster, p = r.player;
+    const same = sameZone(r.map, p, m);
+    const d = dist(m, p);
+    const chasing = m.mode === "chase" || r.finalPhase;
 
-    // Body visible when: chasing, same zone, or very close
-    const bodyOpacity = chasing ? 1 :
-                        same ? clamp(1-(d/520),0.15,1) :
-                        d<180 ? clamp(1-(d/180),0.08,0.55) : 0;
-    if(bodyOpacity<=0) return;
+    // Body only visible when chasing or in same zone — pure silhouette, no glow
+    const bodyOpacity = chasing ? clamp((550 - d) / 480, 0.15, 1)
+                      : same    ? clamp((350 - d) / 320, 0.0,  0.85)
+                      : 0;
+    if (bodyOpacity <= 0) return;
 
-    const flicker=chasing?(Math.random()<0.07?rand(0.75,1):1):(Math.random()<0.18?rand(0.4,1):1);
-    const op=bodyOpacity*flicker;
-    const lp=m.limbPhase||0;
+    const flicker = chasing
+      ? (Math.random() < 0.06 ? rand(0.75, 1) : 1)
+      : (Math.random() < 0.18 ? rand(0.35, 1) : 1);
+    const op = bodyOpacity * flicker;
+    const lp = m.limbPhase || 0;
 
-    ctx.save();ctx.translate(m.x,m.y);ctx.globalAlpha=op;
-    ctx.rotate((m.dirAngle||0)-Math.PI/2);
+    ctx.save();
+    ctx.translate(m.x, m.y);
+    ctx.globalAlpha = op;
+    ctx.rotate((m.dirAngle || 0) - Math.PI / 2);
 
-    // Shadow
-    ctx.globalAlpha=op*0.38;ctx.fillStyle="#000";ctx.beginPath();ctx.ellipse(0,26,22,9,0,0,Math.PI*2);ctx.fill();ctx.globalAlpha=op;
+    // Drop shadow
+    ctx.globalAlpha = op * 0.4;
+    ctx.fillStyle = "#000";
+    ctx.beginPath(); ctx.ellipse(0, 26, 22, 9, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = op;
 
-    // Legs
-    ctx.strokeStyle=chasing?"#1c0808":"#0e0b14";ctx.lineWidth=4.5;ctx.lineCap="round";
-    for(let i=0;i<4;i++){
-      const side=i<2?-1:1,off=(i%2)*12-6,swing=Math.sin(lp+i*1.5)*17;
-      ctx.beginPath();ctx.moveTo(side*9,off);ctx.quadraticCurveTo(side*30,off+10+swing,side*24,off+34+swing);ctx.stroke();
+    // Legs — pure dark, no rim
+    ctx.strokeStyle = chasing ? "#180606" : "#0e0b14";
+    ctx.lineWidth = 4.5; ctx.lineCap = "round";
+    for (let i = 0; i < 4; i++) {
+      const side = i < 2 ? -1 : 1, off = (i % 2) * 12 - 6;
+      const swing = Math.sin(lp + i * 1.5) * 17;
+      ctx.beginPath();
+      ctx.moveTo(side * 9, off);
+      ctx.quadraticCurveTo(side * 30, off + 10 + swing, side * 24, off + 34 + swing);
+      ctx.stroke();
     }
-    // Body
-    const rim=chasing?"rgba(210,22,22,0.65)":"rgba(105,85,130,0.4)";
-    ctx.fillStyle=chasing?"#280606":"#1c1828";
-    ctx.beginPath();ctx.ellipse(0,-5,18,32,0,0,Math.PI*2);ctx.fill();
-    ctx.strokeStyle=rim;ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(0,-5,18,32,0,0,Math.PI*2);ctx.stroke();
+
+    // Body — solid dark silhouette, no stroke
+    ctx.fillStyle = chasing ? "#220404" : "#1a1626";
+    ctx.beginPath(); ctx.ellipse(0, -5, 18, 32, 0, 0, Math.PI * 2); ctx.fill();
+
     // Neck
-    ctx.fillStyle=chasing?"#200404":"#140f1e";ctx.fillRect(-5,-38,10,15);
-    // Head
-    ctx.fillStyle=chasing?"#260505":"#181228";
-    ctx.beginPath();ctx.ellipse(0,-50,17,22,0,0,Math.PI*2);ctx.fill();
-    ctx.strokeStyle=rim;ctx.lineWidth=1.8;ctx.beginPath();ctx.ellipse(0,-50,17,22,0,0,Math.PI*2);ctx.stroke();
-    // Arms
-    ctx.strokeStyle=chasing?"#1e0404":"#120e1a";ctx.lineWidth=5.5;ctx.lineCap="round";
-    const armSwing=Math.sin(lp)*12;
-    ctx.beginPath();ctx.moveTo(-15,-18);ctx.quadraticCurveTo(-34,10+armSwing,-28,48+armSwing);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(15,-18);ctx.quadraticCurveTo(34,10-armSwing,28,48-armSwing);ctx.stroke();
-    ctx.strokeStyle=rim;ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(-15,-18);ctx.quadraticCurveTo(-34,10+armSwing,-28,48+armSwing);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(15,-18);ctx.quadraticCurveTo(34,10-armSwing,28,48-armSwing);ctx.stroke();
-    // Claws
-    ctx.strokeStyle=chasing?"rgba(190,20,20,0.75)":"rgba(120,100,145,0.55)";ctx.lineWidth=1.6;
-    for(let f=0;f<3;f++){
-      ctx.beginPath();ctx.moveTo(-28+f*5,48+armSwing);ctx.lineTo(-32+f*6,60+armSwing);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(28-f*5,48-armSwing);ctx.lineTo(32-f*6,60-armSwing);ctx.stroke();
+    ctx.fillStyle = chasing ? "#1a0303" : "#120e1c";
+    ctx.fillRect(-5, -38, 10, 15);
+
+    // Head — solid, no stroke
+    ctx.fillStyle = chasing ? "#200404" : "#161024";
+    ctx.beginPath(); ctx.ellipse(0, -50, 17, 22, 0, 0, Math.PI * 2); ctx.fill();
+
+    // Arms — solid dark, no rim
+    ctx.strokeStyle = chasing ? "#1a0303" : "#100d18";
+    ctx.lineWidth = 5.5; ctx.lineCap = "round";
+    const armSwing = Math.sin(lp) * 12;
+    ctx.beginPath();
+    ctx.moveTo(-15, -18); ctx.quadraticCurveTo(-34, 10 + armSwing, -28, 48 + armSwing);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(15, -18); ctx.quadraticCurveTo(34, 10 - armSwing, 28, 48 - armSwing);
+    ctx.stroke();
+
+    // Claws — very subtle, no glow
+    ctx.strokeStyle = chasing ? "rgba(140,20,20,0.45)" : "rgba(90,80,110,0.35)";
+    ctx.lineWidth = 1.5;
+    for (let f = 0; f < 3; f++) {
+      ctx.beginPath();
+      ctx.moveTo(-28 + f * 5, 48 + armSwing); ctx.lineTo(-32 + f * 6, 60 + armSwing);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(28 - f * 5, 48 - armSwing); ctx.lineTo(32 - f * 6, 60 - armSwing);
+      ctx.stroke();
     }
+
     ctx.restore();
 
-    // Off-screen arrow when chasing
-    if(chasing&&cam){
-      const sx=m.x-cam.x,sy=m.y-cam.y;
-      const onScreen=sx>-50&&sx<CANVAS_W+50&&sy>-50&&sy<CANVAS_H+50;
-      if(!onScreen){
-        ctx.save();ctx.setTransform(1,0,0,1,0,0);
-        const ang=Math.atan2(sy-CANVAS_H/2,sx-CANVAS_W/2);
-        const ax=CANVAS_W/2+Math.cos(ang)*265,ay=CANVAS_H/2+Math.sin(ang)*188;
-        ctx.globalAlpha=0.7+Math.sin(r.time*0.009)*0.3;
-        ctx.fillStyle="#ff1a1a";ctx.shadowColor="rgba(255,0,0,0.9)";ctx.shadowBlur=14;
-        ctx.save();ctx.translate(ax,ay);ctx.rotate(ang);
-        ctx.beginPath();ctx.moveTo(20,0);ctx.lineTo(-9,-8);ctx.lineTo(-5,0);ctx.lineTo(-9,8);ctx.closePath();ctx.fill();
-        ctx.restore();ctx.shadowBlur=0;ctx.restore();
+    // Off-screen chase arrow — kept here since it's body-related
+    if (chasing && cam) {
+      const sx = m.x - cam.x, sy = m.y - cam.y;
+      const onScreen = sx > -50 && sx < CANVAS_W + 50 && sy > -50 && sy < CANVAS_H + 50;
+      if (!onScreen) {
+        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+        const ang = Math.atan2(sy - CANVAS_H / 2, sx - CANVAS_W / 2);
+        const ax = CANVAS_W / 2 + Math.cos(ang) * 265;
+        const ay = CANVAS_H / 2 + Math.sin(ang) * 188;
+        ctx.globalAlpha = 0.7 + Math.sin(r.time * 0.009) * 0.3;
+        ctx.fillStyle = "#ff1a1a";
+        ctx.shadowColor = "rgba(255,0,0,0.9)"; ctx.shadowBlur = 14;
+        ctx.save(); ctx.translate(ax, ay); ctx.rotate(ang);
+        ctx.beginPath();
+        ctx.moveTo(20, 0); ctx.lineTo(-9, -8); ctx.lineTo(-5, 0); ctx.lineTo(-9, 8);
+        ctx.closePath(); ctx.fill();
+        ctx.restore(); ctx.shadowBlur = 0; ctx.restore();
       }
     }
   }
 
   // ── MONSTER EYES — drawn completely last, always visible ──────────────────
   // These are drawn in SCREEN space so they pierce through the darkness overlay.
-  function drawMonsterEyes(ctx,r,cam){
-    const m=r.monster,p=r.player;
-    const d=dist(m,p);
-    const chasing=m.mode==="chase"||r.finalPhase;
+  function drawMonsterEyes(ctx, r, cam) {
+    const m = r.monster, p = r.player;
+    const d = dist(m, p);
+    const chasing = m.mode === "chase" || r.finalPhase;
+    const same = sameZone(r.map, p, m);
 
-    // Eyes are visible from much further than body
-    // Opacity based purely on distance, always at least faint
-    const eyeOpacity = chasing ? clamp((700-d)/600,0.3,1)
-                                : clamp((400-d)/380,0.05,0.85);
-    if(eyeOpacity<=0.02) return;
+    // Eyes only appear when: chasing, same zone, or within ~250px
+    // This makes the first glimpse genuinely shocking
+    const eyeOpacity = chasing ? clamp((650 - d) / 580, 0.25, 1)
+                    : same    ? clamp((380 - d) / 340, 0.0,  0.9)
+                    : d < 250 ? clamp((250 - d) / 220, 0.0,  0.5)
+                    : 0;
+    if (eyeOpacity <= 0.02) return;
 
-    // Convert monster world coords to screen coords
-    const sx=m.x-cam.x, sy=m.y-cam.y;
-    // Only draw if somewhere near screen
-    if(sx<-150||sx>CANVAS_W+150||sy<-150||sy>CANVAS_H+150) return;
+    const sx = m.x - cam.x, sy = m.y - cam.y;
+    if (sx < -160 || sx > CANVAS_W + 160 || sy < -160 || sy > CANVAS_H + 160) return;
 
-    // The monster head faces dirAngle, so eyes must be offset in that direction
-    const facing=(m.dirAngle||0)-Math.PI/2;
-    // Rotate eye positions by facing
-    const eyeOffsets=[{ex:-6,ey:-53},{ex:6,ey:-53}];
+    const facing = (m.dirAngle || 0) - Math.PI / 2;
+    // Slow pulse when stalking, rapid throb when chasing
+    const throb = chasing
+      ? 0.55 + Math.abs(Math.sin(r.time * 0.014)) * 0.45
+      : 0.7  + Math.sin(r.time * 0.004) * 0.3;
+
+    const eyeCol   = chasing ? `rgba(255,18,18,${eyeOpacity * throb})`  : `rgba(235,235,255,${eyeOpacity * throb})`;
+    const glowCol  = chasing ? `rgba(255,0,0,${eyeOpacity * 0.85})`     : `rgba(160,160,255,${eyeOpacity * 0.5})`;
+    const glowSize = chasing ? 28 : 16;
 
     ctx.save();
-    const pulsate=chasing?(0.6+Math.abs(Math.sin(r.time*0.006))*0.4):1;
-    const eyeColor=chasing?`rgba(255,20,20,${eyeOpacity*pulsate})`:`rgba(240,240,255,${eyeOpacity})`;
-    const glowColor=chasing?`rgba(255,0,0,${eyeOpacity*0.9})`:`rgba(180,180,255,${eyeOpacity*0.6})`;
 
-    for(const {ex,ey} of eyeOffsets){
-      // Rotate the local eye offset by the monster's facing angle
-      const rotX=ex*Math.cos(facing)-ey*Math.sin(facing);
-      const rotY=ex*Math.sin(facing)+ey*Math.cos(facing);
-      const finalX=sx+rotX, finalY=sy+rotY;
+    for (const { ex, ey } of [{ ex: -6, ey: -53 }, { ex: 6, ey: -53 }]) {
+      const rx = ex * Math.cos(facing) - ey * Math.sin(facing);
+      const ry = ex * Math.sin(facing) + ey * Math.cos(facing);
+      const fx = sx + rx, fy = sy + ry;
 
-      // Outer glow
-      ctx.globalAlpha=eyeOpacity*(chasing?0.5:0.3);
-      const glowGrad=ctx.createRadialGradient(finalX,finalY,1,finalX,finalY,chasing?22:14);
-      glowGrad.addColorStop(0,glowColor);
-      glowGrad.addColorStop(1,"rgba(0,0,0,0)");
-      ctx.fillStyle=glowGrad;
-      ctx.beginPath();ctx.arc(finalX,finalY,chasing?22:14,0,Math.PI*2);ctx.fill();
+      // Outer glow bloom — only visible in darkness, makes eyes look lit from within
+      ctx.globalAlpha = eyeOpacity * throb * (chasing ? 0.55 : 0.28);
+      const bloom = ctx.createRadialGradient(fx, fy, 0, fx, fy, glowSize);
+      bloom.addColorStop(0, glowCol);
+      bloom.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = bloom;
+      ctx.beginPath(); ctx.arc(fx, fy, glowSize, 0, Math.PI * 2); ctx.fill();
 
-      // Eye white/iris
-      ctx.globalAlpha=eyeOpacity*pulsate;
-      ctx.shadowColor=glowColor;ctx.shadowBlur=chasing?20:10;
-      ctx.fillStyle=eyeColor;
-      ctx.beginPath();ctx.ellipse(finalX,finalY,chasing?6.5:5,chasing?4.5:3.5,facing,0,Math.PI*2);ctx.fill();
-      ctx.shadowBlur=0;
+      // Iris
+      ctx.globalAlpha = eyeOpacity * throb;
+      ctx.shadowColor = glowCol; ctx.shadowBlur = chasing ? 22 : 10;
+      ctx.fillStyle = eyeCol;
+      ctx.beginPath();
+      ctx.ellipse(fx, fy, chasing ? 6.5 : 5, chasing ? 4.5 : 3.5, facing, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
 
       // Pupil
-      ctx.globalAlpha=eyeOpacity;
-      ctx.fillStyle="#000";
-      ctx.beginPath();ctx.arc(finalX,finalY,chasing?3:2.5,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha = eyeOpacity;
+      ctx.fillStyle = "#000";
+      ctx.beginPath(); ctx.arc(fx, fy, chasing ? 3 : 2.2, 0, Math.PI * 2); ctx.fill();
+    }
+
+  // Mouth — only shows when chasing and close (under ~300px), adds to the horror
+  if (chasing && d < 320) {
+    const mouthOpacity = clamp((320 - d) / 280, 0, 1) * eyeOpacity * throb;
+    ctx.globalAlpha = mouthOpacity;
+
+    // Mouth center in local space, rotated by facing
+    const mLocal = { ex: 0, ey: -36 };
+    const mrx = mLocal.ex * Math.cos(facing) - mLocal.ey * Math.sin(facing);
+    const mry = mLocal.ex * Math.sin(facing) + mLocal.ey * Math.cos(facing);
+    const mx2 = sx + mrx, my2 = sy + mry;
+
+    ctx.shadowColor = "rgba(255,0,0,0.8)"; ctx.shadowBlur = 14;
+    ctx.strokeStyle = `rgba(255,30,30,${mouthOpacity})`;
+    ctx.lineWidth = 2;
+    // Curved grin rotated to face direction
+    ctx.save();
+    ctx.translate(mx2, my2);
+    ctx.rotate(facing);
+    ctx.beginPath();
+    ctx.moveTo(-12, 8); ctx.quadraticCurveTo(0, 20, 12, 8);
+    ctx.stroke();
+    // Teeth hints
+    ctx.fillStyle = `rgba(230,215,215,${mouthOpacity * 0.6})`;
+    for (let t = 0; t < 4; t++) {
+      ctx.fillRect(-9 + t * 6, 8, 4, 7);
     }
     ctx.restore();
+    ctx.shadowBlur = 0;
   }
+
+  ctx.restore();
+}
 
   // ── lighting ───────────────────────────────────────────────────────────────
   function drawLighting(ctx,r,cam){
