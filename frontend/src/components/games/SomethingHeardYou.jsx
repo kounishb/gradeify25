@@ -62,22 +62,6 @@ function isWalkable(walkable,x,y,radius){
   return walkable.some(z=>circleAABBOverlap(x,y,radius,z));
 }
 
-// ─── push a point out of all walls it overlaps ────────────────────────────────
-// Called once per frame to enforce the player stays fully inside walkable space.
-function resolveWallPenetration(walkable,x,y,radius){
-  // Find the zone the center is deepest inside (or nearest to)
-  // Then for each wall boundary we violate, push back.
-  let px=x, py=y;
-  const inZones = walkable.filter(z=>pointInRect({x:px,y:py},z,radius));
-  if(inZones.length===0) return {x:px,y:py}; // fully outside everything - don't move
-
-  for(const z of inZones){
-    // clamp position so the circle edge doesn't exceed zone boundaries
-    px = clamp(px, z.x+radius, z.x+z.w-radius);
-    py = clamp(py, z.y+radius, z.y+z.h-radius);
-  }
-  return {x:px,y:py};
-}
 
 // ─── seeded decorations ───────────────────────────────────────────────────────
 function seedRoomDetails(room){
@@ -444,9 +428,7 @@ export default function SomethingHeardYou({onExit}){
     const ny=p.y+dy*speed*(dt/16.67);
     if(isWalkable(r.map.walkable,nx,p.y,PLAYER_RADIUS)) p.x=nx;
     if(isWalkable(r.map.walkable,p.x,ny,PLAYER_RADIUS)) p.y=ny;
-    // 2. Hard clamp: push player out of any wall they might still overlap
-    const resolved=resolveWallPenetration(r.map.walkable,p.x,p.y,PLAYER_RADIUS);
-    p.x=resolved.x; p.y=resolved.y;
+    
 
     if(!p.flashlightOff&&p.battery>0)
       p.battery=clamp(p.battery-BATTERY_DRAIN*dt*(r.finalPhase?1.3:1),0,100);
