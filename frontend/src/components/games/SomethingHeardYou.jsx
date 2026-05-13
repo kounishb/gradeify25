@@ -470,14 +470,34 @@ export default function SomethingHeardYou({onExit}){
         r.monster.mode="stalk"; r.monster.target=null;
         p.fear=clamp(p.fear+22,0,100);
       } else {
-        p.hp-=1; p.invuln=1900; p.hidden=false; p.fear=clamp(p.fear+38,0,100);
-        triggerScare(r,"CAUGHT");
-        r.bloodSplatters.push({x:p.x+rand(-28,28),y:p.y+rand(-28,28),rr:rand(7,22),alpha:0.9});
-        const safeRooms=r.map.rooms.filter(room=>dist({x:room.x+room.w/2,y:room.y+room.h/2},p)>400).sort(()=>Math.random()-0.5);
-        const sr=safeRooms[0]||choice(r.map.rooms);
-        const pos=randomPointInRect(sr,60);
-        r.monster.x=pos.x; r.monster.y=pos.y; r.monster.mode="stalk"; r.monster.target=null;
-        if(p.hp<=0){r.dead=true;r.message="The dark learned your name.";}
+        p.hp -= 1;
+        p.invuln = 1900;
+        p.hidden = false;
+        p.fear = clamp(p.fear + 38, 0, 100);
+        triggerScare(r, "CAUGHT");
+        r.bloodSplatters.push({ x: p.x + rand(-28, 28), y: p.y + rand(-28, 28), rr: rand(7, 22), alpha: 0.9 });
+
+        if (p.hp <= 0) {
+          r.dead = true;
+          r.message = "The dark learned your name.";
+        } else {
+          // Send player back to spawn, keep everything else
+          const spawn = r.map.spawnRoom;
+          p.x = spawn.x + spawn.w / 2;
+          p.y = spawn.y + spawn.h / 2;
+          r.message = `Sent back to start. ${p.hp} ${p.hp === 1 ? "life" : "lives"} remaining.`;
+
+          // Teleport monster away so you're not immediately caught again
+          const safeRooms = r.map.rooms
+            .filter(room => dist({ x: room.x + room.w / 2, y: room.y + room.h / 2 }, p) > 500)
+            .sort(() => Math.random() - 0.5);
+          const room = safeRooms[0] || choice(r.map.rooms);
+          const pos = randomPointInRect(room, 60);
+          r.monster.x = pos.x;
+          r.monster.y = pos.y;
+          r.monster.mode = "stalk";
+          r.monster.target = null;
+        }
       }
     }
 
