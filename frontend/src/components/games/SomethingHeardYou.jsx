@@ -19,9 +19,9 @@ const FEAR_DECAY        = 0.007;
 
 // Monster base walk speed slightly slower than player walk speed (2.1)
 // so the player can escape if they keep moving.  Chase is fast but beatable.
-const MONSTER_WALK   = 1.1;   // stalk
-const MONSTER_INVEST = 1.55;  // investigate
-const MONSTER_CHASE  = 1.85;  // chase — scary but survivable
+const MONSTER_WALK   = 1.5;   // stalk
+const MONSTER_INVEST = 1.9;  // investigate
+const MONSTER_CHASE  = 2.2;  // chase — scary but survivable
 const MONSTER_FINAL  = 2.4;   // final-phase chase — genuinely threatening
 
 // ─── utils ────────────────────────────────────────────────────────────────────
