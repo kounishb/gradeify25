@@ -304,6 +304,7 @@ function createFloor(floorNum=1, prevPlayer=null){
     hidden:false, invuln:2200, flashlightOff:false, bobPhase:0, crouching:false,
     stunned:0,
     hasLighter:false, flares:0, hasCamera:false, cameraCharge:100,
+    hasStunGun:false, stunAmmo:0,
     scraps:0, upgrades:defaultUpgrades(), maxBattery:100, maxStamina:100, maxSanity:100, maxHp:3,
     noise:0, roomsSearched:0, archivesRead:0,
   };
@@ -317,6 +318,8 @@ function createFloor(floorNum=1, prevPlayer=null){
   player.battery = clamp(player.battery ?? player.maxBattery, 0, player.maxBattery);
   player.sanity = clamp(player.sanity ?? player.maxSanity, 0, player.maxSanity);
   player.stamina = clamp(player.stamina ?? player.maxStamina, 0, player.maxStamina);
+  player.hasStunGun = !!player.hasStunGun;
+  player.stunAmmo = player.stunAmmo || 0;
 
   const farRooms=[...map.rooms]
     .filter(r=>r.id!==map.spawnRoom.id)
@@ -348,6 +351,10 @@ function createFloor(floorNum=1, prevPlayer=null){
   const flares=flareRooms.map((room,i)=>({id:`flare-${i}`,...randomPointInRect(room),collected:false}));
   const cameraRoom=restRooms[12];
   const cameraItem=cameraRoom?{id:'camera',...randomPointInRect(cameraRoom),collected:prevPlayer?.hasCamera||false}:null;
+  const gunRoom=restRooms[13]||farRooms[2];
+  const stunGunItem=gunRoom?{id:'stungun',...randomPointInRect(gunRoom),collected:prevPlayer?.hasStunGun||false}:null;
+  const ammoRooms=restRooms.sort(()=>Math.random()-0.5).slice(14,18);
+  const stunAmmoPacks=ammoRooms.map((room,i)=>({id:`ammo-${i}`,...randomPointInRect(room),collected:false,amount:1+(floorNum>=3?1:0)}));
 
   const hidingSpots=restRooms.sort(()=>Math.random()-0.5).slice(13,22)
     .map((room,i)=>({id:`hide-${i}`,...randomPointInRect(room),r:24}));
@@ -389,13 +396,13 @@ function createFloor(floorNum=1, prevPlayer=null){
       mode:"stalk", target:null, baseChase:baseSpeed,
       anger:0, stun:0, limbPhase:0, dirAngle:0, bloodTrail:[],
     },
-    items, lores, batteries, medkits, lighter, flares, cameraItem, activeFlares,
+    items, lores, batteries, medkits, lighter, flares, cameraItem, stunGunItem, stunAmmoPacks, activeFlares,
     hidingSpots, traps, specialRooms, watcherData,
     exit:{x:map.exitRoom.x+map.exitRoom.w/2, y:map.exitRoom.y+map.exitRoom.h/2, active:false, pulse:0},
     noisePulses:[], hallucinations:[], bloodSplatters:[], mimicPulses:[],
     collected:0, loreCooldown:0, finalPhase:false, won:false, dead:false, floorComplete:false,
     scare:null, loreRead:null,
-    message:floorMessages[Math.min(floorNum-1,2)],
+    message:floorMessages[Math.min(floorNum-1,floorMessages.length-1)],
     hauntTimer:rand(5000,9000)-(floorNum-1)*1000,
     time:0, glitch:0, objectiveBlink:0, heartbeatPhase:0,
     invertControls:0, sanityEffects:[], // sanity hallucination effects
@@ -408,6 +415,7 @@ function createFloor(floorNum=1, prevPlayer=null){
 // ─── component ────────────────────────────────────────────────────────────────
 export default function SomethingHeardYou({onExit}){
   const canvasRef=useRef(null);
+  const cardRef=useRef(null);
   const keysRef  =useRef({});
   const mouseRef =useRef({x:CANVAS_W/2,y:CANVAS_H/2});
   const runRef   =useRef(null);
@@ -415,6 +423,7 @@ export default function SomethingHeardYou({onExit}){
   const lastRef  =useRef(performance.now());
 
   const [started,setStarted]=useState(false);
+  const [isFullscreen,setIsFullscreen]=useState(false);
   const [run,setRun]=useState(()=>createFloor(1));
 
   const horrorLines=useMemo(()=>[
@@ -581,11 +590,16 @@ export default function SomethingHeardYou({onExit}){
     const r=runRef.current;
     if(!r||!r.awaitingUpgrade||r.won) return;
     const up=r.upgradeOptions[index];
-    if(!up) return;
+    if(!up){
+      const next=createFloor(r.floorNum+1,r.player);
+      next.message="No upgrades left, going deeper.";
+      runRef.current=next; setRun(next); return;
+    }
     const p=r.player;
     p.upgrades=p.upgrades||defaultUpgrades();
-    if((p.scraps||0)<=0){ r.message="No cursed shards left."; return; }
-    p.scraps=Math.max(0,(p.scraps||0)-1);
+    // Floor-clear upgrades are guaranteed. Optional cursed shards still show as bonus currency,
+    // but the player should never get stuck because an upgrade key/button did nothing.
+    if((p.scraps||0)>0) p.scraps=Math.max(0,(p.scraps||0)-1);
     p.upgrades[up.key]=clamp((p.upgrades[up.key]||0)+1,0,up.max);
     p.maxBattery=statMax(p.upgrades,"battery");
     p.maxStamina=statMax(p.upgrades,"stamina");
@@ -604,7 +618,7 @@ export default function SomethingHeardYou({onExit}){
   function startRandomEvent(r){
     if(r.event||r.dead||r.won||r.floorComplete) return;
     const options=[
-      {type:"blackout", name:"BLACKOUT", timer:9000, msg:"Blackout. The building goes blind with you."},
+      {type:"brownout", name:"BROWNOUT", timer:4200, msg:"Brownout. Lights dimmed briefly — scary, but not instant death. Keep moving."},
       {type:"lockdown", name:"LOCKDOWN", timer:10000, msg:"Lockdown. Doors grind shut somewhere nearby."},
       {type:"hunt", name:"BLOOD HUNT", timer:8500, msg:"Blood hunt. It moves faster."},
       {type:"listening", name:"LISTENING HOUR", timer:11000, msg:"Listening hour. Every noise carries farther."},
@@ -612,7 +626,7 @@ export default function SomethingHeardYou({onExit}){
     ];
     const ev=choice(options);
     r.event={...ev};
-    if(ev.type==="blackout"){ r.powerOn=false; r.glitch=Math.max(r.glitch,0.6); }
+    if(ev.type==="brownout"){ r.powerOn=true; r.glitch=Math.max(r.glitch,0.28); if(r.monster.mode === "chase") r.monster.mode="investigate"; }
     if(ev.type==="hunt"){ r.monster.mode="investigate"; r.monster.target={x:r.player.x,y:r.player.y}; }
     if(ev.type==="lockdown") createNoise(r,r.player.x,r.player.y,110);
     r.message=ev.msg;
@@ -661,14 +675,14 @@ export default function SomethingHeardYou({onExit}){
     }
     for(const bat of r.batteries){
       if(!bat.collected&&dist(p,bat)<40){
-        bat.collected=true; p.battery=clamp(p.battery+42,0,100);
+        bat.collected=true; p.battery=clamp(p.battery+42,0,p.maxBattery||100);
         if(p.flashlightOff&&p.battery>0) p.flashlightOff=false;
         r.message="Battery found."; createNoise(r,p.x,p.y,80); return;
       }
     }
     for(const med of r.medkits){
       if(!med.collected&&dist(p,med)<40){
-        med.collected=true; p.hp=clamp(p.hp+1,0,3); p.sanity=clamp(p.sanity+20,0,100);
+        med.collected=true; p.hp=clamp(p.hp+1,0,p.maxHp||3); p.sanity=clamp(p.sanity+20,0,p.maxSanity||100);
         r.message="Your breathing steadies."; createNoise(r,p.x,p.y,80); return;
       }
     }
@@ -689,8 +703,21 @@ export default function SomethingHeardYou({onExit}){
     // Camera pickup
     if(r.cameraItem&&!r.cameraItem.collected&&dist(p,r.cameraItem)<40){
       r.cameraItem.collected=true; p.hasCamera=true; p.cameraCharge=100;
-      r.message="Camera found. [C] to flash — stuns the monster.";
+      r.message="Camera found. [C] flash = close-range monster stun.";
       createNoise(r,p.x,p.y,60); return;
+    }
+    // Stun gun pickup/ammo — Granny-style emergency defense
+    if(r.stunGunItem&&!r.stunGunItem.collected&&dist(p,r.stunGunItem)<40){
+      r.stunGunItem.collected=true; p.hasStunGun=true; p.stunAmmo=(p.stunAmmo||0)+2;
+      r.message="Stun pistol found. [R] fires a loud shot that freezes the monster. Ammo: "+p.stunAmmo;
+      createNoise(r,p.x,p.y,120); return;
+    }
+    for(const ammo of r.stunAmmoPacks||[]){
+      if(!ammo.collected&&dist(p,ammo)<38){
+        ammo.collected=true; p.stunAmmo=(p.stunAmmo||0)+(ammo.amount||1);
+        r.message=`Stun ammo found. [R] shots: ${p.stunAmmo}.`;
+        createNoise(r,p.x,p.y,70); return;
+      }
     }
     if(r.exit.active&&dist(p,r.exit)<60){
       r.floorComplete=true;
@@ -733,11 +760,50 @@ export default function SomethingHeardYou({onExit}){
       r.monster.mode="stalk";
       r.monster.target=null;
       triggerScare(r,"STUNNED");
-      r.message="Monster stunned by flash!";
+      r.message="Camera flash stunned it. Use this when it is close.";
     } else {
-      r.message="Too far away for the flash to reach.";
+      r.message="Camera flash is close-range only. Save it for panic moments.";
     }
     r.glitch=0.5;
+  }
+
+  function fireStunGun(){
+    const r=runRef.current;
+    if(!r||r.dead||r.won||r.floorComplete) return;
+    const p=r.player;
+    if(!p.hasStunGun){ r.message="No stun pistol yet. Look for a blue sidearm case."; return; }
+    if((p.stunAmmo||0)<=0){ r.message="Stun pistol empty. Find blue ammo boxes."; return; }
+    p.stunAmmo--;
+    const dx=Math.cos(p.angle), dy=Math.sin(p.angle);
+    const mx=r.monster.x-p.x, my=r.monster.y-p.y;
+    const forward=mx*dx+my*dy;
+    const side=Math.abs(mx*dy-my*dx);
+    const range=560, width=52;
+    createNoise(r,p.x,p.y,360);
+    r.glitch=Math.max(r.glitch,0.36);
+    r.gunFlash={x:p.x,y:p.y,angle:p.angle,timer:180,hit:false};
+    if(forward>0 && forward<range && side<width){
+      r.monster.stun=4200;
+      r.monster.mode="stalk";
+      r.monster.target=null;
+      r.gunFlash.hit=true;
+      r.message=`Direct hit. It is stunned for 4 seconds. Ammo left: ${p.stunAmmo}.`;
+    } else {
+      r.monster.mode="investigate";
+      r.monster.target={x:p.x,y:p.y};
+      r.message=`Shot missed. It heard exactly where you are. Ammo left: ${p.stunAmmo}.`;
+    }
+    setRun({...r});
+  }
+
+  function toggleFullscreen(){
+    const el=cardRef.current;
+    if(!el) return;
+    if(!document.fullscreenElement){
+      el.requestFullscreen?.().catch(()=>{});
+    } else {
+      document.exitFullscreen?.();
+    }
   }
 
   function getObjective(r){
@@ -758,7 +824,7 @@ export default function SomethingHeardYou({onExit}){
 
     const same=sameZone(r.map,p,m);
     const d=dist(p,m);
-    const darkEnough = p.flashlightOff || r.event?.type==="blackout" || p.battery<=0 || p.sanity<35;
+    const darkEnough = p.flashlightOff || p.battery<=0 || p.sanity<35 || (r.event?.type==="brownout" && dist(p,r.monster)<120);
     const floor4CanAttack = r.floorNum!==4 || darkEnough || d<120 || r.finalPhase;
     const proximityChase=!p.hidden&&floor4CanAttack&&d<(r.finalPhase?300:220);
     const visionChase=!p.hidden&&floor4CanAttack&&same&&d<(r.finalPhase?650:490);
@@ -891,9 +957,9 @@ export default function SomethingHeardYou({onExit}){
     if(r.event){
       r.event.timer-=dt;
       if(r.event.type==="whispers") p.sanity=clamp(p.sanity-dt*0.0035,0,p.maxSanity);
-      if(r.event.type==="blackout" && p.hasLighter) p.sanity=clamp(p.sanity-dt*0.001,0,p.maxSanity);
+      if(r.event.type==="brownout") p.sanity=clamp(p.sanity-dt*0.00012,0,p.maxSanity);
       if(r.event.timer<=0){
-        if(r.event.type==="blackout") r.powerOn=true;
+        if(r.event.type==="brownout") r.powerOn=true;
         r.event=null;
         r.eventTimer=rand(16000,30000)-r.floorNum*900;
         r.message="The building settles. For now.";
@@ -907,6 +973,7 @@ export default function SomethingHeardYou({onExit}){
     if(r.invertControls>0) r.invertControls=Math.max(0,r.invertControls-dt);
     for(const af of r.activeFlares) af.timer-=dt;
     r.activeFlares=r.activeFlares.filter(f=>f.timer>0);
+    if(r.gunFlash){ r.gunFlash.timer-=dt; if(r.gunFlash.timer<=0) r.gunFlash=null; }
 
     const keys=keysRef.current, cam=getCamera(r);
     if(p.invuln>0) p.invuln-=dt;
@@ -955,7 +1022,7 @@ export default function SomethingHeardYou({onExit}){
     const md=dist(p,r.monster);
     if(!p.hidden&&same&&md<490)
       p.sanity=clamp(p.sanity-SANITY_MONSTER*dt*(1-md/530)*(1-(p.upgrades.sanity||0)*0.06),0,p.maxSanity);
-    else if((p.flashlightOff&&!p.hasLighter)||r.event?.type==="blackout")
+    else if(p.flashlightOff&&!p.hasLighter)
       p.sanity=clamp(p.sanity-SANITY_DARK_GAIN*dt*(1-(p.upgrades.sanity||0)*0.05),0,p.maxSanity);
     else
       p.sanity=clamp(p.sanity+SANITY_DECAY*dt*(p.hasLighter?0.6:1),0,p.maxSanity);
@@ -1028,6 +1095,7 @@ export default function SomethingHeardYou({onExit}){
     drawActiveFlares(ctx,r);
     drawExit(ctx,r);
     drawNoise(ctx,r);
+    drawGunFlash(ctx,r);
     drawHallucinations(ctx,r);
     drawPlayer(ctx,r);
     ctx.restore();
@@ -1271,6 +1339,23 @@ export default function SomethingHeardYou({onExit}){
       ctx.fillStyle="#88a8d0";ctx.beginPath();ctx.arc(0,0,3.5,0,Math.PI*2);ctx.fill();
       ctx.fillStyle="rgba(130,170,220,0.85)";ctx.font="bold 9px 'Courier New'";ctx.textAlign="center";ctx.fillText("CAMERA",0,18);ctx.restore();
     }
+    // Stun pistol and ammo
+    if(r.stunGunItem&&!r.stunGunItem.collected){
+      ctx.save();ctx.translate(r.stunGunItem.x,r.stunGunItem.y);
+      ctx.shadowColor="rgba(80,180,255,0.8)";ctx.shadowBlur=12;
+      ctx.fillStyle="#071422";ctx.strokeStyle="#55a8ff";ctx.lineWidth=1.6;
+      ctx.fillRect(-16,-7,24,10);ctx.fillRect(2,-3,12,7);ctx.strokeRect(-16,-7,24,10);
+      ctx.fillStyle="#85d8ff";ctx.fillRect(7,-5,7,3);
+      ctx.shadowBlur=0;ctx.fillStyle="rgba(120,205,255,0.9)";ctx.font="bold 9px 'Courier New'";ctx.textAlign="center";ctx.fillText("STUN [R]",0,20);ctx.restore();
+    }
+    for(const ammo of r.stunAmmoPacks||[]){
+      if(ammo.collected) continue;
+      ctx.save();ctx.translate(ammo.x,ammo.y);
+      ctx.fillStyle="#071422";ctx.strokeStyle="rgba(85,168,255,0.72)";ctx.lineWidth=1.4;
+      ctx.fillRect(-10,-8,20,16);ctx.strokeRect(-10,-8,20,16);
+      ctx.fillStyle="#55a8ff";ctx.fillRect(-6,-4,12,8);
+      ctx.fillStyle="rgba(120,205,255,0.85)";ctx.font="bold 8px 'Courier New'";ctx.textAlign="center";ctx.fillText("AMMO",0,17);ctx.restore();
+    }
   }
 
   // ── lore notes ─────────────────────────────────────────────────────────────
@@ -1354,6 +1439,19 @@ export default function SomethingHeardYou({onExit}){
       ctx.beginPath();ctx.arc(pulse.x,pulse.y,pulse.pr,0,Math.PI*2);ctx.stroke();
       ctx.restore();
     }
+  }
+
+  function drawGunFlash(ctx,r){
+    if(!r.gunFlash) return;
+    const g=r.gunFlash;
+    const alpha=clamp(g.timer/180,0,1);
+    ctx.save();ctx.translate(g.x,g.y);ctx.rotate(g.angle);
+    ctx.globalAlpha=alpha;
+    ctx.strokeStyle=g.hit?"rgba(120,220,255,0.95)":"rgba(255,240,160,0.75)";
+    ctx.lineWidth=g.hit?5:3;ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=18;
+    ctx.beginPath();ctx.moveTo(10,0);ctx.lineTo(g.hit?560:420,0);ctx.stroke();
+    ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.arc(24,0,8,0,Math.PI*2);ctx.fill();
+    ctx.restore();
   }
 
   function drawHallucinations(ctx,r){
@@ -1536,7 +1634,8 @@ export default function SomethingHeardYou({onExit}){
   // ── lighting ───────────────────────────────────────────────────────────────
   function drawLighting(ctx,r,cam){
     const p=r.player;
-    const blackout = r.event?.type==="blackout" || !r.powerOn;
+    const brownout = r.event?.type==="brownout";
+    const blackout = !r.powerOn;
     const theme=r.theme||FLOOR_THEMES[0];
     const px=p.x-cam.x,py=p.y-cam.y;
     const dk=document.createElement("canvas");
@@ -1575,7 +1674,7 @@ export default function SomethingHeardYou({onExit}){
       const baseR=p.flashlightOff?55:(p.hasLighter?85:130+p.battery*0.8);
       const radius=pitchDark?clamp(baseR-40,30,180):clamp(baseR-(100-p.sanity)*0.18,70,210);
 
-      if(!blackout && (!pitchDark||((!p.flashlightOff||p.hasLighter)))){
+      if((!blackout || brownout) && (!pitchDark||((!p.flashlightOff||p.hasLighter)))){
         const amb=dc.createRadialGradient(px,py,8,px,py,pitchDark?radius*0.7:radius);
         amb.addColorStop(0,"rgba(255,255,255,0.95)");
         amb.addColorStop(0.38,"rgba(255,255,255,0.65)");
@@ -1584,7 +1683,7 @@ export default function SomethingHeardYou({onExit}){
         dc.fillStyle=amb;dc.beginPath();dc.arc(px,py,pitchDark?radius*0.7:radius,0,Math.PI*2);dc.fill();
       }
 
-      if(!blackout&&!p.flashlightOff&&p.battery>0){
+      if((!blackout || brownout)&&!p.flashlightOff&&p.battery>0){
         const ff=Math.random()<(100-p.sanity)/480?rand(0.58,0.96):1;
         const coneLen=p.hasLighter?clamp(160+p.battery*0.5-(100-p.sanity)*0.5,100,240)*ff:clamp(290+p.battery*1.15-(100-p.sanity)*0.75,170,440)*ff;
         const coneW=p.hasLighter?0.32:0.47;
@@ -1721,7 +1820,11 @@ export default function SomethingHeardYou({onExit}){
     if(p.hasCamera){
       const camPct=Math.round(p.cameraCharge);
       ctx.fillStyle=p.cameraCharge>=30?"rgba(120,170,220,0.8)":"rgba(120,120,120,0.5)";
-      ctx.font="10px 'Courier New'";ctx.fillText(`[C]CAM ${camPct}%`,itemX,py2+168);
+      ctx.font="10px 'Courier New'";ctx.fillText(`[C]CAM ${camPct}%`,itemX,py2+168);itemX+=70;
+    }
+    if(p.hasStunGun){
+      ctx.fillStyle=(p.stunAmmo||0)>0?"rgba(120,205,255,0.86)":"rgba(100,100,120,0.55)";
+      ctx.font="10px 'Courier New'";ctx.fillText(`[R]STUN×${p.stunAmmo||0}`,itemX,py2+168);
     }
 
     if(p.hidden){ctx.fillStyle="rgba(105,135,225,0.88)";ctx.font="bold 9px 'Courier New'";ctx.textAlign="center";ctx.fillText("⬛ CONCEALED",px2+pw/2,py2+ph+16);}
@@ -1746,6 +1849,15 @@ export default function SomethingHeardYou({onExit}){
     const loreCollected=r.lores.filter(l=>l.collected).length;
     ctx.fillStyle="rgba(178,148,80,0.65)";ctx.font="9px 'Courier New'";
     ctx.fillText(`DOCS: ${loreCollected}/${LORE_COUNT}  SHARDS: ${p.scraps||0}`,CANVAS_W-26,72);
+
+    const guideX=CANVAS_W-252, guideY=88;
+    ctx.textAlign="left";ctx.fillStyle="rgba(3,2,8,0.72)";rrect(ctx,guideX,guideY,234,76,5);ctx.fill();
+    ctx.strokeStyle="rgba(165,50,50,0.24)";rrect(ctx,guideX,guideY,234,76,5);ctx.stroke();
+    ctx.fillStyle="rgba(210,185,185,0.75)";ctx.font="9px 'Courier New'";
+    ctx.fillText("ITEMS: red relic = objective, yellow = battery",guideX+9,guideY+18);
+    ctx.fillText("blue camera/stun = defense, orange = flare",guideX+9,guideY+34);
+    ctx.fillText("E picks up/uses rooms · R fires stun pistol",guideX+9,guideY+50);
+    ctx.fillText("Brownout only dims briefly now — it should not instakill.",guideX+9,guideY+66);
 
     if(r.event){
       const ew=260,eh=34,ex=CANVAS_W/2-ew/2,ey=14;
@@ -1831,7 +1943,7 @@ export default function SomethingHeardYou({onExit}){
       ctx.fillStyle="rgba(180,205,188,0.76)";ctx.font="13px 'Courier New'";
       ctx.fillText(`Next: ${nextTheme.name} — ${nextTheme.monsterName}: ${nextTheme.monsterDesc}`,CANVAS_W/2,146);
       ctx.fillStyle="rgba(178,148,80,0.86)";ctx.font="bold 12px 'Courier New'";
-      ctx.fillText(`Cursed shards: ${r.player.scraps||0}. Choose one permanent upgrade.`,CANVAS_W/2,180);
+      ctx.fillText(`Choose one permanent upgrade. Bonus shards: ${r.player.scraps||0}.`,CANVAS_W/2,180);
       const opts=r.upgradeOptions||[];
       for(let i=0;i<opts.length;i++){
         const up=opts[i], x=CANVAS_W/2-330+i*220, y=226;
@@ -1921,12 +2033,16 @@ export default function SomethingHeardYou({onExit}){
     const down=(e)=>{
       const key=e.key.toLowerCase();
       keysRef.current[key]=true;
-      if(["w","a","s","d"," ","shift","e","f","q","c","control"].includes(key)) e.preventDefault();
-      if(["1","2","3"].includes(key)){ applyUpgradeChoice(Number(key)-1); return; }
+      if(["w","a","s","d"," ","shift","e","f","q","c","r","control","1","2","3"].includes(key)) e.preventDefault();
+      if(["1","2","3"].includes(key)||["digit1","digit2","digit3","numpad1","numpad2","numpad3"].includes(e.code?.toLowerCase?.())){
+        const n = key >= "1" && key <= "3" ? Number(key) : Number((e.code||"").replace(/\D/g,"").slice(-1));
+        applyUpgradeChoice(n-1); return;
+      }
       if(key==="f"){const r=runRef.current;if(!r||r.dead||r.won)return;if(!r.player.hasLighter){r.player.flashlightOff=!r.player.flashlightOff;r.message=r.player.flashlightOff?"Flashlight off.":"Flashlight on.";}}
       if(key==="e") interact();
       if(key==="q") throwFlare();
       if(key==="c") useCamera();
+      if(key==="r") fireStunGun();
       if(key===" "){
         const r=runRef.current;if(!r||r.dead||r.won||r.floorComplete)return;
         const near=r.hidingSpots.find(s=>dist(s,r.player)<48);
@@ -1942,6 +2058,12 @@ export default function SomethingHeardYou({onExit}){
     };
     window.addEventListener("keydown",down);window.addEventListener("keyup",up);window.addEventListener("mousemove",move);
     return()=>{window.removeEventListener("keydown",down);window.removeEventListener("keyup",up);window.removeEventListener("mousemove",move);};
+  },[]);
+
+  useEffect(()=>{
+    const onFs=()=>setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange",onFs);
+    return()=>document.removeEventListener("fullscreenchange",onFs);
   },[]);
 
   useEffect(()=>{
@@ -1970,16 +2092,31 @@ export default function SomethingHeardYou({onExit}){
           </div>
           <div className="shy-actions">
             <button onClick={started?restart:()=>setStarted(true)}>{started?"Restart":"Start Run"}</button>
+            <button className="shy-secondary" onClick={toggleFullscreen}>{isFullscreen?"Exit Fullscreen":"Fullscreen"}</button>
             {onExit&&<button className="shy-secondary" onClick={onExit}>Back</button>}
           </div>
         </div>
-        <div className="shy-game-card">
+        <div className="shy-game-card" ref={cardRef}>
           <canvas ref={canvasRef} width={CANVAS_W} height={CANVAS_H} className="shy-canvas"
             onClick={()=>{if(!started)setStarted(true);}}/>
+          {run.awaitingUpgrade && !run.won && (
+            <div className="shy-upgrade-overlay">
+              <div className="shy-upgrade-title">Choose one upgrade to go deeper — click a card or press 1 / 2 / 3</div>
+              <div className="shy-upgrade-grid">
+                {(run.upgradeOptions||[]).map((up,i)=>(
+                  <button key={up.key} onClick={()=>applyUpgradeChoice(i)}>
+                    <strong>[{i+1}] {up.name}</strong>
+                    <span>{up.desc}</span>
+                    <em>Level {(run.player.upgrades?.[up.key]||0)+1}/{up.max}</em>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="shy-controls">
             <span>WASD · move</span><span>Mouse · aim</span><span>Shift · sprint</span>
             <span>Ctrl · crouch</span><span>E · interact</span><span>F · flashlight</span>
-            <span>Space · hide</span><span>Q · flare</span><span>C · camera</span><span>1/2/3 · upgrade</span>
+            <span>Space · hide</span><span>Q · flare</span><span>C · camera</span><span>R · stun pistol</span><span>1/2/3 · upgrade</span>
           </div>
         </div>
         <div className="shy-notes">
@@ -1989,7 +2126,7 @@ export default function SomethingHeardYou({onExit}){
           </div>
           <div>
             <h3>New Mechanics</h3>
-            <p>Special rooms now add risk/reward choices: breaker rooms, security terminals, cursed altars, archives, supplies, sealed offices, and ritual rooms.</p>
+            <p>Special rooms now add risk/reward choices, while clearer pickups separate objectives, survival items, distractions, and defense. Blue stun gear lets you freeze the monster in emergencies.</p>
           </div>
           <div>
             <h3>Roguelike Progression</h3>

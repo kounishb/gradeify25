@@ -68,3 +68,98 @@
   .shy-actions button{flex:1;}
   .shy-notes{grid-template-columns:1fr;}
 }
+
+/* Added: fullscreen + upgrade fallback UI */
+.shy-game-card:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  border-radius: 0;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: #020103;
+}
+.shy-game-card:fullscreen .shy-canvas {
+  width: min(100%, calc(100vh * 1.58));
+  max-width: none;
+  max-height: calc(100vh - 92px);
+  object-fit: contain;
+}
+.shy-game-card:fullscreen .shy-controls {
+  padding-top: 10px;
+}
+
+.shy-upgrade-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 35%, rgba(30, 4, 8, 0.72), rgba(0, 0, 0, 0.9));
+  pointer-events: auto;
+}
+.shy-upgrade-title {
+  color: rgba(120, 235, 145, 0.98);
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  text-shadow: 0 0 18px rgba(60, 255, 120, .25);
+}
+.shy-upgrade-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 220px));
+  gap: 14px;
+  width: min(760px, 100%);
+}
+.shy-upgrade-grid button {
+  min-height: 160px;
+  border: 1px solid rgba(190, 70, 70, 0.48);
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(22, 12, 18, 0.96), rgba(8, 4, 8, 0.96));
+  color: var(--text);
+  padding: 18px 16px;
+  font-family: var(--mono);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .48), inset 0 1px 0 rgba(255,255,255,.05);
+  transition: transform .14s ease, border-color .14s ease, background .14s ease;
+}
+.shy-upgrade-grid button:hover {
+  transform: translateY(-3px);
+  border-color: rgba(255, 110, 110, 0.72);
+  background: linear-gradient(180deg, rgba(42, 16, 24, 0.98), rgba(14, 5, 8, 0.98));
+}
+.shy-upgrade-grid strong,
+.shy-upgrade-grid span,
+.shy-upgrade-grid em {
+  display: block;
+}
+.shy-upgrade-grid strong {
+  color: rgba(255, 105, 105, 0.96);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.shy-upgrade-grid span {
+  color: rgba(220, 200, 200, 0.78);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.shy-upgrade-grid em {
+  margin-top: 14px;
+  color: rgba(178, 148, 80, 0.88);
+  font-size: 10px;
+  font-style: normal;
+}
+
+@media(max-width:760px){
+  .shy-upgrade-grid{grid-template-columns:1fr; max-width: 360px;}
+  .shy-upgrade-grid button{min-height: 120px;}
+}
