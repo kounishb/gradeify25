@@ -4,13 +4,13 @@ import "../../styles/FlashcardDash.css";
 
 const LANE_POSITIONS = [-2.9, 0, 2.9];
 
-const START_SPEED = 0.115;
-const MAX_SPEED = 0.46;
-const SPEED_GAIN = 0.00024;
+const START_SPEED = 0.125;
+const MAX_SPEED = 0.74;
+const SPEED_GAIN = 0.00031;
 const LANE_SWITCH_SNAP = 0.42;
 const GRAVITY = 0.027;
 const JUMP_POWER = 0.46;
-const SUPER_JUMP_POWER = 0.58;
+const SUPER_JUMP_POWER = 0.95;
 const SLIDE_DURATION = 520;
 
 const HALL_WIDTH = 11.5;
@@ -22,10 +22,31 @@ const TILE_COUNT = 20;
 const PLAYER_Z = 4.4;
 const SPAWN_Z = -62;
 const PLATFORM_TOP_Y = 1.52;
-const PLATFORM_LENGTH = 10.6;
-const RAMP_LENGTH = 5.6;
-const SAFE_LANE_GAP = 18;
-const POWERUP_TYPES = ["magnet", "shield", "multiplier", "sneakers"];
+const PLATFORM_LENGTH = 13.8;
+const RAMP_LENGTH = 5.8;
+const PLATFORM_CHAIN_GAP = 2.45;
+const SAFE_LANE_GAP = 28;
+const POWERUP_TYPES = ["magnet", "shield", "multiplier", "sneakers", "hoverboard", "jetpack"];
+
+const SCHOOL_ZONES = [
+  { id: "hall", name: "Main Hall", fog: 0xdff4ff, floorA: 0xd9e3f0, floorB: 0xcbd8e8, wall: 0xaed8f4, ceiling: 0xf8fbff, stripe: 0xf59e0b, accent: 0x2563eb },
+  { id: "gym", name: "Gym", fog: 0xf2f7ff, floorA: 0xd6b982, floorB: 0xcfae73, wall: 0xdbeafe, ceiling: 0xf8fafc, stripe: 0x1d4ed8, accent: 0xef4444 },
+  { id: "outside", name: "Courtyard", fog: 0xdffbea, floorA: 0x9dd48b, floorB: 0x88c47c, wall: 0xb7e4c7, ceiling: 0xbfe9ff, stripe: 0xffffff, accent: 0x16a34a },
+  { id: "cafeteria", name: "Cafeteria", fog: 0xfff7ed, floorA: 0xf7d9a7, floorB: 0xf2c98b, wall: 0xfed7aa, ceiling: 0xfffbeb, stripe: 0xf97316, accent: 0x7c3aed },
+  { id: "library", name: "Library", fog: 0xf5f3ff, floorA: 0xc4b5fd, floorB: 0xddd6fe, wall: 0xe9d5ff, ceiling: 0xfaf5ff, stripe: 0x8b5cf6, accent: 0x4c1d95 },
+];
+
+function zoneForIndex(index) {
+  return SCHOOL_ZONES[Math.floor(index / 7) % SCHOOL_ZONES.length];
+}
+
+function applyMaterialColor(mesh, color) {
+  if (!mesh?.material) return;
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  mats.forEach((mat) => {
+    if (mat?.color) mat.color.setHex(color);
+  });
+}
 
 const QUESTION_BANK = [
   {
@@ -199,15 +220,18 @@ function buildLocker3D(bodyColor, shadowColor) {
 }
 
 function buildHallSegment(index) {
+  const zone = zoneForIndex(index);
   const segment = new THREE.Group();
   segment.position.z = -index * TILE_LENGTH;
+  segment.userData.zoneIndex = index;
+  segment.userData.zone = zone.id;
 
-  const floorColor = index % 2 === 0 ? 0xd9e3f0 : 0xcbd8e8;
+  const floorColor = index % 2 === 0 ? zone.floorA : zone.floorB;
   const floor = makeBox(HALL_WIDTH, 0.08, TILE_LENGTH, floorColor);
   floor.position.y = -0.04;
   segment.add(floor);
 
-  const centerLine = makeBox(0.08, 0.018, TILE_LENGTH, 0xffcc66, { emissive: 0x332200, shininess: 80 });
+  const centerLine = makeBox(0.08, 0.018, TILE_LENGTH, zone.stripe, { emissive: 0x332200, shininess: 80 });
   centerLine.position.set(0, 0.025, 0);
   segment.add(centerLine);
 
@@ -217,7 +241,7 @@ function buildHallSegment(index) {
     segment.add(laneLine);
   });
 
-  const ceiling = makeBox(HALL_WIDTH, 0.14, TILE_LENGTH, 0xf8fbff);
+  const ceiling = makeBox(HALL_WIDTH, 0.14, TILE_LENGTH, zone.ceiling);
   ceiling.position.y = HALL_HEIGHT;
   segment.add(ceiling);
 
@@ -225,19 +249,19 @@ function buildHallSegment(index) {
   light.position.set(0, HALL_HEIGHT - 0.14, 0);
   segment.add(light);
 
-  const leftWall = makeBox(0.16, HALL_HEIGHT, TILE_LENGTH, 0xaed8f4);
+  const leftWall = makeBox(0.16, HALL_HEIGHT, TILE_LENGTH, zone.wall);
   leftWall.position.set(-HALL_WIDTH / 2, HALL_HEIGHT / 2, 0);
   segment.add(leftWall);
 
-  const rightWall = makeBox(0.16, HALL_HEIGHT, TILE_LENGTH, 0xaed8f4);
+  const rightWall = makeBox(0.16, HALL_HEIGHT, TILE_LENGTH, zone.wall);
   rightWall.position.set(HALL_WIDTH / 2, HALL_HEIGHT / 2, 0);
   segment.add(rightWall);
 
-  const topStripeL = makeBox(0.18, 0.18, TILE_LENGTH, 0xf59e0b, { emissive: 0x271300, shininess: 80 });
+  const topStripeL = makeBox(0.18, 0.18, TILE_LENGTH, zone.stripe, { emissive: 0x271300, shininess: 80 });
   topStripeL.position.set(-HALL_WIDTH / 2 + 0.08, 2.25, 0);
   segment.add(topStripeL);
 
-  const topStripeR = makeBox(0.18, 0.18, TILE_LENGTH, 0xf59e0b, { emissive: 0x271300, shininess: 80 });
+  const topStripeR = makeBox(0.18, 0.18, TILE_LENGTH, zone.stripe, { emissive: 0x271300, shininess: 80 });
   topStripeR.position.set(HALL_WIDTH / 2 - 0.08, 2.25, 0);
   segment.add(topStripeR);
 
@@ -255,7 +279,7 @@ function buildHallSegment(index) {
   }
 
   if (index % 3 === 0) {
-    const banner = makeBox(0.08, 1.2, 2.6, 0x2563eb, { emissive: 0x071c55, shininess: 70 });
+    const banner = makeBox(0.08, 1.2, 2.6, zone.accent, { emissive: 0x071c55, shininess: 70 });
     banner.position.set(HALL_WIDTH / 2 - 0.14, 4.85, 0);
     segment.add(banner);
 
@@ -266,6 +290,46 @@ function buildHallSegment(index) {
     const paper2 = makeBox(0.05, 0.45, 0.72, 0xdbeafe);
     paper2.position.set(HALL_WIDTH / 2 - 0.21, 4.68, 0.48);
     segment.add(paper2);
+  }
+
+  if (zone.id === "gym") {
+    const courtLine = makeBox(HALL_WIDTH - 2.2, 0.024, 0.08, 0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.08 });
+    courtLine.position.set(0, 0.045, 0);
+    segment.add(courtLine);
+    const hoopBack = makeBox(0.08, 0.85, 1.15, 0xffffff, { transparent: true, opacity: 0.65 });
+    hoopBack.position.set(HALL_WIDTH / 2 - 0.18, 4.3, -1.6);
+    segment.add(hoopBack);
+  }
+
+  if (zone.id === "outside") {
+    const grassL = makeBox(1.2, 0.035, TILE_LENGTH, 0x22c55e);
+    grassL.position.set(-HALL_WIDTH / 2 + 0.68, 0.045, 0);
+    segment.add(grassL);
+    const grassR = makeBox(1.2, 0.035, TILE_LENGTH, 0x22c55e);
+    grassR.position.set(HALL_WIDTH / 2 - 0.68, 0.045, 0);
+    segment.add(grassR);
+  }
+
+  if (zone.id === "cafeteria") {
+    [-3.8, 3.8].forEach((x) => {
+      const table = makeBox(0.7, 0.18, 1.55, 0x7c2d12);
+      table.position.set(x, 0.78, -1.6);
+      segment.add(table);
+      const bench = makeBox(0.24, 0.14, 1.4, 0xf97316);
+      bench.position.set(x * 0.98, 0.45, -0.95);
+      segment.add(bench);
+    });
+  }
+
+  if (zone.id === "library") {
+    [-4.55, 4.55].forEach((x) => {
+      const shelf = makeBox(0.42, 2.1, 2.15, 0x6b3f1d);
+      shelf.position.set(x, 1.22, 0.9);
+      segment.add(shelf);
+      const books = makeBox(0.45, 1.25, 1.7, 0x8b5cf6, { transparent: true, opacity: 0.82 });
+      books.position.set(x * 0.995, 1.35, 0.9);
+      segment.add(books);
+    });
   }
 
   return segment;
@@ -347,8 +411,45 @@ function buildPlayer() {
   capBrim.position.set(0, 0.08, -0.33);
   head.add(capBrim);
 
-  g.add(shoeL, shoeR, legL, legR, torso, pack, armL, armR, neck, head);
-  g.userData = { legL, legR, armL, armR, shoeL, shoeR, torso, pack, head };
+  const hoverboard = new THREE.Group();
+  const board = makeCapsule(0.18, 1.18, 0x111827, { shininess: 90 });
+  board.rotation.z = Math.PI / 2;
+  board.scale.set(1, 0.62, 1);
+  board.position.set(0, 0.06, 0.02);
+  hoverboard.add(board);
+
+  const boardGlow = makeBox(1.18, 0.035, 0.22, 0x00f5ff, {
+    emissive: 0x00f5ff,
+    emissiveIntensity: 0.75,
+    transparent: true,
+    opacity: 0.72,
+  });
+  boardGlow.position.set(0, 0.02, 0.02);
+  hoverboard.add(boardGlow);
+
+  const wheelA = makeCylinder(0.085, 0.085, 0.08, 12, 0xf59e0b);
+  wheelA.rotation.z = Math.PI / 2;
+  wheelA.position.set(-0.42, -0.03, 0.14);
+  const wheelB = makeCylinder(0.085, 0.085, 0.08, 12, 0xf59e0b);
+  wheelB.rotation.z = Math.PI / 2;
+  wheelB.position.set(0.42, -0.03, 0.14);
+  hoverboard.add(wheelA, wheelB);
+  hoverboard.visible = false;
+
+  const jetFlame = new THREE.Group();
+  const flame1 = new THREE.Mesh(
+    new THREE.ConeGeometry(0.12, 0.48, 18),
+    makeMaterial(0xffa000, { emissive: 0xff6600, emissiveIntensity: 0.75, transparent: true, opacity: 0.86 })
+  );
+  flame1.rotation.x = Math.PI;
+  flame1.position.set(-0.18, 0.92, 0.48);
+  const flame2 = flame1.clone();
+  flame2.position.x = 0.18;
+  jetFlame.add(flame1, flame2);
+  jetFlame.visible = false;
+
+  g.add(shoeL, shoeR, legL, legR, torso, pack, armL, armR, neck, head, hoverboard, jetFlame);
+  g.userData = { legL, legR, armL, armR, shoeL, shoeR, torso, pack, head, hoverboard, jetFlame };
   return g;
 }
 
@@ -454,9 +555,33 @@ function buildBarrier3D() {
   return g;
 }
 
-function buildStudyShuttle3D() {
+function skinObstacleForZone(mesh, zone, subtype) {
+  const palette = {
+    hall: { main: 0x2563eb, alt: 0xf59e0b },
+    gym: { main: 0xef4444, alt: 0xffffff },
+    outside: { main: 0x16a34a, alt: 0xfacc15 },
+    cafeteria: { main: 0xf97316, alt: 0x7c2d12 },
+    library: { main: 0x8b5cf6, alt: 0xfbbf24 },
+  }[zone.id] || { main: 0x2563eb, alt: 0xf59e0b };
+
+  let i = 0;
+  mesh.traverse((obj) => {
+    if (!obj.isMesh || !obj.material?.color) return;
+    if (subtype === "barrier") {
+      obj.material.color.setHex(i < 2 ? 0x334155 : palette.main);
+    } else if (subtype === "locker") {
+      obj.material.color.setHex(i === 0 ? palette.main : palette.alt);
+    } else if (subtype === "backpack") {
+      obj.material.color.setHex(i === 0 ? palette.main : palette.alt);
+    } else if (subtype === "cone") {
+      obj.material.color.setHex(i === 0 ? palette.alt : 0xffffff);
+    }
+    i += 1;
+  });
+}
+
+function buildStudyShuttle3D(length = PLATFORM_LENGTH) {
   const g = new THREE.Group();
-  const length = PLATFORM_LENGTH;
 
   const base = makeBox(2.05, 0.55, length, 0x2563eb, { shininess: 80 });
   base.position.y = 0.62;
@@ -520,22 +645,23 @@ function buildRamp3D() {
 
   const ramp = makeBox(2.18, 0.18, RAMP_LENGTH, 0xf8fafc, { shininess: 90 });
   ramp.position.y = 0.12;
-  ramp.rotation.x = -0.24;
+  ramp.rotation.x = 0.24;
   g.add(ramp);
 
   const stripeL = makeBox(0.14, 0.06, RAMP_LENGTH - 0.35, 0xf59e0b, { emissive: 0x271300, shininess: 80 });
   stripeL.position.set(-0.86, 0.31, 0);
-  stripeL.rotation.x = -0.24;
+  stripeL.rotation.x = 0.24;
   g.add(stripeL);
 
   const stripeR = makeBox(0.14, 0.06, RAMP_LENGTH - 0.35, 0xf59e0b, { emissive: 0x271300, shininess: 80 });
   stripeR.position.set(0.86, 0.31, 0);
-  stripeR.rotation.x = -0.24;
+  stripeR.rotation.x = 0.24;
   g.add(stripeR);
 
   const arrow = makeCapsule(0.055, 0.72, 0x2563eb, { emissive: 0x061a55, shininess: 80 });
   arrow.rotation.x = Math.PI / 2;
-  arrow.position.set(0, 0.42, 0.6);
+  arrow.rotation.z = Math.PI / 2;
+  arrow.position.set(0, 0.42, 0.55);
   g.add(arrow);
 
   g.userData = { kind: "ramp", subtype: "study-ramp", length: RAMP_LENGTH, topY: PLATFORM_TOP_Y + 0.12 };
@@ -549,6 +675,8 @@ function buildPowerup3D(type) {
     shield: 0x38bdf8,
     multiplier: 0xa855f7,
     sneakers: 0x22c55e,
+    hoverboard: 0xf97316,
+    jetpack: 0xfacc15,
   };
 
   const orb = makeSphere(0.42, colors[type] || 0xfacc15, {
@@ -585,11 +713,27 @@ function buildPowerup3D(type) {
     const xbar2 = makeBox(0.12, 0.72, 0.08, 0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.1 });
     xbar2.rotation.z = -0.75;
     g.add(xbar1, xbar2);
-  } else {
+  } else if (type === "sneakers") {
     const shoe = makeCapsule(0.12, 0.58, 0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.12 });
     shoe.rotation.z = Math.PI / 2;
     shoe.position.set(0, -0.02, -0.04);
     g.add(shoe);
+  } else if (type === "hoverboard") {
+    const board = makeCapsule(0.08, 0.72, 0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.12 });
+    board.rotation.z = Math.PI / 2;
+    board.position.set(0, -0.02, -0.04);
+    const stripe = makeBox(0.56, 0.05, 0.07, 0x111827);
+    stripe.position.set(0, -0.02, -0.11);
+    g.add(board, stripe);
+  } else {
+    const pack = makeBox(0.36, 0.52, 0.12, 0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.12 });
+    const flame = new THREE.Mesh(
+      new THREE.ConeGeometry(0.13, 0.36, 18),
+      makeMaterial(0xff6b00, { emissive: 0xff6b00, emissiveIntensity: 0.45 })
+    );
+    flame.rotation.x = Math.PI;
+    flame.position.set(0, -0.42, 0);
+    g.add(pack, flame);
   }
 
   g.userData = { kind: "powerup", subtype: type, floatPhase: Math.random() * Math.PI * 2 };
@@ -634,6 +778,7 @@ export default function FlashcardDash({ studySet, onExit }) {
   const [speedHud, setSpeedHud] = useState(Math.round(START_SPEED * 1000));
   const [powerHud, setPowerHud] = useState([]);
   const [powerToast, setPowerToast] = useState(null);
+  const [zoneName, setZoneName] = useState("Main Hall");
 
   const phaseRef = useRef("idle");
   const heartRef = useRef(START_HEARTS);
@@ -663,8 +808,8 @@ export default function FlashcardDash({ studySet, onExit }) {
     scene.fog = new THREE.Fog(0xdff4ff, 42, 125);
 
     const camera = new THREE.PerspectiveCamera(68, container.clientWidth / container.clientHeight, 0.1, 160);
-    camera.position.set(0, 4.05, 9.8);
-    camera.lookAt(0, 2.1, -9);
+    camera.position.set(0, 3.55, 10.9);
+    camera.lookAt(0, 1.35, -9);
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.83);
     scene.add(ambient);
@@ -713,10 +858,14 @@ export default function FlashcardDash({ studySet, onExit }) {
       platformAccessLane: null,
       platformAccessUntil: 0,
       onPlatformLane: null,
+      platformJumpGraceUntil: 0,
+      currentZoneName: "Main Hall",
       magnetUntil: 0,
       shieldUntil: 0,
       multiplierUntil: 0,
       sneakersUntil: 0,
+      hoverboardUntil: 0,
+      jetpackUntil: 0,
       targetLane: 1,
       playerX: LANE_POSITIONS[1],
       jumping: false,
@@ -758,7 +907,9 @@ export default function FlashcardDash({ studySet, onExit }) {
     if (!possibleLanes.length) return;
 
     const lane = choice(possibleLanes);
+    const zone = zoneForIndex(Math.floor(distRef.current / 120));
     const mesh = choice(builders)();
+    skinObstacleForZone(mesh, zone, mesh.userData.subtype);
     mesh.position.set(LANE_POSITIONS[lane], 0, z);
     addPoolItem(scene, pool, mesh, { kind: "obstacle", subtype: mesh.userData.subtype, baseY: 0, lane });
 
@@ -769,19 +920,15 @@ export default function FlashcardDash({ studySet, onExit }) {
       if (secondOptions.length >= 1) {
         const lane2 = choice(secondOptions);
         const mesh2 = choice([buildCone3D, buildBackpack3D, buildLockerObstacle3D])();
+        skinObstacleForZone(mesh2, zone, mesh2.userData.subtype);
         mesh2.position.set(LANE_POSITIONS[lane2], 0, z - 2.2);
         addPoolItem(scene, pool, mesh2, { kind: "obstacle", subtype: mesh2.userData.subtype, baseY: 0, lane: lane2 });
       }
     }
   }
 
-  function spawnPlatform(scene, pool) {
-    const z = SPAWN_Z - Math.random() * 4;
-    const possibleLanes = [0, 1, 2].filter((lane) => !laneBlockedNear(pool, lane, z, 24));
-    if (!possibleLanes.length) return;
-
-    const lane = choice(possibleLanes);
-    const platform = buildStudyShuttle3D();
+  function addPlatform(scene, pool, lane, z, length, withRamp = false) {
+    const platform = buildStudyShuttle3D(length);
     platform.position.set(LANE_POSITIONS[lane], 0, z);
     addPoolItem(scene, pool, platform, {
       kind: "platform",
@@ -790,24 +937,52 @@ export default function FlashcardDash({ studySet, onExit }) {
       baseY: 0,
       length: platform.userData.length,
       topY: platform.userData.topY,
+      chain: true,
     });
 
-    const ramp = buildRamp3D();
-    ramp.position.set(LANE_POSITIONS[lane], 0, z + platform.userData.length / 2 + RAMP_LENGTH / 2 - 0.2);
-    addPoolItem(scene, pool, ramp, {
-      kind: "ramp",
-      subtype: "study-ramp",
-      lane,
-      baseY: 0,
-      length: RAMP_LENGTH,
-      topY: platform.userData.topY,
-      platformZ: z,
-    });
+    if (withRamp) {
+      const ramp = buildRamp3D();
+      ramp.position.set(LANE_POSITIONS[lane], 0, z + platform.userData.length / 2 + RAMP_LENGTH / 2 - 0.15);
+      addPoolItem(scene, pool, ramp, {
+        kind: "ramp",
+        subtype: "study-ramp",
+        lane,
+        baseY: 0,
+        length: RAMP_LENGTH,
+        topY: platform.userData.topY,
+        platformZ: z,
+      });
+    }
 
-    for (let i = 0; i < 6; i += 1) {
+    const coinCount = Math.max(6, Math.floor(length / 1.8));
+    for (let i = 0; i < coinCount; i += 1) {
       const coin = buildCoin3D();
-      coin.position.set(LANE_POSITIONS[lane], platform.userData.topY + 0.75, z + 2.8 - i * 1.45);
-      addPoolItem(scene, pool, coin, { kind: "coin", lane, baseY: platform.userData.topY + 0.75, ridesPlatform: true });
+      const coinLane = Math.random() < 0.2 ? Math.max(0, Math.min(2, lane + choice([-1, 1]))) : lane;
+      coin.position.set(LANE_POSITIONS[coinLane], platform.userData.topY + 0.75, z + length / 2 - 1.6 - i * 1.75);
+      addPoolItem(scene, pool, coin, { kind: "coin", lane: coinLane, baseY: platform.userData.topY + 0.75, ridesPlatform: true });
+    }
+  }
+
+  function spawnPlatform(scene, pool, difficulty = 0) {
+    const z = SPAWN_Z - Math.random() * 4;
+    const possibleLanes = [0, 1, 2].filter((lane) => !laneBlockedNear(pool, lane, z, 34));
+    if (!possibleLanes.length) return;
+
+    let lane = choice(possibleLanes);
+    let currentZ = z;
+    const chainRoll = Math.random();
+    const chainCount = chainRoll < 0.38 ? 1 : chainRoll < 0.76 ? 2 : chainRoll < 0.93 ? 3 : 4;
+
+    for (let i = 0; i < chainCount; i += 1) {
+      const length = PLATFORM_LENGTH + Math.random() * 5.5 + difficulty * 5.5;
+      if (i > 0) {
+        const hopOptions = [lane, lane - 1, lane + 1].filter((l) => l >= 0 && l <= 2 && !laneBlockedNear(pool, l, currentZ, 18));
+        if (!hopOptions.length) break;
+        lane = choice(hopOptions);
+      }
+
+      addPlatform(scene, pool, lane, currentZ, length, i === 0);
+      currentZ -= length + PLATFORM_CHAIN_GAP + Math.random() * 2.2;
     }
   }
 
@@ -875,7 +1050,8 @@ export default function FlashcardDash({ studySet, onExit }) {
 
       if (isRunning) {
         gs.speed = Math.min(MAX_SPEED, gs.speed + SPEED_GAIN * delta);
-        const speedRatio = Math.min(1, (gs.speed - START_SPEED) / (MAX_SPEED - START_SPEED));
+        const speedRatioRaw = (gs.speed - START_SPEED) / (MAX_SPEED - START_SPEED);
+        const speedRatio = Math.min(1, speedRatioRaw);
         const scrollStep = gs.speed * delta;
 
         scoreRef.current += Math.floor(scrollStep * 36 * (gs.multiplierUntil > now ? 2 : 1));
@@ -888,7 +1064,17 @@ export default function FlashcardDash({ studySet, onExit }) {
           gs.shieldUntil > now ? "🛡 Shield" : null,
           gs.multiplierUntil > now ? "2× Score" : null,
           gs.sneakersUntil > now ? "👟 Jump" : null,
+          gs.hoverboardUntil > now ? "🛹 Hoverboard" : null,
+          gs.jetpackUntil > now ? "🚀 Jetpack" : null,
         ].filter(Boolean));
+
+        const visualZone = zoneForIndex(Math.floor(distRef.current / 120));
+        if (gs.currentZoneName !== visualZone.name) {
+          gs.currentZoneName = visualZone.name;
+          scene.fog.color.setHex(visualZone.fog);
+          renderer.setClearColor(visualZone.fog);
+          setZoneName(visualZone.name);
+        }
 
         const targetX = LANE_POSITIONS[gs.targetLane];
         gs.playerX += (targetX - gs.playerX) * LANE_SWITCH_SNAP * delta;
@@ -899,13 +1085,13 @@ export default function FlashcardDash({ studySet, onExit }) {
         camera.position.x += (three.cameraLean - camera.position.x) * 0.09 * delta;
 
         gs.cameraBob = Math.sin(gs.runPhase * 0.5) * 0.04;
-        const targetCamY = 4.05 + gs.cameraBob + speedRatio * 0.42;
-        const targetCamZ = 9.8 - speedRatio * 1.35;
+        const targetCamY = 3.55 + gs.cameraBob + speedRatio * 0.18 + Math.min(gs.playerY, 2.6) * 0.18;
+        const targetCamZ = 10.9 - speedRatio * 0.55;
         camera.position.y += (targetCamY - camera.position.y) * 0.09 * delta;
         camera.position.z += (targetCamZ - camera.position.z) * 0.09 * delta;
-        camera.fov += (68 + speedRatio * 9 - camera.fov) * 0.045 * delta;
+        camera.fov += (70 + speedRatio * 5 - camera.fov) * 0.045 * delta;
         camera.updateProjectionMatrix();
-        camera.lookAt(gs.playerX * 0.18, 2.05, -10 - speedRatio * 4.2);
+        camera.lookAt(gs.playerX * 0.18, 1.35 + Math.min(gs.playerY, 2.4) * 0.22, -10 - speedRatio * 3.1);
 
         for (const segment of hallway.segments) segment.position.z += scrollStep;
         recycleHallway(hallway);
@@ -946,15 +1132,18 @@ export default function FlashcardDash({ studySet, onExit }) {
             const localZ = playerWorldZ - item.mesh.position.z;
             const dxRamp = Math.abs(item.mesh.position.x - playerWorldX);
 
-            if (dxRamp < 1.15 && localZ <= halfLen && localZ >= -halfLen) {
+            if (dxRamp < 1.18 && localZ <= halfLen && localZ >= -halfLen) {
+              // Items move from negative Z toward the player, so the near side of the ramp
+              // is low and the far side connects to the Study Shuttle top.
               const t = Math.min(1, Math.max(0, (halfLen - localZ) / (item.length || RAMP_LENGTH)));
               const rampY = t * item.topY;
-              if (gs.playerY <= rampY + 0.45 && gs.jumpVel <= 0.1) {
+              if (gs.playerY <= rampY + 0.62 && gs.jumpVel <= 0.22) {
                 supportY = Math.max(supportY, rampY);
                 onRamp = true;
-                if (t > 0.72) {
+                gs.onPlatformLane = item.lane;
+                if (t > 0.5) {
                   gs.platformAccessLane = item.lane;
-                  gs.platformAccessUntil = now + 2600;
+                  gs.platformAccessUntil = now + 4200;
                 }
               }
             }
@@ -966,12 +1155,16 @@ export default function FlashcardDash({ studySet, onExit }) {
             const dzPlatform = Math.abs(item.mesh.position.z - playerWorldZ);
             const dxPlatform = Math.abs(item.mesh.position.x - playerWorldX);
             const hasRampAccess = gs.platformAccessLane === item.lane && now < gs.platformAccessUntil;
-            const stayingOnPlatform = gs.onPlatformLane === item.lane && gs.playerY >= item.topY - 0.55;
+            const stayingOnPlatform = gs.onPlatformLane === item.lane && gs.playerY >= item.topY - 0.7;
+            const hoppingFromPlatform = now < gs.platformJumpGraceUntil && gs.playerY >= item.topY - 0.8;
 
-            if (dxPlatform < 1.15 && dzPlatform < halfLen && (hasRampAccess || stayingOnPlatform) && gs.jumpVel <= 0.12) {
+            if (dxPlatform < 1.18 && dzPlatform < halfLen && (hasRampAccess || stayingOnPlatform || hoppingFromPlatform) && gs.playerY >= item.topY - 0.95 && gs.jumpVel <= 0.36) {
               supportY = Math.max(supportY, item.topY);
               standingOnPlatform = true;
               gs.onPlatformLane = item.lane;
+              gs.platformAccessLane = item.lane;
+              gs.platformAccessUntil = now + 1200;
+              gs.platformJumpGraceUntil = now + 1050;
             }
           }
 
@@ -979,6 +1172,13 @@ export default function FlashcardDash({ studySet, onExit }) {
             toRemove.push(item);
             continue;
           }
+        }
+
+        if (gs.jetpackUntil > now) {
+          gs.sliding = false;
+          gs.jumping = false;
+          gs.jumpVel = 0;
+          supportY = Math.max(supportY, 3.25 + Math.sin(now * 0.006) * 0.18);
         }
 
         if (gs.jumping || gs.playerY > supportY) {
@@ -993,7 +1193,8 @@ export default function FlashcardDash({ studySet, onExit }) {
         }
 
         gs.onPlatform = standingOnPlatform;
-        if (!standingOnPlatform && !onRamp) gs.onPlatformLane = null;
+        if (standingOnPlatform || onRamp) gs.platformJumpGraceUntil = now + 950;
+        if (!standingOnPlatform && !onRamp && now > gs.platformJumpGraceUntil) gs.onPlatformLane = null;
         player.position.y = gs.playerY;
 
         if (gs.sliding) {
@@ -1006,6 +1207,8 @@ export default function FlashcardDash({ studySet, onExit }) {
 
         gs.runPhase += gs.speed * delta * (13.5 + speedRatio * 9);
         const pu = player.userData;
+        if (pu.hoverboard) pu.hoverboard.visible = gs.hoverboardUntil > now;
+        if (pu.jetFlame) pu.jetFlame.visible = gs.jetpackUntil > now;
 
         if (!gs.jumping && !gs.sliding) {
           const stride = Math.sin(gs.runPhase);
@@ -1045,15 +1248,15 @@ export default function FlashcardDash({ studySet, onExit }) {
         gs.spawnPlatform += delta;
         gs.spawnPowerup += delta;
 
-        const obsThresh = Math.max(34, 92 - speedRatio * 52);
-        const coinThresh = Math.max(44, 76 - speedRatio * 20);
-        const cardThresh = Math.max(168, 250 - speedRatio * 55);
-        const platformThresh = Math.max(170, 310 - speedRatio * 90);
-        const powerupThresh = Math.max(340, 520 - speedRatio * 110);
+        const obsThresh = Math.max(25, 92 - speedRatio * 57);
+        const coinThresh = Math.max(38, 76 - speedRatio * 24);
+        const cardThresh = Math.max(152, 250 - speedRatio * 70);
+        const platformThresh = Math.max(130, 295 - speedRatio * 125);
+        const powerupThresh = Math.max(300, 510 - speedRatio * 135);
 
         if (gs.spawnPlatform > platformThresh) {
           gs.spawnPlatform = 0;
-          spawnPlatform(scene, itemPool);
+          spawnPlatform(scene, itemPool, speedRatio);
         }
 
         if (gs.spawnPowerup > powerupThresh) {
@@ -1082,12 +1285,13 @@ export default function FlashcardDash({ studySet, onExit }) {
           const dz = Math.abs(item.mesh.position.z - playerWorldZ);
           const dx = Math.abs(item.mesh.position.x - playerWorldX);
 
-          if (item.kind === "coin" && gs.magnetUntil > now && dz < 8.5) {
-            item.mesh.position.x += (playerWorldX - item.mesh.position.x) * 0.2 * delta;
-            item.mesh.position.y += (gs.playerY + 1.25 - item.mesh.position.y) * 0.18 * delta;
+          const coinMagnetActive = gs.magnetUntil > now || gs.jetpackUntil > now;
+          if (item.kind === "coin" && coinMagnetActive && dz < (gs.jetpackUntil > now ? 13 : 8.5)) {
+            item.mesh.position.x += (playerWorldX - item.mesh.position.x) * 0.22 * delta;
+            item.mesh.position.y += (gs.playerY + 1.25 - item.mesh.position.y) * 0.2 * delta;
           }
 
-          if (item.kind === "coin" && dz < 1.2 && dx < (gs.magnetUntil > now ? 1.45 : 0.9) && Math.abs(item.mesh.position.y - (gs.playerY + 1.35)) < 1.35) {
+          if (item.kind === "coin" && dz < 1.2 && dx < (coinMagnetActive ? 1.55 : 0.9) && Math.abs(item.mesh.position.y - (gs.playerY + 1.35)) < (gs.jetpackUntil > now ? 2.4 : 1.35)) {
             coinsRef.current += 1;
             scoreRef.current += gs.multiplierUntil > now ? 48 : 24;
             setCoins(coinsRef.current);
@@ -1107,8 +1311,17 @@ export default function FlashcardDash({ studySet, onExit }) {
               gs.multiplierUntil = now + 9000;
               setPowerToast("2× score activated ✨");
             } else if (item.subtype === "sneakers") {
-              gs.sneakersUntil = now + 10500;
-              setPowerToast("Super jump sneakers 👟");
+              gs.sneakersUntil = now + 12000;
+              setPowerToast("Super Sneakers: huge jumps 👟");
+            } else if (item.subtype === "hoverboard") {
+              gs.hoverboardUntil = now + 11000;
+              setPowerToast("Hoverboard: one free crash 🛹");
+            } else if (item.subtype === "jetpack") {
+              gs.jetpackUntil = now + 6500;
+              gs.sliding = false;
+              gs.jumping = false;
+              gs.jumpVel = 0;
+              setPowerToast("Jetpack: fly over the hallway 🚀");
             }
             setTimeout(() => setPowerToast(null), 1600);
             scoreRef.current += 80;
@@ -1117,31 +1330,39 @@ export default function FlashcardDash({ studySet, onExit }) {
             continue;
           }
 
-          if (item.kind === "platform" && !item.hit && dz < (item.length || PLATFORM_LENGTH) / 2 && dx < 1.08 && !gs.onPlatform && gs.playerY < item.topY - 0.15) {
-            if (gs.shieldUntil > now) {
-              gs.shieldUntil = 0;
-              gs.shakeDur = 10;
+          if (item.kind === "platform" && !item.hit && dz < (item.length || PLATFORM_LENGTH) / 2 && dx < 1.08) {
+            const hasRampAccess = gs.platformAccessLane === item.lane && now < gs.platformAccessUntil;
+            const safelyOnTop = gs.jetpackUntil > now || gs.onPlatform || hasRampAccess || now < gs.platformJumpGraceUntil || gs.playerY >= item.topY - 0.55;
+
+            // Crash only into the side/front of the cart. If you used the ramp or are high
+            // enough to be landing on top, do not damage/clip the player.
+            if (!safelyOnTop) {
+              item.hit = true;
+              if (gs.hoverboardUntil > now) {
+                gs.hoverboardUntil = 0;
+                gs.shakeDur = 10;
+                toRemove.push(item);
+                continue;
+              }
+              if (gs.shieldUntil > now) {
+                gs.shieldUntil = 0;
+                gs.shakeDur = 10;
+                toRemove.push(item);
+                continue;
+              }
+              const nextHearts = Math.max(0, heartRef.current - 1);
+              heartRef.current = nextHearts;
+              streakRef.current = 0;
+              setHearts(nextHearts);
+              setStreak(0);
+              gs.shakeDur = 18;
               toRemove.push(item);
+              if (nextHearts <= 0) {
+                setPhase("gameover");
+                phaseRef.current = "gameover";
+              }
               continue;
             }
-            item.hit = true;
-            if (gs.shieldUntil > now) {
-              gs.shieldUntil = 0;
-              gs.shakeDur = 10;
-              toRemove.push(item);
-              continue;
-            }
-            const nextHearts = Math.max(0, heartRef.current - 1);
-            heartRef.current = nextHearts;
-            streakRef.current = 0;
-            setHearts(nextHearts);
-            setStreak(0);
-            gs.shakeDur = 18;
-            if (nextHearts <= 0) {
-              setPhase("gameover");
-              phaseRef.current = "gameover";
-            }
-            continue;
           }
 
           if (item.kind === "card" && dz < 1.22 && dx < 0.95) {
@@ -1153,14 +1374,22 @@ export default function FlashcardDash({ studySet, onExit }) {
           }
 
           if (item.kind === "obstacle" && !item.hit && dz < 1.18 && dx < 0.92) {
-            const clearedCone = item.subtype === "cone" && gs.playerY > 0.48;
-            const clearedBackpack = item.subtype === "backpack" && gs.playerY > 0.56;
-            const clearedBarrier = item.subtype === "barrier" && gs.sliding;
-            const clearedLocker = false;
+            const hasSneakers = gs.sneakersUntil > now;
+            const hasJetpack = gs.jetpackUntil > now;
+            const clearedCone = hasJetpack || (item.subtype === "cone" && gs.playerY > 0.48);
+            const clearedBackpack = hasJetpack || (item.subtype === "backpack" && gs.playerY > 0.56);
+            const clearedBarrier = hasJetpack || (item.subtype === "barrier" && (gs.sliding || (hasSneakers && gs.playerY > 1.55)));
+            const clearedLocker = hasJetpack || (item.subtype === "locker" && hasSneakers && gs.playerY > 1.75);
 
             if (clearedCone || clearedBackpack || clearedBarrier || clearedLocker) continue;
 
             item.hit = true;
+            if (gs.hoverboardUntil > now) {
+              gs.hoverboardUntil = 0;
+              gs.shakeDur = 10;
+              toRemove.push(item);
+              continue;
+            }
             if (gs.shieldUntil > now) {
               gs.shieldUntil = 0;
               gs.shakeDur = 10;
@@ -1195,7 +1424,7 @@ export default function FlashcardDash({ studySet, onExit }) {
         pu.legR.rotation.x = -Math.sin(gs.runPhase) * 0.1;
         pu.armL.rotation.x = -Math.sin(gs.runPhase) * 0.08;
         pu.armR.rotation.x = Math.sin(gs.runPhase) * 0.08;
-        camera.lookAt(player.position.x * 0.14, 2.05, -9);
+        camera.lookAt(player.position.x * 0.14, 1.35, -9);
       }
 
       renderer.render(scene, camera);
@@ -1231,10 +1460,14 @@ export default function FlashcardDash({ studySet, onExit }) {
       platformAccessLane: null,
       platformAccessUntil: 0,
       onPlatformLane: null,
+      platformJumpGraceUntil: 0,
+      currentZoneName: "Main Hall",
       magnetUntil: 0,
       shieldUntil: 0,
       multiplierUntil: 0,
       sneakersUntil: 0,
+      hoverboardUntil: 0,
+      jetpackUntil: 0,
       targetLane: 1,
       playerX: LANE_POSITIONS[1],
       jumping: false,
@@ -1251,10 +1484,10 @@ export default function FlashcardDash({ studySet, onExit }) {
     three.player.scale.set(1, 1, 1);
     three.player.rotation.set(0, Math.PI, 0);
     three.cameraLean = 0;
-    three.camera.position.set(0, 4.05, 9.8);
-    three.camera.fov = 68;
+    three.camera.position.set(0, 3.55, 10.9);
+    three.camera.fov = 70;
     three.camera.updateProjectionMatrix();
-    three.camera.lookAt(0, 2.05, -9);
+    three.camera.lookAt(0, 1.35, -9);
 
     heartRef.current = START_HEARTS;
     scoreRef.current = 0;
@@ -1274,6 +1507,7 @@ export default function FlashcardDash({ studySet, onExit }) {
     setSpeedHud(Math.round(START_SPEED * 1000));
     setPowerHud([]);
     setPowerToast(null);
+    setZoneName("Main Hall");
     setPhase("running");
     phaseRef.current = "running";
   }
@@ -1292,15 +1526,16 @@ export default function FlashcardDash({ studySet, onExit }) {
 
   const doJump = useCallback(() => {
     const gs = gameStateRef.current;
-    if (!gs || phaseRef.current !== "running" || gs.jumping) return;
+    if (!gs || phaseRef.current !== "running" || gs.jumping || gs.jetpackUntil > performance.now()) return;
     if (gs.sliding) gs.sliding = false;
     gs.jumping = true;
-    gs.jumpVel = gs.sneakersUntil > performance.now() ? SUPER_JUMP_POWER : JUMP_POWER;
+    gs.jumpVel = gs.sneakersUntil > performance.now() ? SUPER_JUMP_POWER : (gs.onPlatform ? JUMP_POWER * 1.08 : JUMP_POWER);
+    gs.platformJumpGraceUntil = performance.now() + 1200;
   }, []);
 
   const doSlide = useCallback(() => {
     const gs = gameStateRef.current;
-    if (!gs || phaseRef.current !== "running" || gs.sliding || gs.jumping) return;
+    if (!gs || phaseRef.current !== "running" || gs.sliding || gs.jumping || gs.jetpackUntil > performance.now()) return;
     gs.sliding = true;
     setTimeout(() => {
       const current = gameStateRef.current;
@@ -1334,6 +1569,44 @@ export default function FlashcardDash({ studySet, onExit }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [moveLeft, moveRight, doJump, doSlide, togglePause]);
+
+  useEffect(() => {
+    const el = mountRef.current;
+    if (!el) return undefined;
+
+    let startX = 0;
+    let startY = 0;
+    let active = false;
+
+    function onPointerDown(e) {
+      active = true;
+      startX = e.clientX;
+      startY = e.clientY;
+    }
+
+    function onPointerUp(e) {
+      if (!active) return;
+      active = false;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        if (dx > 0) moveRight();
+        else moveLeft();
+      } else if (dy < 0) {
+        doJump();
+      } else {
+        doSlide();
+      }
+    }
+
+    el.addEventListener("pointerdown", onPointerDown);
+    el.addEventListener("pointerup", onPointerUp);
+    return () => {
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [moveLeft, moveRight, doJump, doSlide]);
 
   function answerQuestion(idx) {
     if (!activeQuestion || answerStatus) return;
@@ -1391,7 +1664,7 @@ export default function FlashcardDash({ studySet, onExit }) {
           <p className="fd-eyebrow">Gradeify Games</p>
           <h1>Flashcard Dash</h1>
           <p className="fd-subtitle">
-            Sprint through the hallway, use ramps onto Study Shuttles, grab powerups, slide under barriers, and answer flashcards.
+            Sprint through changing school zones, ramp onto long Study Shuttles, jump between carts, grab powerups, and answer flashcards.
           </p>
         </div>
 
@@ -1438,6 +1711,7 @@ export default function FlashcardDash({ studySet, onExit }) {
       </div>
 
       <div className="fd-game-wrap" ref={mountRef}>
+        <div className="fd-zone-pill">{zoneName}</div>
         {comboText && <div className="fd-combo">{comboText}</div>}
         {powerToast && <div className="fd-power-toast">{powerToast}</div>}
         {powerHud.length > 0 && (
@@ -1452,7 +1726,7 @@ export default function FlashcardDash({ studySet, onExit }) {
               <p className="fd-eyebrow">Ready?</p>
               <h2>Flashcard Dash</h2>
               <p>
-                Jump over cones and backpacks, slide under red barriers, dodge lockers, use ramps to get onto Study Shuttles, and grab powerups like magnet, shield, 2× score, and super jump.
+                Jump over cones and backpacks, slide under red barriers, dodge reskinned school obstacles, use ramps to get onto long Study Shuttles, then jump between carts like Subway Surfers. Powerups include magnet, shield, 2× score, super jump, hoverboard, and jetpack.
               </p>
               <div className="fd-key-grid">
                 <div className="fd-key-row"><kbd>← / A</kbd><span>Move left</span></div>
