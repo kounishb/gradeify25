@@ -22,6 +22,19 @@ const MONSTER_INVEST = 1.8;
 const MONSTER_CHASE  = 2.2;
 const MONSTER_FINAL  = 2.5;
 
+const SPECIAL_ROLES = ["breaker", "security", "supply", "altar", "archive", "sealed", "ritual"];
+
+const UPGRADE_POOL = [
+  { key:"quiet", name:"Soft Step", desc:"Footstep noise range -18%. Safer sprinting and walking.", max:4 },
+  { key:"battery", name:"Deep Cell", desc:"Battery capacity +20 and slower drain.", max:4 },
+  { key:"stamina", name:"Iron Lungs", desc:"Stamina capacity +18 and faster recovery.", max:4 },
+  { key:"sanity", name:"Cold Nerves", desc:"Sanity capacity +15 and less panic from darkness.", max:4 },
+  { key:"camera", name:"Brighter Flash", desc:"Camera stun range/duration increases.", max:3 },
+  { key:"flare", name:"Hotter Flares", desc:"Thrown flares last longer and distract harder.", max:3 },
+  { key:"map", name:"Dead Reckoning", desc:"Objective compass becomes more stable and security lasts longer.", max:3 },
+  { key:"life", name:"Refuse Death", desc:"Gain +1 max life once.", max:1 },
+];
+
 // ─── floor themes ─────────────────────────────────────────────────────────────
 const FLOOR_THEMES = [
   {
@@ -69,6 +82,36 @@ const FLOOR_THEMES = [
     eyeColor: [80,255,80],
     lorePrefix: "LOG",
   },
+  {
+    name: "Hotel",
+    floorColor: "#1c1414",
+    wallColor: "rgba(150,85,70,0.58)",
+    hallColor: "#150e0e",
+    voidColor: "#070202",
+    fogColor: "rgba(5,0,0,0.97)",
+    vignetteColor: "rgba(8,0,0,0.92)",
+    ambientTint: "rgba(25,0,0,0.13)",
+    monsterName: "The Stalker",
+    monsterDesc: "Only attacks in darkness, but follows forever.",
+    monsterColor: "#160202",
+    eyeColor: [255,120,70],
+    lorePrefix: "ROOM",
+  },
+  {
+    name: "Listening Room",
+    floorColor: "#171217",
+    wallColor: "rgba(170,55,90,0.5)",
+    hallColor: "#0e090e",
+    voidColor: "#030103",
+    fogColor: "rgba(0,0,0,0.982)",
+    vignetteColor: "rgba(0,0,0,0.96)",
+    ambientTint: "rgba(45,0,30,0.13)",
+    monsterName: "The Listener",
+    monsterDesc: "Every sound is bigger. Every mistake is permanent.",
+    monsterColor: "#120008",
+    eyeColor: [255,40,140],
+    lorePrefix: "TRANSCRIPT",
+  },
 ];
 
 // ─── lore fragments per floor ─────────────────────────────────────────────────
@@ -88,6 +131,16 @@ const LORE_TEXTS = [
     "LOG 017 — 'It can smell fear. I don't know how I know this. Breathing helps. I have been in this pipe for three days. Someone will find this.'",
     "LOG 029 — 'The water is black now. Whatever it leaves behind spreads. Do not touch the walls. Do not make noise. Do not stop moving. If you are reading this you already know it's too late.'",
   ],
+  [
+    "ROOM 606 — 'The guest checked out in 1983. The room still calls the front desk every night. Nobody is ever on the line, but the receiver is always wet.'",
+    "HOUSEKEEPING — 'Do not open rooms with a red light under the door. Do not answer knocking from the inside. Do not look through the peephole if it breathes first.'",
+    "MANAGER NOTE — 'The elevator descends below the basement when the building is empty. I heard a crowd applauding down there. We have no ballroom.'",
+  ],
+  [
+    "TRANSCRIPT 1 — 'Subject repeats: It heard me thinking. Audio captures no second voice. Spectrogram reveals a pulse under 20 Hz matching the subject's heartbeat.'",
+    "TRANSCRIPT 4 — 'Silence test failed. Microphones detected footsteps from inside the observation glass. There is no space between the panes.'",
+    "FINAL TRANSCRIPT — 'If it stops chasing, do not relax. That means it is listening for the sound you make when you believe you are safe.'",
+  ],
 ];
 
 // ─── utils ────────────────────────────────────────────────────────────────────
@@ -95,6 +148,23 @@ const clamp  = (v,mn,mx) => Math.max(mn,Math.min(mx,v));
 const dist   = (a,b)     => Math.hypot(a.x-b.x, a.y-b.y);
 const rand   = (mn,mx)   => Math.random()*(mx-mn)+mn;
 const choice = arr       => arr[Math.floor(Math.random()*arr.length)];
+
+function defaultUpgrades(){
+  return { quiet:0, battery:0, stamina:0, sanity:0, camera:0, flare:0, map:0, life:0 };
+}
+function statMax(upgrades,key){
+  const up=upgrades||defaultUpgrades();
+  if(key==="battery") return 100 + (up.battery||0)*20;
+  if(key==="stamina") return 100 + (up.stamina||0)*18;
+  if(key==="sanity") return 100 + (up.sanity||0)*15;
+  if(key==="hp") return 3 + (up.life||0);
+  return 100;
+}
+function chooseUpgradeOptions(player){
+  const upgrades=player?.upgrades||defaultUpgrades();
+  const pool=UPGRADE_POOL.filter(u=>(upgrades[u.key]||0)<u.max).sort(()=>Math.random()-0.5);
+  return pool.slice(0,3);
+}
 
 function pointInRect(p,r,pad=0){
   return p.x>=r.x-pad && p.x<=r.x+r.w+pad && p.y>=r.y-pad && p.y<=r.y+r.h+pad;
@@ -200,8 +270,22 @@ function makeMazeMap(floorNum=1){
   return {rooms,corridors,walkable,spawnRoom,exitRoom,floorNum};
 }
 
+// ─── special room factory ─────────────────────────────────────────────────────
+function assignSpecialRooms(map, reservedRooms=[]){
+  const reserved=new Set(reservedRooms.filter(Boolean).map(r=>r.id));
+  const candidates=[...map.rooms]
+    .filter(r=>!reserved.has(r.id) && r.type!=="spawn")
+    .sort(()=>Math.random()-0.5);
+  return SPECIAL_ROLES.map((role,i)=>{
+    const room=candidates[i];
+    if(!room) return null;
+    const pt=randomPointInRect(room,52);
+    return { id:`special-${role}-${i}`, role, roomId:room.id, x:pt.x, y:pt.y, used:false, pulse:rand(0,Math.PI*2) };
+  }).filter(Boolean);
+}
+
 // ─── floor factory ────────────────────────────────────────────────────────────
-const MAX_FLOORS=3;
+const MAX_FLOORS=5;
 
 function createFloor(floorNum=1, prevPlayer=null){
   const map=makeMazeMap(floorNum);
@@ -220,7 +304,19 @@ function createFloor(floorNum=1, prevPlayer=null){
     hidden:false, invuln:2200, flashlightOff:false, bobPhase:0, crouching:false,
     stunned:0,
     hasLighter:false, flares:0, hasCamera:false, cameraCharge:100,
+    scraps:0, upgrades:defaultUpgrades(), maxBattery:100, maxStamina:100, maxSanity:100, maxHp:3,
+    noise:0, roomsSearched:0, archivesRead:0,
   };
+
+  player.upgrades = player.upgrades || defaultUpgrades();
+  player.maxBattery = statMax(player.upgrades,"battery");
+  player.maxStamina = statMax(player.upgrades,"stamina");
+  player.maxSanity = statMax(player.upgrades,"sanity");
+  player.maxHp = statMax(player.upgrades,"hp");
+  player.hp = clamp(player.hp ?? player.maxHp, 0, player.maxHp);
+  player.battery = clamp(player.battery ?? player.maxBattery, 0, player.maxBattery);
+  player.sanity = clamp(player.sanity ?? player.maxSanity, 0, player.maxSanity);
+  player.stamina = clamp(player.stamina ?? player.maxStamina, 0, player.maxStamina);
 
   const farRooms=[...map.rooms]
     .filter(r=>r.id!==map.spawnRoom.id)
@@ -256,6 +352,8 @@ function createFloor(floorNum=1, prevPlayer=null){
   const hidingSpots=restRooms.sort(()=>Math.random()-0.5).slice(13,22)
     .map((room,i)=>({id:`hide-${i}`,...randomPointInRect(room),r:24}));
 
+  const specialRooms=assignSpecialRooms(map,[map.spawnRoom,map.exitRoom,...itemRooms,...loreRooms]);
+
   // Traps — floor 2+ has traps
   const traps=[];
   if(floorNum>=2){
@@ -280,6 +378,8 @@ function createFloor(floorNum=1, prevPlayer=null){
     `ASYLUM — FLOOR 1. Find the 6 signal fragments. ◈ ${theme.monsterName}: ${theme.monsterDesc}`,
     `MORGUE — FLOOR 2. Traps have been set. ◈ ${theme.monsterName}: ${theme.monsterDesc}`,
     `SEWERS — FLOOR 3. It knows this place better than you. ◈ ${theme.monsterName}: ${theme.monsterDesc}`,
+    `HOTEL — FLOOR 4. Optional rooms are more dangerous, but the rewards matter. ◈ ${theme.monsterName}: ${theme.monsterDesc}`,
+    `LISTENING ROOM — FLOOR 5. Every sound is evidence. ◈ ${theme.monsterName}: ${theme.monsterDesc}`,
   ];
 
   return {
@@ -290,7 +390,7 @@ function createFloor(floorNum=1, prevPlayer=null){
       anger:0, stun:0, limbPhase:0, dirAngle:0, bloodTrail:[],
     },
     items, lores, batteries, medkits, lighter, flares, cameraItem, activeFlares,
-    hidingSpots, traps, watcherData,
+    hidingSpots, traps, specialRooms, watcherData,
     exit:{x:map.exitRoom.x+map.exitRoom.w/2, y:map.exitRoom.y+map.exitRoom.h/2, active:false, pulse:0},
     noisePulses:[], hallucinations:[], bloodSplatters:[], mimicPulses:[],
     collected:0, loreCooldown:0, finalPhase:false, won:false, dead:false, floorComplete:false,
@@ -300,6 +400,8 @@ function createFloor(floorNum=1, prevPlayer=null){
     time:0, glitch:0, objectiveBlink:0, heartbeatPhase:0,
     invertControls:0, sanityEffects:[], // sanity hallucination effects
     trapped:0, // slow debuff timer
+    powerOn:true, securityPing:0, event:null, eventTimer:rand(16000,28000),
+    awaitingUpgrade:false, upgradeOptions:[], floorReward:1,
   };
 }
 
@@ -348,6 +450,11 @@ export default function SomethingHeardYou({onExit}){
 
   // ── noise ──────────────────────────────────────────────────────────────────
   function createNoise(r,x,y,power,isMimic=false){
+    const quiet=1-((r.player?.upgrades?.quiet||0)*0.18);
+    const listenerBoost=r.floorNum>=5?1.25:1;
+    const eventBoost=r.event?.type==="listening"?1.45:1;
+    power=Math.max(12,power*quiet*listenerBoost*eventBoost);
+    if(r.player) r.player.noise=clamp((r.player.noise||0)+power*0.22,0,100);
     if(isMimic){
       r.mimicPulses.push({x,y,pr:4,max:power,alpha:0.6});
     } else {
@@ -413,11 +520,116 @@ export default function SomethingHeardYou({onExit}){
     }
   }
 
+  function activateSpecial(r,sp){
+    const p=r.player;
+    const role=sp.role;
+    sp.used=true;
+    p.roomsSearched=(p.roomsSearched||0)+1;
+    if(role==="breaker"){
+      r.powerOn=true;
+      r.map.rooms.forEach(room=>{ if(dist({x:room.x+room.w/2,y:room.y+room.h/2},sp)<520) room.pitchDark=false; });
+      createNoise(r,sp.x,sp.y,260);
+      r.securityPing=Math.max(r.securityPing||0,2500);
+      r.message="Breaker room restored nearby lights, but the switch screamed.";
+    } else if(role==="security"){
+      r.securityPing=9000+(p.upgrades.map||0)*3500;
+      createNoise(r,sp.x,sp.y,125);
+      r.message="Security terminal online. Monster and objectives revealed briefly.";
+    } else if(role==="supply"){
+      p.flares=(p.flares||0)+1+(p.upgrades.flare>=2?1:0);
+      p.battery=clamp(p.battery+45,0,p.maxBattery);
+      p.sanity=clamp(p.sanity+12,0,p.maxSanity);
+      createNoise(r,sp.x,sp.y,90);
+      r.message="Supply room looted: flare, battery, and a moment to breathe.";
+    } else if(role==="altar"){
+      p.sanity=clamp(p.sanity-22,0,p.maxSanity);
+      p.scraps=(p.scraps||0)+1;
+      r.monster.mode="investigate";
+      r.monster.target={x:sp.x,y:sp.y};
+      createNoise(r,sp.x,sp.y,210);
+      r.message="You took a cursed shard. Permanent upgrade currency gained.";
+    } else if(role==="archive"){
+      p.archivesRead=(p.archivesRead||0)+1;
+      p.scraps=(p.scraps||0)+(p.archivesRead%2===0?1:0);
+      p.sanity=clamp(p.sanity-8,0,p.maxSanity);
+      r.securityPing=Math.max(r.securityPing||0,5000);
+      createNoise(r,sp.x,sp.y,70);
+      r.message=p.archivesRead%2===0?"Archive decoded: +1 cursed shard.":"Archive read. The building makes more sense now.";
+    } else if(role==="sealed"){
+      const docs=r.lores.filter(l=>l.collected).length;
+      if(docs>=1){
+        p.scraps=(p.scraps||0)+1;
+        p.battery=clamp(p.battery+25,0,p.maxBattery);
+        createNoise(r,sp.x,sp.y,180);
+        r.message="Sealed office opened using a document code. +1 cursed shard.";
+      } else {
+        sp.used=false;
+        r.message="Sealed office. Find at least one document code first.";
+      }
+    } else if(role==="ritual"){
+      p.scraps=(p.scraps||0)+1;
+      r.hauntTimer=Math.min(r.hauntTimer,900);
+      r.monster.mode="chase";
+      r.monster.target={x:p.x,y:p.y};
+      createNoise(r,sp.x,sp.y,320);
+      r.message="Ritual circle broken. +1 cursed shard, but it knows exactly where you are.";
+    }
+    r.glitch=Math.max(r.glitch,0.35);
+  }
+
+  function applyUpgradeChoice(index){
+    const r=runRef.current;
+    if(!r||!r.awaitingUpgrade||r.won) return;
+    const up=r.upgradeOptions[index];
+    if(!up) return;
+    const p=r.player;
+    p.upgrades=p.upgrades||defaultUpgrades();
+    if((p.scraps||0)<=0){ r.message="No cursed shards left."; return; }
+    p.scraps=Math.max(0,(p.scraps||0)-1);
+    p.upgrades[up.key]=clamp((p.upgrades[up.key]||0)+1,0,up.max);
+    p.maxBattery=statMax(p.upgrades,"battery");
+    p.maxStamina=statMax(p.upgrades,"stamina");
+    p.maxSanity=statMax(p.upgrades,"sanity");
+    p.maxHp=statMax(p.upgrades,"hp");
+    p.battery=clamp(p.battery+30,0,p.maxBattery);
+    p.stamina=p.maxStamina;
+    p.sanity=clamp(p.sanity+25,0,p.maxSanity);
+    p.hp=clamp(p.hp+1,0,p.maxHp);
+    const next=createFloor(r.floorNum+1,p);
+    next.message=`Upgrade installed: ${up.name}.`;
+    runRef.current=next;
+    setRun(next);
+  }
+
+  function startRandomEvent(r){
+    if(r.event||r.dead||r.won||r.floorComplete) return;
+    const options=[
+      {type:"blackout", name:"BLACKOUT", timer:9000, msg:"Blackout. The building goes blind with you."},
+      {type:"lockdown", name:"LOCKDOWN", timer:10000, msg:"Lockdown. Doors grind shut somewhere nearby."},
+      {type:"hunt", name:"BLOOD HUNT", timer:8500, msg:"Blood hunt. It moves faster."},
+      {type:"listening", name:"LISTENING HOUR", timer:11000, msg:"Listening hour. Every noise carries farther."},
+      {type:"whispers", name:"WHISPER STORM", timer:10000, msg:"Whispers fill the vents. Keep moving."},
+    ];
+    const ev=choice(options);
+    r.event={...ev};
+    if(ev.type==="blackout"){ r.powerOn=false; r.glitch=Math.max(r.glitch,0.6); }
+    if(ev.type==="hunt"){ r.monster.mode="investigate"; r.monster.target={x:r.player.x,y:r.player.y}; }
+    if(ev.type==="lockdown") createNoise(r,r.player.x,r.player.y,110);
+    r.message=ev.msg;
+  }
+
   // ── interact ───────────────────────────────────────────────────────────────
   function interact(){
     const r=runRef.current;
     if(!r||r.dead||r.won||r.floorComplete) return;
     const p=r.player;
+
+    for(const sp of r.specialRooms||[]){
+      if(!sp.used&&dist(p,sp)<54){
+        activateSpecial(r,sp);
+        return;
+      }
+    }
 
     // Lore notes
     for(const lore of r.lores){
@@ -440,10 +652,9 @@ export default function SomethingHeardYou({onExit}){
           r.finalPhase=true; r.exit.active=true;
           r.monster.mode="chase"; r.monster.target={x:p.x,y:p.y};
           r.message="ALL FRAGMENTS. EXIT IS OPEN — RUN!";
-          triggerScare(r,"IT KNOWS");
+          r.glitch=Math.max(r.glitch,0.55);
         } else {
-          r.message=`${ITEM_COUNT-r.collected} fragments remain.`;
-          if(Math.random()<0.38) triggerScare(r,choice(["BEHIND YOU","IT HEARD YOU","DON'T STOP","LOOK UP"]));
+          r.message=`${ITEM_COUNT-r.collected} fragments remain. The relic made noise, but no cheap jump scare.`;
         }
         return;
       }
@@ -487,7 +698,10 @@ export default function SomethingHeardYou({onExit}){
         r.won=true; r.message="You made it out. It's still in there. Waiting.";
         triggerScare(r,"YOU ESCAPED");
       } else {
-        r.message=`Floor ${r.floorNum} cleared. Going deeper…`;
+        p.scraps=(p.scraps||0)+r.floorReward;
+        r.awaitingUpgrade=true;
+        r.upgradeOptions=chooseUpgradeOptions(p);
+        r.message=`Floor ${r.floorNum} cleared. Choose an upgrade.`;
       }
     }
   }
@@ -501,7 +715,7 @@ export default function SomethingHeardYou({onExit}){
     const fx=p.x+Math.cos(p.angle)*180;
     const fy=p.y+Math.sin(p.angle)*180;
     // Clamp to walkable
-    r.activeFlares.push({x:fx,y:fy,timer:9000,radius:220});
+    r.activeFlares.push({x:fx,y:fy,timer:9000+(p.upgrades.flare||0)*2500,radius:220+(p.upgrades.flare||0)*35});
     // Flares attract monster if it hears it
     createNoise(r,fx,fy,200);
     r.message="Flare thrown. It will come to investigate.";
@@ -513,8 +727,9 @@ export default function SomethingHeardYou({onExit}){
     r.player.cameraCharge-=30;
     // Flash stuns monster if close
     const d=dist(r.player,r.monster);
-    if(d<340){
-      r.monster.stun=2800;
+    const camRange=340+(r.player.upgrades.camera||0)*85;
+    if(d<camRange){
+      r.monster.stun=2800+(r.player.upgrades.camera||0)*650;
       r.monster.mode="stalk";
       r.monster.target=null;
       triggerScare(r,"STUNNED");
@@ -543,8 +758,10 @@ export default function SomethingHeardYou({onExit}){
 
     const same=sameZone(r.map,p,m);
     const d=dist(p,m);
-    const proximityChase=!p.hidden&&d<(r.finalPhase?300:220);
-    const visionChase=!p.hidden&&same&&d<(r.finalPhase?650:490);
+    const darkEnough = p.flashlightOff || r.event?.type==="blackout" || p.battery<=0 || p.sanity<35;
+    const floor4CanAttack = r.floorNum!==4 || darkEnough || d<120 || r.finalPhase;
+    const proximityChase=!p.hidden&&floor4CanAttack&&d<(r.finalPhase?300:220);
+    const visionChase=!p.hidden&&floor4CanAttack&&same&&d<(r.finalPhase?650:490);
 
     if(proximityChase||visionChase){
       m.mode="chase";
@@ -554,9 +771,12 @@ export default function SomethingHeardYou({onExit}){
       m.mode="investigate";
     }
 
-    const chaseSpd=r.finalPhase
+    let chaseSpd=r.finalPhase
       ? MONSTER_FINAL+(r.floorNum-1)*0.16
       : m.baseChase;
+    if(r.event?.type==="hunt") chaseSpd+=0.55;
+    if(r.floorNum===4 && !p.flashlightOff && !r.event) chaseSpd-=0.22;
+    if(r.floorNum>=5) chaseSpd+=0.22;
 
     if(m.mode==="stalk"){
       if(!m.target||dist(m,m.target)<40||Math.random()<0.005){
@@ -654,19 +874,33 @@ export default function SomethingHeardYou({onExit}){
   function updateGame(dtMs){
     const r=runRef.current;
     if(!r||!started||r.dead||r.won) return;
+    const p=r.player;
 
     if(r.floorComplete&&!r.won){
       r.time+=dtMs;
-      if(r.time>3400){
-        const next=createFloor(r.floorNum+1, r.player);
-        runRef.current=next; setRun(next);
-      } else { setRun({...r}); }
+      setRun({...r});
       return;
     }
 
     const dt=Math.min(dtMs,34);
     r.time+=dt; r.objectiveBlink+=dt;
     r.glitch=Math.max(0,r.glitch-dt/1400);
+    p.noise=clamp((p.noise||0)-dt*0.06,0,100);
+    if(r.securityPing>0) r.securityPing=Math.max(0,r.securityPing-dt);
+    r.eventTimer-=dt;
+    if(r.event){
+      r.event.timer-=dt;
+      if(r.event.type==="whispers") p.sanity=clamp(p.sanity-dt*0.0035,0,p.maxSanity);
+      if(r.event.type==="blackout" && p.hasLighter) p.sanity=clamp(p.sanity-dt*0.001,0,p.maxSanity);
+      if(r.event.timer<=0){
+        if(r.event.type==="blackout") r.powerOn=true;
+        r.event=null;
+        r.eventTimer=rand(16000,30000)-r.floorNum*900;
+        r.message="The building settles. For now.";
+      }
+    } else if(r.eventTimer<=0){
+      startRandomEvent(r);
+    }
     if(r.exit.active) r.exit.pulse=(r.exit.pulse||0)+dt*0.004;
     if(r.loreCooldown>0) r.loreCooldown=Math.max(0,r.loreCooldown-dt);
     if(r.loreRead) r.loreRead.timer-=dt, r.loreRead.timer<=0 && (r.loreRead=null);
@@ -674,7 +908,7 @@ export default function SomethingHeardYou({onExit}){
     for(const af of r.activeFlares) af.timer-=dt;
     r.activeFlares=r.activeFlares.filter(f=>f.timer>0);
 
-    const p=r.player, keys=keysRef.current, cam=getCamera(r);
+    const keys=keysRef.current, cam=getCamera(r);
     if(p.invuln>0) p.invuln-=dt;
     if(p.stunned>0) p.stunned=Math.max(0,p.stunned-dt);
     p.angle=Math.atan2(mouseRef.current.y+cam.y-p.y, mouseRef.current.x+cam.x-p.x);
@@ -696,9 +930,9 @@ export default function SomethingHeardYou({onExit}){
     const speed=crouching?1.1:sprinting?3.5:(trapped?0.8:2.1);
 
     p.crouching=crouching;
-    if(sprinting){ p.stamina=clamp(p.stamina-dt*0.07,0,100); if(Math.random()<0.055) createNoise(r,p.x,p.y,175); }
+    if(sprinting){ p.stamina=clamp(p.stamina-dt*0.07,0,p.maxStamina); if(Math.random()<0.055) createNoise(r,p.x,p.y,175); }
     else if(crouching&&moving){ if(Math.random()<0.006) createNoise(r,p.x,p.y,28); }
-    else { p.stamina=clamp(p.stamina+dt*0.025,0,100); }
+    else { p.stamina=clamp(p.stamina+dt*(0.025+(p.upgrades.stamina||0)*0.006),0,p.maxStamina); }
     if(moving) p.bobPhase+=dt*(sprinting?0.019:crouching?0.005:0.011);
     if(moving&&!crouching&&!sprinting&&Math.random()<0.013) createNoise(r,p.x,p.y,60);
 
@@ -709,7 +943,7 @@ export default function SomethingHeardYou({onExit}){
 
     // Battery drain — lighter doesn't drain battery
     if(!p.flashlightOff&&!p.hasLighter&&p.battery>0)
-      p.battery=clamp(p.battery-BATTERY_DRAIN*dt*(r.finalPhase?1.3:1),0,100);
+      p.battery=clamp(p.battery-BATTERY_DRAIN*dt*(r.finalPhase?1.3:1)*(1-(p.upgrades.battery||0)*0.08),0,p.maxBattery);
     if(p.battery<=0&&!p.hasLighter) p.flashlightOff=true;
     // Camera charge regenerates slowly
     if(p.hasCamera) p.cameraCharge=clamp(p.cameraCharge+dt*0.004,0,100);
@@ -720,11 +954,11 @@ export default function SomethingHeardYou({onExit}){
     const same=sameZone(r.map,p,r.monster);
     const md=dist(p,r.monster);
     if(!p.hidden&&same&&md<490)
-      p.sanity=clamp(p.sanity-SANITY_MONSTER*dt*(1-md/530),0,100);
-    else if(p.flashlightOff&&!p.hasLighter)
-      p.sanity=clamp(p.sanity-SANITY_DARK_GAIN*dt,0,100);
+      p.sanity=clamp(p.sanity-SANITY_MONSTER*dt*(1-md/530)*(1-(p.upgrades.sanity||0)*0.06),0,p.maxSanity);
+    else if((p.flashlightOff&&!p.hasLighter)||r.event?.type==="blackout")
+      p.sanity=clamp(p.sanity-SANITY_DARK_GAIN*dt*(1-(p.upgrades.sanity||0)*0.05),0,p.maxSanity);
     else
-      p.sanity=clamp(p.sanity+SANITY_DECAY*dt*(p.hasLighter?0.6:1),0,100);
+      p.sanity=clamp(p.sanity+SANITY_DECAY*dt*(p.hasLighter?0.6:1),0,p.maxSanity);
 
     r.heartbeatPhase=(r.heartbeatPhase||0)+dt*clamp((450-md)/4000,0.001,0.028);
 
@@ -787,6 +1021,7 @@ export default function SomethingHeardYou({onExit}){
     drawMonsterBloodTrail(ctx,r);
     drawBloodSplatters(ctx,r);
     drawTraps(ctx,r);
+    drawSpecialRooms(ctx,r);
     drawItems(ctx,r);
     drawLoreNotes(ctx,r);
     drawHidingSpots(ctx,r);
@@ -942,6 +1177,31 @@ export default function SomethingHeardYou({onExit}){
         for(let i=0;i<8;i++){ctx.beginPath();ctx.moveTo(Math.cos(i*0.785)*7,Math.sin(i*0.785)*7);ctx.lineTo(Math.cos(i*0.785)*14,Math.sin(i*0.785)*14);ctx.stroke();}
         ctx.fillStyle="rgba(120,110,90,0.5)";ctx.beginPath();ctx.arc(0,0,4,0,Math.PI*2);ctx.fill();
       }
+      ctx.restore();
+    }
+  }
+
+  function drawSpecialRooms(ctx,r){
+    const labels={breaker:"BREAKER",security:"CAMS",supply:"SUPPLY",altar:"ALTAR",archive:"ARCHIVE",sealed:"LOCKED",ritual:"RITUAL"};
+    const colors={breaker:[245,210,80],security:[80,165,255],supply:[95,230,130],altar:[210,45,45],archive:[205,175,95],sealed:[170,170,190],ritual:[210,60,180]};
+    for(const sp of r.specialRooms||[]){
+      if(sp.used) continue;
+      const near=dist(sp,r.player)<60;
+      sp.pulse=(sp.pulse||0)+0.035;
+      const [cr,cg,cb]=colors[sp.role]||[200,200,200];
+      ctx.save();ctx.translate(sp.x,sp.y);
+      ctx.shadowColor=`rgba(${cr},${cg},${cb},${near?0.75:0.35})`;ctx.shadowBlur=near?18:8;
+      ctx.strokeStyle=`rgba(${cr},${cg},${cb},${near?0.82:0.38})`;ctx.lineWidth=2;
+      ctx.fillStyle=`rgba(${cr*0.12},${cg*0.12},${cb*0.12},0.75)`;
+      if(sp.role==="breaker"){ctx.fillRect(-18,-18,36,36);ctx.strokeRect(-18,-18,36,36);ctx.beginPath();ctx.moveTo(-8,0);ctx.lineTo(4,-12);ctx.lineTo(0,-2);ctx.lineTo(10,-2);ctx.lineTo(-3,14);ctx.lineTo(1,3);ctx.lineTo(-8,3);ctx.stroke();}
+      else if(sp.role==="security"){ctx.fillRect(-22,-14,44,28);ctx.strokeRect(-22,-14,44,28);ctx.beginPath();ctx.arc(0,0,8,0,Math.PI*2);ctx.stroke();}
+      else if(sp.role==="supply"){ctx.fillRect(-19,-15,38,30);ctx.strokeRect(-19,-15,38,30);ctx.fillRect(-3,-12,6,24);ctx.fillRect(-14,-3,28,6);}
+      else if(sp.role==="altar"||sp.role==="ritual"){ctx.beginPath();ctx.arc(0,0,20,0,Math.PI*2);ctx.stroke();ctx.beginPath();ctx.moveTo(0,-20);ctx.lineTo(18,10);ctx.lineTo(-18,10);ctx.closePath();ctx.stroke();}
+      else if(sp.role==="archive"){ctx.fillRect(-14,-18,28,36);ctx.strokeRect(-14,-18,28,36);for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(-9,-9+i*6);ctx.lineTo(9,-9+i*6);ctx.stroke();}}
+      else {ctx.fillRect(-18,-20,36,40);ctx.strokeRect(-18,-20,36,40);ctx.beginPath();ctx.arc(8,0,3,0,Math.PI*2);ctx.fill();}
+      ctx.shadowBlur=0;
+      ctx.fillStyle=`rgba(${cr},${cg},${cb},${near?0.95:0.66})`;ctx.font="bold 9px 'Courier New'";ctx.textAlign="center";ctx.fillText(labels[sp.role]||sp.role.toUpperCase(),0,31);
+      if(near){ctx.fillStyle="rgba(240,230,230,0.88)";ctx.fillText("[E] USE",0,44);}
       ctx.restore();
     }
   }
@@ -1276,6 +1536,7 @@ export default function SomethingHeardYou({onExit}){
   // ── lighting ───────────────────────────────────────────────────────────────
   function drawLighting(ctx,r,cam){
     const p=r.player;
+    const blackout = r.event?.type==="blackout" || !r.powerOn;
     const theme=r.theme||FLOOR_THEMES[0];
     const px=p.x-cam.x,py=p.y-cam.y;
     const dk=document.createElement("canvas");
@@ -1314,7 +1575,7 @@ export default function SomethingHeardYou({onExit}){
       const baseR=p.flashlightOff?55:(p.hasLighter?85:130+p.battery*0.8);
       const radius=pitchDark?clamp(baseR-40,30,180):clamp(baseR-(100-p.sanity)*0.18,70,210);
 
-      if(!pitchDark||((!p.flashlightOff||p.hasLighter))){
+      if(!blackout && (!pitchDark||((!p.flashlightOff||p.hasLighter)))){
         const amb=dc.createRadialGradient(px,py,8,px,py,pitchDark?radius*0.7:radius);
         amb.addColorStop(0,"rgba(255,255,255,0.95)");
         amb.addColorStop(0.38,"rgba(255,255,255,0.65)");
@@ -1323,7 +1584,7 @@ export default function SomethingHeardYou({onExit}){
         dc.fillStyle=amb;dc.beginPath();dc.arc(px,py,pitchDark?radius*0.7:radius,0,Math.PI*2);dc.fill();
       }
 
-      if(!p.flashlightOff&&p.battery>0){
+      if(!blackout&&!p.flashlightOff&&p.battery>0){
         const ff=Math.random()<(100-p.sanity)/480?rand(0.58,0.96):1;
         const coneLen=p.hasLighter?clamp(160+p.battery*0.5-(100-p.sanity)*0.5,100,240)*ff:clamp(290+p.battery*1.15-(100-p.sanity)*0.75,170,440)*ff;
         const coneW=p.hasLighter?0.32:0.47;
@@ -1436,9 +1697,10 @@ export default function SomethingHeardYou({onExit}){
     ctx.beginPath();ctx.moveTo(px2+8,py2+25);ctx.lineTo(px2+pw-8,py2+25);ctx.stroke();
 
     const bx=px2+11,bw=pw-60;
-    hBar(ctx,bx,py2+35,bw,10,p.battery/100,"#c8ba32","#4a4218",p.hasLighter?"BAT*":"BAT");
-    hBar(ctx,bx,py2+58,bw,10,p.sanity/100,p.sanity<30?"#c84848":"#3890d8","#142852","MIND");
-    hBar(ctx,bx,py2+81,bw,10,p.stamina/100,"#828282","#2a2a2a","STM");
+    hBar(ctx,bx,py2+35,bw,10,p.battery/(p.maxBattery||100),"#c8ba32","#4a4218",p.hasLighter?"BAT*":"BAT");
+    hBar(ctx,bx,py2+58,bw,10,p.sanity/(p.maxSanity||100),p.sanity<30?"#c84848":"#3890d8","#142852","MIND");
+    hBar(ctx,bx,py2+81,bw,10,p.stamina/(p.maxStamina||100),"#828282","#2a2a2a","STM");
+    hBar(ctx,bx,py2+104,bw,7,(p.noise||0)/100,"#b84646","#361111","NOISE");
 
     // Crouching indicator
     if(p.crouching){
@@ -1446,20 +1708,20 @@ export default function SomethingHeardYou({onExit}){
       ctx.fillText("CROUCH",px2+pw-10,py2+95);
     }
 
-    ctx.fillStyle="rgba(138,138,138,0.7)";ctx.font="9px 'Courier New'";ctx.textAlign="left";ctx.fillText("VITAL",bx,py2+110);
-    for(let i=0;i<3;i++){
+    ctx.fillStyle="rgba(138,138,138,0.7)";ctx.font="9px 'Courier New'";ctx.textAlign="left";ctx.fillText("VITAL",bx,py2+123);
+    for(let i=0;i<(p.maxHp||3);i++){
       ctx.fillStyle=i<p.hp?"rgba(178,20,20,0.98)":"rgba(55,20,20,0.52)";
-      ctx.font="19px monospace";ctx.fillText("♥",bx+i*28,py2+138);
+      ctx.font="18px monospace";ctx.fillText("♥",bx+i*24,py2+149);
     }
 
     // Special items row
     let itemX=bx;
-    if(p.hasLighter){ ctx.fillStyle="rgba(255,180,60,0.8)";ctx.font="10px 'Courier New'";ctx.fillText("🔥LT",itemX,py2+158);itemX+=40;}
-    if(p.flares>0){ ctx.fillStyle="rgba(240,100,50,0.8)";ctx.font="10px 'Courier New'";ctx.fillText(`[Q]×${p.flares}FLR`,itemX,py2+158);itemX+=55;}
+    if(p.hasLighter){ ctx.fillStyle="rgba(255,180,60,0.8)";ctx.font="10px 'Courier New'";ctx.fillText("🔥LT",itemX,py2+168);itemX+=40;}
+    if(p.flares>0){ ctx.fillStyle="rgba(240,100,50,0.8)";ctx.font="10px 'Courier New'";ctx.fillText(`[Q]×${p.flares}FLR`,itemX,py2+168);itemX+=55;}
     if(p.hasCamera){
       const camPct=Math.round(p.cameraCharge);
       ctx.fillStyle=p.cameraCharge>=30?"rgba(120,170,220,0.8)":"rgba(120,120,120,0.5)";
-      ctx.font="10px 'Courier New'";ctx.fillText(`[C]CAM ${camPct}%`,itemX,py2+158);
+      ctx.font="10px 'Courier New'";ctx.fillText(`[C]CAM ${camPct}%`,itemX,py2+168);
     }
 
     if(p.hidden){ctx.fillStyle="rgba(105,135,225,0.88)";ctx.font="bold 9px 'Courier New'";ctx.textAlign="center";ctx.fillText("⬛ CONCEALED",px2+pw/2,py2+ph+16);}
@@ -1483,9 +1745,26 @@ export default function SomethingHeardYou({onExit}){
     // Lore counter
     const loreCollected=r.lores.filter(l=>l.collected).length;
     ctx.fillStyle="rgba(178,148,80,0.65)";ctx.font="9px 'Courier New'";
-    ctx.fillText(`DOCS: ${loreCollected}/${LORE_COUNT}`,CANVAS_W-26,72);
+    ctx.fillText(`DOCS: ${loreCollected}/${LORE_COUNT}  SHARDS: ${p.scraps||0}`,CANVAS_W-26,72);
+
+    if(r.event){
+      const ew=260,eh=34,ex=CANVAS_W/2-ew/2,ey=14;
+      ctx.fillStyle="rgba(30,0,0,0.78)";rrect(ctx,ex,ey,ew,eh,4);ctx.fill();
+      ctx.strokeStyle="rgba(230,55,55,0.45)";rrect(ctx,ex,ey,ew,eh,4);ctx.stroke();
+      ctx.textAlign="center";ctx.fillStyle="rgba(255,115,115,0.95)";ctx.font="bold 11px 'Courier New'";
+      ctx.fillText(`${r.event.name} — ${Math.ceil(r.event.timer/1000)}s`,CANVAS_W/2,ey+22);
+    }
 
     drawObjectiveCompass(ctx,r,obj,objDist);
+
+    if(r.securityPing>0){
+      const sx=CANVAS_W-125,sy=96,scale=0.035;
+      ctx.fillStyle="rgba(0,0,0,0.52)";rrect(ctx,sx-44,sy-38,88,76,4);ctx.fill();
+      ctx.strokeStyle="rgba(80,165,255,0.32)";rrect(ctx,sx-44,sy-38,88,76,4);ctx.stroke();
+      ctx.fillStyle="rgba(80,165,255,0.85)";ctx.font="8px 'Courier New'";ctx.textAlign="center";ctx.fillText("SECURITY",sx,sy-25);
+      ctx.fillStyle="rgba(90,220,120,0.9)";ctx.beginPath();ctx.arc(sx+(p.x-WORLD_W/2)*scale,sy+(p.y-WORLD_H/2)*scale,3,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle="rgba(255,60,60,0.95)";ctx.beginPath();ctx.arc(sx+(r.monster.x-WORLD_W/2)*scale,sy+(r.monster.y-WORLD_H/2)*scale,4,0,Math.PI*2);ctx.fill();
+    }
 
     // Monster name when chasing
     if(r.monster.mode==="chase"||r.finalPhase){
@@ -1543,19 +1822,33 @@ export default function SomethingHeardYou({onExit}){
     }
 
     if(r.floorComplete&&!r.won){
-      ctx.save();ctx.fillStyle="rgba(0,0,0,0.84)";ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+      ctx.save();ctx.fillStyle="rgba(0,0,0,0.88)";ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
       ctx.textAlign="center";
       ctx.shadowColor="rgba(55,200,90,0.6)";ctx.shadowBlur=30;
-      ctx.fillStyle="rgba(90,230,130,0.98)";ctx.font="bold 44px 'Courier New'";
-      ctx.fillText(`FLOOR ${r.floorNum} CLEARED`,CANVAS_W/2,CANVAS_H/2-34);ctx.shadowBlur=0;
-      const nextTheme=FLOOR_THEMES[r.floorNum]||FLOOR_THEMES[2];
-      ctx.fillStyle="rgba(148,195,162,0.75)";ctx.font="14px 'Courier New'";
-      ctx.fillText(`Entering: ${nextTheme.name}`,CANVAS_W/2,CANVAS_H/2+14);
-      ctx.fillStyle="rgba(200,180,120,0.6)";ctx.font="12px 'Courier New'";
-      ctx.fillText(`Next threat: ${nextTheme.monsterName} — ${nextTheme.monsterDesc}`,CANVAS_W/2,CANVAS_H/2+36);
-      const dots=".".repeat(Math.floor(r.time/400)%4);
-      ctx.fillStyle="rgba(100,180,130,0.5)";ctx.font="12px 'Courier New'";
-      ctx.fillText(`Preparing floor ${r.floorNum+1}${dots}`,CANVAS_W/2,CANVAS_H/2+60);
+      ctx.fillStyle="rgba(90,230,130,0.98)";ctx.font="bold 42px 'Courier New'";
+      ctx.fillText(`FLOOR ${r.floorNum} CLEARED`,CANVAS_W/2,116);ctx.shadowBlur=0;
+      const nextTheme=FLOOR_THEMES[r.floorNum]||FLOOR_THEMES[FLOOR_THEMES.length-1];
+      ctx.fillStyle="rgba(180,205,188,0.76)";ctx.font="13px 'Courier New'";
+      ctx.fillText(`Next: ${nextTheme.name} — ${nextTheme.monsterName}: ${nextTheme.monsterDesc}`,CANVAS_W/2,146);
+      ctx.fillStyle="rgba(178,148,80,0.86)";ctx.font="bold 12px 'Courier New'";
+      ctx.fillText(`Cursed shards: ${r.player.scraps||0}. Choose one permanent upgrade.`,CANVAS_W/2,180);
+      const opts=r.upgradeOptions||[];
+      for(let i=0;i<opts.length;i++){
+        const up=opts[i], x=CANVAS_W/2-330+i*220, y=226;
+        ctx.fillStyle="rgba(16,12,18,0.92)";rrect(ctx,x,y,200,150,8);ctx.fill();
+        ctx.strokeStyle="rgba(190,70,70,0.42)";ctx.lineWidth=1.2;rrect(ctx,x,y,200,150,8);ctx.stroke();
+        ctx.fillStyle="rgba(230,85,85,0.95)";ctx.font="bold 13px 'Courier New'";ctx.fillText(`[${i+1}] ${up.name}`,x+100,y+32);
+        ctx.fillStyle="rgba(210,190,190,0.78)";ctx.font="11px 'Courier New'";
+        const words=up.desc.split(" "); let line="", yy=y+66;
+        for(const w of words){
+          if((line+w).length>24){ctx.fillText(line,x+100,yy);yy+=18;line=w+" ";}
+          else line+=w+" ";
+        }
+        if(line) ctx.fillText(line,x+100,yy);
+        ctx.fillStyle="rgba(145,120,120,0.7)";ctx.font="10px 'Courier New'";ctx.fillText(`Level ${(r.player.upgrades?.[up.key]||0)+1}/${up.max}`,x+100,y+128);
+      }
+      ctx.fillStyle="rgba(160,130,130,0.64)";ctx.font="11px 'Courier New'";
+      ctx.fillText("Press 1, 2, or 3 to go deeper.",CANVAS_W/2,420);
       ctx.restore();
     }
 
@@ -1597,11 +1890,11 @@ export default function SomethingHeardYou({onExit}){
         ctx.shadowColor="rgba(178,20,20,0.58)";ctx.shadowBlur=32;ctx.fillStyle="rgba(222,82,82,0.99)";
         ctx.font="bold 38px 'Courier New'";ctx.fillText("SOMETHING HEARD YOU",cx2,cy2-72);ctx.shadowBlur=0;
         ctx.fillStyle="rgba(172,150,150,0.76)";ctx.font="13px 'Courier New'";
-        ctx.fillText("3 floors. 6 fragments each. One monster — different on every floor.",cx2,cy2-30);
+        ctx.fillText("5 floors. 6 fragments each. Noise, rooms, events, upgrades, and monsters that change rules.",cx2,cy2-30);
         ctx.fillText("WASD move  ·  Mouse aim  ·  Shift sprint  ·  Ctrl crouch  ·  E interact",cx2,cy2-8);
-        ctx.fillText("F flashlight  ·  Space hide  ·  Q throw flare  ·  C camera flash",cx2,cy2+14);
+        ctx.fillText("F flashlight  ·  Space hide  ·  Q throw flare  ·  C camera flash  ·  1/2/3 upgrade",cx2,cy2+14);
         ctx.fillStyle="rgba(178,148,80,0.65)";ctx.font="12px 'Courier New'";
-        ctx.fillText("Collect lore notes for the story. Traps start on floor 2. Each floor has unique hazards.",cx2,cy2+38);
+        ctx.fillText("Special rooms are optional risk/reward. Relics no longer trigger pickup jump scares.",cx2,cy2+38);
         const p2=(Math.sin(Date.now()*0.003)*0.3)+0.7;
         ctx.fillStyle=`rgba(192,60,60,${p2})`;ctx.font="bold 15px 'Courier New'";ctx.fillText("[ CLICK OR PRESS START ]",cx2,cy2+80);
       } else if(r.dead){
@@ -1614,7 +1907,7 @@ export default function SomethingHeardYou({onExit}){
       } else if(r.won){
         ctx.shadowColor="rgba(52,178,72,0.58)";ctx.shadowBlur=32;ctx.fillStyle="rgba(90,222,132,0.99)";
         ctx.font="bold 48px 'Courier New'";ctx.fillText("YOU ESCAPED",cx2,cy2-42);ctx.shadowBlur=0;
-        ctx.fillStyle="rgba(145,192,158,0.76)";ctx.font="14px 'Courier New'";ctx.fillText("All 3 floors cleared. They're still in there.",cx2,cy2+2);
+        ctx.fillStyle="rgba(145,192,158,0.76)";ctx.font="14px 'Courier New'";ctx.fillText("All 5 floors cleared. They're still in there.",cx2,cy2+2);
         const totalLore=[...Array(3)].reduce((a,_,i)=>a,0);
         ctx.fillStyle="rgba(178,148,80,0.65)";ctx.font="12px 'Courier New'";ctx.fillText("Waiting for the next one.",cx2,cy2+22);
         ctx.fillStyle="rgba(85,165,108,0.82)";ctx.font="bold 13px 'Courier New'";ctx.fillText("[ PLAY AGAIN ]",cx2,cy2+68);
@@ -1629,6 +1922,7 @@ export default function SomethingHeardYou({onExit}){
       const key=e.key.toLowerCase();
       keysRef.current[key]=true;
       if(["w","a","s","d"," ","shift","e","f","q","c","control"].includes(key)) e.preventDefault();
+      if(["1","2","3"].includes(key)){ applyUpgradeChoice(Number(key)-1); return; }
       if(key==="f"){const r=runRef.current;if(!r||r.dead||r.won)return;if(!r.player.hasLighter){r.player.flashlightOff=!r.player.flashlightOff;r.message=r.player.flashlightOff?"Flashlight off.":"Flashlight on.";}}
       if(key==="e") interact();
       if(key==="q") throwFlare();
@@ -1672,7 +1966,7 @@ export default function SomethingHeardYou({onExit}){
           <div>
             <p className="shy-kicker">◈ {theme.name} — Signal Detected — Floor {run.floorNum}/{MAX_FLOORS} ◈</p>
             <h1>Something Heard You</h1>
-            <p>Three floors. Three monsters. One way out — if you're quiet enough to find it.</p>
+            <p>Five floors. Five rule sets. One way out — if you're quiet enough to earn it.</p>
           </div>
           <div className="shy-actions">
             <button onClick={started?restart:()=>setStarted(true)}>{started?"Restart":"Start Run"}</button>
@@ -1685,21 +1979,21 @@ export default function SomethingHeardYou({onExit}){
           <div className="shy-controls">
             <span>WASD · move</span><span>Mouse · aim</span><span>Shift · sprint</span>
             <span>Ctrl · crouch</span><span>E · interact</span><span>F · flashlight</span>
-            <span>Space · hide</span><span>Q · flare</span><span>C · camera</span>
+            <span>Space · hide</span><span>Q · flare</span><span>C · camera</span><span>1/2/3 · upgrade</span>
           </div>
         </div>
         <div className="shy-notes">
           <div>
-            <h3>Three Unique Floors</h3>
-            <p>Asylum → Morgue → Sewers. Each floor has a distinct monster with different AI. The Crawler stalks. The Watcher teleports if you stand still. The Mimic fakes noise pulses to confuse you.</p>
+            <h3>Five Unique Floors</h3>
+            <p>Asylum → Morgue → Sewers → Hotel → Listening Room. Each floor changes the monster rules, random events, lighting, and how dangerous sound becomes.</p>
           </div>
           <div>
             <h3>New Mechanics</h3>
-            <p>Crouch (Ctrl) to move silently. Find flares to lure the monster away. Use the camera flash to stun it. Bear traps, tripwires, and broken glass appear on floors 2 and 3.</p>
+            <p>Special rooms now add risk/reward choices: breaker rooms, security terminals, cursed altars, archives, supplies, sealed offices, and ritual rooms.</p>
           </div>
           <div>
-            <h3>Sanity & Lore</h3>
-            <p>Your mind deteriorates in the dark or near the monster — controls can invert at very low sanity. Collect document pages scattered through each floor to uncover what happened here.</p>
+            <h3>Roguelike Progression</h3>
+            <p>Clear floors to choose permanent upgrades. Random events like Blackout, Blood Hunt, Lockdown, Whisper Storm, and Listening Hour keep runs from feeling repetitive.</p>
           </div>
         </div>
       </div>

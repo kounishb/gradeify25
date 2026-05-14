@@ -53,6 +53,7 @@
 
 .shy-controls { position:relative; z-index:1; display:flex; justify-content:center; flex-wrap:wrap; gap:8px; padding:12px 4px 2px; }
 .shy-controls span { font-family:var(--mono); font-size:11px; color:rgba(200,170,170,.64); background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); padding:5px 10px; border-radius:3px; letter-spacing:.04em; }
+.shy-controls span:last-child { color:rgba(245,190,110,.82); border-color:rgba(245,190,110,.16); }
 
 .shy-notes { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:14px; }
 .shy-notes>div { position:relative; background:rgba(255,255,255,.026); border:1px solid rgba(165,50,50,.2); border-radius:6px; padding:16px 18px; overflow:hidden; }
