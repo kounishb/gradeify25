@@ -5,8 +5,8 @@ import "../../styles/FlashcardDash.css";
 const LANE_POSITIONS = [-2.9, 0, 2.9];
 
 const START_SPEED = 0.125;
-const MAX_SPEED = 0.74;
-const SPEED_GAIN = 0.00031;
+const MAX_SPEED = 1.08;
+const SPEED_GAIN = 0.00043;
 const LANE_SWITCH_SNAP = 0.42;
 const GRAVITY = 0.027;
 const JUMP_POWER = 0.46;
@@ -21,12 +21,15 @@ const TILE_LENGTH = 11;
 const TILE_COUNT = 20;
 const PLAYER_Z = 4.4;
 const SPAWN_Z = -62;
-const PLATFORM_TOP_Y = 1.52;
-const PLATFORM_LENGTH = 13.8;
-const RAMP_LENGTH = 5.8;
-const PLATFORM_CHAIN_GAP = 2.45;
+const PLATFORM_TOP_Y = 1.92;
+const PLATFORM_LENGTH = 18.5;
+const RAMP_LENGTH = 6.8;
+const PLATFORM_CHAIN_GAP = 1.75;
 const SAFE_LANE_GAP = 28;
 const POWERUP_TYPES = ["magnet", "shield", "multiplier", "sneakers", "hoverboard", "jetpack"];
+const ZONE_SEGMENT_SPAN = 95;
+const ZONE_DURATION_MS = 30000;
+const START_PLATFORM_GRACE_MS = 900;
 
 const SCHOOL_ZONES = [
   { id: "hall", name: "Main Hall", fog: 0xdff4ff, floorA: 0xd9e3f0, floorB: 0xcbd8e8, wall: 0xaed8f4, ceiling: 0xf8fbff, stripe: 0xf59e0b, accent: 0x2563eb },
@@ -37,7 +40,7 @@ const SCHOOL_ZONES = [
 ];
 
 function zoneForIndex(index) {
-  return SCHOOL_ZONES[Math.floor(index / 7) % SCHOOL_ZONES.length];
+  return SCHOOL_ZONES[Math.floor(index / ZONE_SEGMENT_SPAN) % SCHOOL_ZONES.length];
 }
 
 function applyMaterialColor(mesh, color) {
@@ -348,8 +351,27 @@ function buildHallway(scene) {
 }
 
 function recycleHallway(hallway) {
-  for (const segment of hallway.segments) {
-    if (segment.position.z > 18) segment.position.z -= TILE_COUNT * TILE_LENGTH;
+  for (let i = 0; i < hallway.segments.length; i += 1) {
+    const segment = hallway.segments[i];
+    if (segment.position.z > 18) {
+      const nextZ = segment.position.z - TILE_COUNT * TILE_LENGTH;
+      const nextZoneIndex = (segment.userData.zoneIndex ?? i) + TILE_COUNT;
+      const nextZone = zoneForIndex(nextZoneIndex);
+
+      // Rebuild recycled tiles only when their theme chunk changes. This keeps each
+      // school setting on screen for a long stretch instead of flashing every few seconds.
+      if (segment.userData.zone !== nextZone.id) {
+        const replacement = buildHallSegment(nextZoneIndex);
+        replacement.position.z = nextZ;
+        hallway.group.remove(segment);
+        disposeObject(segment);
+        hallway.group.add(replacement);
+        hallway.segments[i] = replacement;
+      } else {
+        segment.position.z = nextZ;
+        segment.userData.zoneIndex = nextZoneIndex;
+      }
+    }
   }
 }
 
@@ -583,42 +605,42 @@ function skinObstacleForZone(mesh, zone, subtype) {
 function buildStudyShuttle3D(length = PLATFORM_LENGTH) {
   const g = new THREE.Group();
 
-  const base = makeBox(2.05, 0.55, length, 0x2563eb, { shininess: 80 });
-  base.position.y = 0.62;
+  const base = makeBox(2.72, 0.75, length, 0x2563eb, { shininess: 80 });
+  base.position.y = 0.82;
   g.add(base);
 
-  const top = makeBox(2.15, 0.2, length, 0xf8fafc, { shininess: 90 });
+  const top = makeBox(2.88, 0.24, length, 0xf8fafc, { shininess: 90 });
   top.position.y = PLATFORM_TOP_Y;
   g.add(top);
 
-  const railL = makeBox(0.12, 0.42, length - 0.5, 0xf59e0b, { emissive: 0x271300, shininess: 80 });
-  railL.position.set(-1.08, 1.8, 0);
-  const railR = makeBox(0.12, 0.42, length - 0.5, 0xf59e0b, { emissive: 0x271300, shininess: 80 });
-  railR.position.set(1.08, 1.8, 0);
+  const railL = makeBox(0.16, 0.58, length - 0.5, 0xf59e0b, { emissive: 0x271300, shininess: 80 });
+  railL.position.set(-1.46, PLATFORM_TOP_Y + 0.34, 0);
+  const railR = makeBox(0.16, 0.58, length - 0.5, 0xf59e0b, { emissive: 0x271300, shininess: 80 });
+  railR.position.set(1.46, PLATFORM_TOP_Y + 0.34, 0);
   g.add(railL, railR);
 
   for (let i = -1; i <= 1; i += 1) {
     const bookStack = makeBox(0.62, 0.42, 0.85, i === 0 ? 0xef4444 : 0x22c55e, { shininess: 70 });
-    bookStack.position.set(i * 0.52, 1.86, -2.4 + i * 1.2);
+    bookStack.position.set(i * 0.62, PLATFORM_TOP_Y + 0.46, -2.4 + i * 1.2);
     g.add(bookStack);
 
     const bookStripe = makeBox(0.64, 0.04, 0.87, 0xffffff, { transparent: true, opacity: 0.45 });
-    bookStripe.position.set(i * 0.52, 2.06, -2.4 + i * 1.2);
+    bookStripe.position.set(i * 0.62, PLATFORM_TOP_Y + 0.66, -2.4 + i * 1.2);
     g.add(bookStripe);
   }
 
   [-3.5, -1.25, 1.25, 3.5].forEach((z) => {
     const wheelL = makeCylinder(0.24, 0.24, 0.16, 18, 0x111827);
     wheelL.rotation.z = Math.PI / 2;
-    wheelL.position.set(-1.12, 0.24, z);
+    wheelL.position.set(-1.42, 0.28, z);
     const wheelR = makeCylinder(0.24, 0.24, 0.16, 18, 0x111827);
     wheelR.rotation.z = Math.PI / 2;
-    wheelR.position.set(1.12, 0.24, z);
+    wheelR.position.set(1.42, 0.28, z);
     g.add(wheelL, wheelR);
   });
 
   const label = makeBox(1.35, 0.32, 0.05, 0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.08 });
-  label.position.set(0, 0.78, -length / 2 - 0.035);
+  label.position.set(0, 1.02, -length / 2 - 0.035);
   g.add(label);
 
   g.userData = { kind: "platform", subtype: "study-shuttle", length, topY: PLATFORM_TOP_Y + 0.12 };
@@ -643,18 +665,18 @@ function buildCoin3D() {
 function buildRamp3D() {
   const g = new THREE.Group();
 
-  const ramp = makeBox(2.18, 0.18, RAMP_LENGTH, 0xf8fafc, { shininess: 90 });
+  const ramp = makeBox(2.85, 0.2, RAMP_LENGTH, 0xf8fafc, { shininess: 90 });
   ramp.position.y = 0.12;
   ramp.rotation.x = 0.24;
   g.add(ramp);
 
   const stripeL = makeBox(0.14, 0.06, RAMP_LENGTH - 0.35, 0xf59e0b, { emissive: 0x271300, shininess: 80 });
-  stripeL.position.set(-0.86, 0.31, 0);
+  stripeL.position.set(-1.12, 0.31, 0);
   stripeL.rotation.x = 0.24;
   g.add(stripeL);
 
   const stripeR = makeBox(0.14, 0.06, RAMP_LENGTH - 0.35, 0xf59e0b, { emissive: 0x271300, shininess: 80 });
-  stripeR.position.set(0.86, 0.31, 0);
+  stripeR.position.set(1.12, 0.31, 0);
   stripeR.rotation.x = 0.24;
   g.add(stripeR);
 
@@ -852,7 +874,7 @@ export default function FlashcardDash({ studySet, onExit }) {
       spawnObs: 0,
       spawnCoin: 34,
       spawnCard: 0,
-      spawnPlatform: 120,
+      spawnPlatform: 260,
       spawnPowerup: 260,
       lastObstacleZByLane: [-999, -999, -999],
       platformAccessLane: null,
@@ -860,6 +882,8 @@ export default function FlashcardDash({ studySet, onExit }) {
       onPlatformLane: null,
       platformJumpGraceUntil: 0,
       currentZoneName: "Main Hall",
+      currentZoneIndex: 0,
+      nextZoneChangeAt: performance.now() + ZONE_DURATION_MS,
       magnetUntil: 0,
       shieldUntil: 0,
       multiplierUntil: 0,
@@ -900,14 +924,14 @@ export default function FlashcardDash({ studySet, onExit }) {
     });
   }
 
-  function spawnObstacle(scene, pool, difficulty = 0) {
+  function spawnObstacle(scene, pool, difficulty = 0, activeZone = SCHOOL_ZONES[0]) {
     const builders = [buildCone3D, buildBackpack3D, buildBarrier3D, buildLockerObstacle3D];
     const z = SPAWN_Z - Math.random() * 4;
     const possibleLanes = [0, 1, 2].filter((lane) => !laneBlockedNear(pool, lane, z, SAFE_LANE_GAP));
     if (!possibleLanes.length) return;
 
     const lane = choice(possibleLanes);
-    const zone = zoneForIndex(Math.floor(distRef.current / 120));
+    const zone = activeZone;
     const mesh = choice(builders)();
     skinObstacleForZone(mesh, zone, mesh.userData.subtype);
     mesh.position.set(LANE_POSITIONS[lane], 0, z);
@@ -971,10 +995,10 @@ export default function FlashcardDash({ studySet, onExit }) {
     let lane = choice(possibleLanes);
     let currentZ = z;
     const chainRoll = Math.random();
-    const chainCount = chainRoll < 0.38 ? 1 : chainRoll < 0.76 ? 2 : chainRoll < 0.93 ? 3 : 4;
+    const chainCount = chainRoll < 0.22 ? 1 : chainRoll < 0.58 ? 2 : chainRoll < 0.86 ? 3 : 4 + Math.floor(Math.random() * 2);
 
     for (let i = 0; i < chainCount; i += 1) {
-      const length = PLATFORM_LENGTH + Math.random() * 5.5 + difficulty * 5.5;
+      const length = PLATFORM_LENGTH + Math.random() * 8 + difficulty * 7.5;
       if (i > 0) {
         const hopOptions = [lane, lane - 1, lane + 1].filter((l) => l >= 0 && l <= 2 && !laneBlockedNear(pool, l, currentZ, 18));
         if (!hopOptions.length) break;
@@ -1068,7 +1092,15 @@ export default function FlashcardDash({ studySet, onExit }) {
           gs.jetpackUntil > now ? "🚀 Jetpack" : null,
         ].filter(Boolean));
 
-        const visualZone = zoneForIndex(Math.floor(distRef.current / 120));
+        if (!gs.nextZoneChangeAt) gs.nextZoneChangeAt = now + ZONE_DURATION_MS;
+        if (now >= gs.nextZoneChangeAt) {
+          let nextZoneIndex = Math.floor(Math.random() * SCHOOL_ZONES.length);
+          if (nextZoneIndex === gs.currentZoneIndex) nextZoneIndex = (nextZoneIndex + 1) % SCHOOL_ZONES.length;
+          gs.currentZoneIndex = nextZoneIndex;
+          gs.nextZoneChangeAt = now + ZONE_DURATION_MS + Math.random() * 7000;
+        }
+
+        const visualZone = SCHOOL_ZONES[gs.currentZoneIndex || 0];
         if (gs.currentZoneName !== visualZone.name) {
           gs.currentZoneName = visualZone.name;
           scene.fog.color.setHex(visualZone.fog);
@@ -1085,13 +1117,13 @@ export default function FlashcardDash({ studySet, onExit }) {
         camera.position.x += (three.cameraLean - camera.position.x) * 0.09 * delta;
 
         gs.cameraBob = Math.sin(gs.runPhase * 0.5) * 0.04;
-        const targetCamY = 3.55 + gs.cameraBob + speedRatio * 0.18 + Math.min(gs.playerY, 2.6) * 0.18;
-        const targetCamZ = 10.9 - speedRatio * 0.55;
+        const targetCamY = 3.95 + gs.cameraBob + speedRatio * 0.08 + Math.min(gs.playerY, 2.9) * 0.12;
+        const targetCamZ = 12.1 - speedRatio * 0.35;
         camera.position.y += (targetCamY - camera.position.y) * 0.09 * delta;
         camera.position.z += (targetCamZ - camera.position.z) * 0.09 * delta;
-        camera.fov += (70 + speedRatio * 5 - camera.fov) * 0.045 * delta;
+        camera.fov += (72 + speedRatio * 6 - camera.fov) * 0.045 * delta;
         camera.updateProjectionMatrix();
-        camera.lookAt(gs.playerX * 0.18, 1.35 + Math.min(gs.playerY, 2.4) * 0.22, -10 - speedRatio * 3.1);
+        camera.lookAt(gs.playerX * 0.18, 1.08 + Math.min(gs.playerY, 2.8) * 0.16, -11 - speedRatio * 3.4);
 
         for (const segment of hallway.segments) segment.position.z += scrollStep;
         recycleHallway(hallway);
@@ -1251,7 +1283,7 @@ export default function FlashcardDash({ studySet, onExit }) {
         const obsThresh = Math.max(25, 92 - speedRatio * 57);
         const coinThresh = Math.max(38, 76 - speedRatio * 24);
         const cardThresh = Math.max(152, 250 - speedRatio * 70);
-        const platformThresh = Math.max(130, 295 - speedRatio * 125);
+        const platformThresh = Math.max(105, 250 - speedRatio * 110);
         const powerupThresh = Math.max(300, 510 - speedRatio * 135);
 
         if (gs.spawnPlatform > platformThresh) {
@@ -1266,7 +1298,7 @@ export default function FlashcardDash({ studySet, onExit }) {
 
         if (gs.spawnObs > obsThresh) {
           gs.spawnObs = 0;
-          spawnObstacle(scene, itemPool, speedRatio);
+          spawnObstacle(scene, itemPool, speedRatio, SCHOOL_ZONES[gs.currentZoneIndex || 0]);
         }
 
         if (gs.spawnCoin > coinThresh) {
@@ -1434,14 +1466,23 @@ export default function FlashcardDash({ studySet, onExit }) {
     return () => cancelAnimationFrame(animFrameRef.current);
   }, [studySet]);
 
-  function startGame() {
+  function startGame(event) {
+    if (event?.preventDefault) event.preventDefault();
+    if (event?.stopPropagation) event.stopPropagation();
+    try {
     const three = threeRef.current;
     const gs = gameStateRef.current;
     if (!three || !gs) return;
 
     for (const item of three.itemPool) {
-      three.scene.remove(item.mesh);
-      disposeObject(item.mesh);
+      // Do not dispose here: Vite/React StrictMode can reuse the scene during quick
+      // restarts and disposing active geometries can hard-crash the WebGL context.
+      // Removed meshes are cleaned up by the unmount cleanup instead.
+      try {
+        three.scene.remove(item.mesh);
+      } catch (err) {
+        console.warn("FlashcardDash cleanup skipped one item", err);
+      }
     }
     three.itemPool.length = 0;
 
@@ -1454,7 +1495,7 @@ export default function FlashcardDash({ studySet, onExit }) {
       spawnObs: 0,
       spawnCoin: 34,
       spawnCard: 0,
-      spawnPlatform: 120,
+      spawnPlatform: 260,
       spawnPowerup: 260,
       lastObstacleZByLane: [-999, -999, -999],
       platformAccessLane: null,
@@ -1462,6 +1503,8 @@ export default function FlashcardDash({ studySet, onExit }) {
       onPlatformLane: null,
       platformJumpGraceUntil: 0,
       currentZoneName: "Main Hall",
+      currentZoneIndex: 0,
+      nextZoneChangeAt: performance.now() + ZONE_DURATION_MS,
       magnetUntil: 0,
       shieldUntil: 0,
       multiplierUntil: 0,
@@ -1484,10 +1527,10 @@ export default function FlashcardDash({ studySet, onExit }) {
     three.player.scale.set(1, 1, 1);
     three.player.rotation.set(0, Math.PI, 0);
     three.cameraLean = 0;
-    three.camera.position.set(0, 3.55, 10.9);
-    three.camera.fov = 70;
+    three.camera.position.set(0, 3.95, 12.1);
+    three.camera.fov = 72;
     three.camera.updateProjectionMatrix();
-    three.camera.lookAt(0, 1.35, -9);
+    three.camera.lookAt(0, 1.08, -11);
 
     heartRef.current = START_HEARTS;
     scoreRef.current = 0;
@@ -1510,6 +1553,12 @@ export default function FlashcardDash({ studySet, onExit }) {
     setZoneName("Main Hall");
     setPhase("running");
     phaseRef.current = "running";
+    } catch (err) {
+      console.error("FlashcardDash start failed", err);
+      // Fall back instead of letting the browser reload the whole Gradeify page.
+      setPhase("idle");
+      phaseRef.current = "idle";
+    }
   }
 
   const moveLeft = useCallback(() => {
@@ -1670,14 +1719,14 @@ export default function FlashcardDash({ studySet, onExit }) {
 
         <div className="fd-header-btns">
           {onExit && (
-            <button className="fd-btn-secondary" onClick={onExit}>
+            <button type="button" className="fd-btn-secondary" onClick={onExit}>
               Back
             </button>
           )}
-          <button className="fd-btn-primary" onClick={startGame}>
+          <button type="button" className="fd-btn-primary" onClick={startGame}>
             {phase === "gameover" || phase === "idle" ? "Start Run" : "Restart"}
           </button>
-          <button className="fd-btn-secondary" onClick={togglePause} disabled={phase === "idle" || phase === "gameover" || phase === "question"}>
+          <button type="button" className="fd-btn-secondary" onClick={togglePause} disabled={phase === "idle" || phase === "gameover" || phase === "question"}>
             {phase === "running" ? "Pause" : "Resume"}
           </button>
         </div>
@@ -1734,7 +1783,7 @@ export default function FlashcardDash({ studySet, onExit }) {
                 <div className="fd-key-row"><kbd>↑ / Space</kbd><span>Jump / land on shuttles</span></div>
                 <div className="fd-key-row"><kbd>↓ / S</kbd><span>Slide under barriers</span></div>
               </div>
-              <button className="fd-btn-primary" onClick={startGame}>Start Flashcard Dash</button>
+              <button type="button" className="fd-btn-primary" onClick={startGame}>Start Flashcard Dash</button>
             </div>
           </div>
         )}
@@ -1745,7 +1794,7 @@ export default function FlashcardDash({ studySet, onExit }) {
               <p className="fd-eyebrow">Paused</p>
               <h2>Game Paused</h2>
               <p>Press <strong>P</strong> or Resume to keep running.</p>
-              <button className="fd-btn-primary" onClick={togglePause}>Resume</button>
+              <button type="button" className="fd-btn-primary" onClick={togglePause}>Resume</button>
             </div>
           </div>
         )}
@@ -1761,7 +1810,7 @@ export default function FlashcardDash({ studySet, onExit }) {
                 <div><span>Coins</span><strong>{coins}</strong></div>
                 <div><span>Best Streak</span><strong>{bestStreak}🔥</strong></div>
               </div>
-              <button className="fd-btn-primary" onClick={startGame}>Run Again</button>
+              <button type="button" className="fd-btn-primary" onClick={startGame}>Run Again</button>
             </div>
           </div>
         )}
@@ -1769,7 +1818,7 @@ export default function FlashcardDash({ studySet, onExit }) {
         {phase === "question" && activeQuestion && (
           <div className="fd-question-backdrop">
             <div className="fd-question-modal">
-              <button className="fd-q-close" onClick={closeQuestion}>×</button>
+              <button type="button" className="fd-q-close" onClick={closeQuestion}>×</button>
               <p className="fd-eyebrow">Flashcard Checkpoint</p>
               <h2>{activeQuestion.q}</h2>
 
@@ -1781,7 +1830,7 @@ export default function FlashcardDash({ studySet, onExit }) {
                     else if (answerStatus === "wrong") cls += " muted";
                   }
                   return (
-                    <button key={`${opt}-${idx}`} className={cls} onClick={() => answerQuestion(idx)} disabled={!!answerStatus}>
+                    <button type="button" key={`${opt}-${idx}`} className={cls} onClick={() => answerQuestion(idx)} disabled={!!answerStatus}>
                       <span className="opt-letter">{String.fromCharCode(65 + idx)}</span>
                       {opt}
                     </button>
@@ -1793,8 +1842,8 @@ export default function FlashcardDash({ studySet, onExit }) {
               {answerStatus === "wrong" && <div className="fd-answer-fb wrong">Nope! Answer: <strong>{activeQuestion.opts[activeQuestion.correct]}</strong></div>}
 
               <div className="fd-q-actions">
-                <button className="fd-btn-ghost" onClick={closeQuestion}>Back to Run</button>
-                <button className="fd-btn-primary" onClick={closeQuestion} disabled={!answerStatus}>Continue Run</button>
+                <button type="button" className="fd-btn-ghost" onClick={closeQuestion}>Back to Run</button>
+                <button type="button" className="fd-btn-primary" onClick={closeQuestion} disabled={!answerStatus}>Continue Run</button>
               </div>
             </div>
           </div>
@@ -1802,10 +1851,10 @@ export default function FlashcardDash({ studySet, onExit }) {
       </div>
 
       <div className="fd-controls">
-        <button onClick={moveLeft}>← Left</button>
-        <button onClick={doJump}>↑ Jump</button>
-        <button onClick={doSlide}>↓ Slide</button>
-        <button onClick={moveRight}>Right →</button>
+        <button type="button" onClick={moveLeft}>← Left</button>
+        <button type="button" onClick={doJump}>↑ Jump</button>
+        <button type="button" onClick={doSlide}>↓ Slide</button>
+        <button type="button" onClick={moveRight}>Right →</button>
       </div>
     </div>
   );

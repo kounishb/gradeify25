@@ -204,7 +204,7 @@
   position: relative;
   flex: 0 0 auto;
   min-height: 340px;
-  height: clamp(340px, 44vh, 460px);
+  height: clamp(340px, 42vh, 450px);
   border-left: 1px solid var(--border);
   border-right: 1px solid var(--border);
   overflow: hidden;
@@ -675,4 +675,14 @@
   text-transform: uppercase;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   backdrop-filter: blur(10px);
+}
+
+
+/* Final fix: make alerts easier to notice without growing the whole game. */
+.fd-zone-pill {
+  min-width: 118px;
+  text-align: center;
+}
+.fd-power-hud span {
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
 }
