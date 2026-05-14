@@ -1117,14 +1117,14 @@ export default function FlashcardDash({ studySet, onExit }) {
         camera.position.x += (three.cameraLean - camera.position.x) * 0.09 * delta;
 
         gs.cameraBob = Math.sin(gs.runPhase * 0.5) * 0.04;
-        const targetCamY = 3.95 + gs.cameraBob + speedRatio * 0.08 + Math.min(gs.playerY, 2.9) * 0.12;
-        const targetCamZ = 12.1 - speedRatio * 0.35;
+        const targetCamY = 4.2 + gs.cameraBob + speedRatio * 0.55;
+        const targetCamZ = 8.4 - speedRatio * 0.9;
         camera.position.y += (targetCamY - camera.position.y) * 0.09 * delta;
         camera.position.z += (targetCamZ - camera.position.z) * 0.09 * delta;
         camera.fov += (72 + speedRatio * 6 - camera.fov) * 0.045 * delta;
         camera.updateProjectionMatrix();
-        camera.lookAt(gs.playerX * 0.18, 1.08 + Math.min(gs.playerY, 2.8) * 0.16, -11 - speedRatio * 3.4);
-
+        camera.lookAt(gs.playerX * 0.18, 1.95, -16 - speedRatio * 6);
+        
         for (const segment of hallway.segments) segment.position.z += scrollStep;
         recycleHallway(hallway);
 
