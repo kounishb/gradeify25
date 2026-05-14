@@ -1850,14 +1850,27 @@ export default function SomethingHeardYou({onExit}){
     ctx.fillStyle="rgba(178,148,80,0.65)";ctx.font="9px 'Courier New'";
     ctx.fillText(`DOCS: ${loreCollected}/${LORE_COUNT}  SHARDS: ${p.scraps||0}`,CANVAS_W-26,72);
 
-    const guideX=CANVAS_W-252, guideY=88;
-    ctx.textAlign="left";ctx.fillStyle="rgba(3,2,8,0.72)";rrect(ctx,guideX,guideY,234,76,5);ctx.fill();
-    ctx.strokeStyle="rgba(165,50,50,0.24)";rrect(ctx,guideX,guideY,234,76,5);ctx.stroke();
-    ctx.fillStyle="rgba(210,185,185,0.75)";ctx.font="9px 'Courier New'";
-    ctx.fillText("ITEMS: red relic = objective, yellow = battery",guideX+9,guideY+18);
-    ctx.fillText("blue camera/stun = defense, orange = flare",guideX+9,guideY+34);
-    ctx.fillText("E picks up/uses rooms · R fires stun pistol",guideX+9,guideY+50);
-    ctx.fillText("Brownout only dims briefly now — it should not instakill.",guideX+9,guideY+66);
+    const guideX = 18;
+const guideY = CANVAS_H - 96;
+const guideW = 270;
+const guideH = 76;
+
+ctx.textAlign = "left";
+ctx.fillStyle = "rgba(3,2,8,0.72)";
+rrect(ctx, guideX, guideY, guideW, guideH, 5);
+ctx.fill();
+
+ctx.strokeStyle = "rgba(165,50,50,0.24)";
+rrect(ctx, guideX, guideY, guideW, guideH, 5);
+ctx.stroke();
+
+ctx.fillStyle = "rgba(210,185,185,0.75)";
+ctx.font = "9px 'Courier New'";
+
+ctx.fillText("ITEMS:", guideX + 10, guideY + 17);
+ctx.fillText("Red = relic/objective", guideX + 10, guideY + 32);
+ctx.fillText("Yellow = battery  Orange = flare", guideX + 10, guideY + 47);
+ctx.fillText("Blue = camera / stun pistol / ammo", guideX + 10, guideY + 62);
 
     if(r.event){
       const ew=260,eh=34,ex=CANVAS_W/2-ew/2,ey=14;
