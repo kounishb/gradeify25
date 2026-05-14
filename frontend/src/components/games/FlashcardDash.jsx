@@ -4,23 +4,28 @@ import "../../styles/FlashcardDash.css";
 
 const LANE_POSITIONS = [-2.9, 0, 2.9];
 
-const START_SPEED = 0.105;
-const MAX_SPEED = 0.38;
-const SPEED_GAIN = 0.00018;
-const LANE_SWITCH_SNAP = 0.34;
-const GRAVITY = 0.026;
-const JUMP_POWER = 0.45;
-const SLIDE_DURATION = 720;
+const START_SPEED = 0.115;
+const MAX_SPEED = 0.46;
+const SPEED_GAIN = 0.00024;
+const LANE_SWITCH_SNAP = 0.42;
+const GRAVITY = 0.027;
+const JUMP_POWER = 0.46;
+const SUPER_JUMP_POWER = 0.58;
+const SLIDE_DURATION = 520;
 
 const HALL_WIDTH = 11.5;
-const HALL_HEIGHT = 7.4;
+const HALL_HEIGHT = 7.9;
 const START_HEARTS = 3;
 
 const TILE_LENGTH = 11;
 const TILE_COUNT = 20;
 const PLAYER_Z = 4.4;
-const SPAWN_Z = -58;
+const SPAWN_Z = -62;
 const PLATFORM_TOP_Y = 1.52;
+const PLATFORM_LENGTH = 10.6;
+const RAMP_LENGTH = 5.6;
+const SAFE_LANE_GAP = 18;
+const POWERUP_TYPES = ["magnet", "shield", "multiplier", "sneakers"];
 
 const QUESTION_BANK = [
   {
@@ -451,7 +456,7 @@ function buildBarrier3D() {
 
 function buildStudyShuttle3D() {
   const g = new THREE.Group();
-  const length = 8.8;
+  const length = PLATFORM_LENGTH;
 
   const base = makeBox(2.05, 0.55, length, 0x2563eb, { shininess: 80 });
   base.position.y = 0.62;
@@ -509,6 +514,88 @@ function buildCoin3D() {
   return g;
 }
 
+
+function buildRamp3D() {
+  const g = new THREE.Group();
+
+  const ramp = makeBox(2.18, 0.18, RAMP_LENGTH, 0xf8fafc, { shininess: 90 });
+  ramp.position.y = 0.12;
+  ramp.rotation.x = -0.24;
+  g.add(ramp);
+
+  const stripeL = makeBox(0.14, 0.06, RAMP_LENGTH - 0.35, 0xf59e0b, { emissive: 0x271300, shininess: 80 });
+  stripeL.position.set(-0.86, 0.31, 0);
+  stripeL.rotation.x = -0.24;
+  g.add(stripeL);
+
+  const stripeR = makeBox(0.14, 0.06, RAMP_LENGTH - 0.35, 0xf59e0b, { emissive: 0x271300, shininess: 80 });
+  stripeR.position.set(0.86, 0.31, 0);
+  stripeR.rotation.x = -0.24;
+  g.add(stripeR);
+
+  const arrow = makeCapsule(0.055, 0.72, 0x2563eb, { emissive: 0x061a55, shininess: 80 });
+  arrow.rotation.x = Math.PI / 2;
+  arrow.position.set(0, 0.42, 0.6);
+  g.add(arrow);
+
+  g.userData = { kind: "ramp", subtype: "study-ramp", length: RAMP_LENGTH, topY: PLATFORM_TOP_Y + 0.12 };
+  return g;
+}
+
+function buildPowerup3D(type) {
+  const g = new THREE.Group();
+  const colors = {
+    magnet: 0xef4444,
+    shield: 0x38bdf8,
+    multiplier: 0xa855f7,
+    sneakers: 0x22c55e,
+  };
+
+  const orb = makeSphere(0.42, colors[type] || 0xfacc15, {
+    emissive: colors[type] || 0xfacc15,
+    emissiveIntensity: 0.35,
+    shininess: 100,
+    transparent: true,
+    opacity: 0.92,
+  });
+  g.add(orb);
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.58, 0.045, 12, 42),
+    makeMaterial(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.22, shininess: 100 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  g.add(ring);
+
+  if (type === "magnet") {
+    const left = makeCapsule(0.07, 0.55, 0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.12 });
+    left.position.set(-0.18, 0, -0.02);
+    left.rotation.z = 0.2;
+    const right = makeCapsule(0.07, 0.55, 0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.12 });
+    right.position.set(0.18, 0, -0.02);
+    right.rotation.z = -0.2;
+    g.add(left, right);
+  } else if (type === "shield") {
+    const badge = makeBox(0.52, 0.62, 0.08, 0xffffff, { transparent: true, opacity: 0.82, shininess: 90 });
+    badge.position.z = -0.04;
+    g.add(badge);
+  } else if (type === "multiplier") {
+    const xbar1 = makeBox(0.12, 0.72, 0.08, 0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.1 });
+    xbar1.rotation.z = 0.75;
+    const xbar2 = makeBox(0.12, 0.72, 0.08, 0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.1 });
+    xbar2.rotation.z = -0.75;
+    g.add(xbar1, xbar2);
+  } else {
+    const shoe = makeCapsule(0.12, 0.58, 0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.12 });
+    shoe.rotation.z = Math.PI / 2;
+    shoe.position.set(0, -0.02, -0.04);
+    g.add(shoe);
+  }
+
+  g.userData = { kind: "powerup", subtype: type, floatPhase: Math.random() * Math.PI * 2 };
+  return g;
+}
+
 function buildFlashcard3D(question) {
   const g = new THREE.Group();
   const card = makeBox(1.05, 0.72, 0.06, 0x0d2a5e, { emissive: 0x071e48, emissiveIntensity: 0.35, shininess: 85 });
@@ -545,6 +632,8 @@ export default function FlashcardDash({ studySet, onExit }) {
   const [answerStatus, setAnswerStatus] = useState(null);
   const [comboText, setComboText] = useState(null);
   const [speedHud, setSpeedHud] = useState(Math.round(START_SPEED * 1000));
+  const [powerHud, setPowerHud] = useState([]);
+  const [powerToast, setPowerToast] = useState(null);
 
   const phaseRef = useRef("idle");
   const heartRef = useRef(START_HEARTS);
@@ -619,6 +708,15 @@ export default function FlashcardDash({ studySet, onExit }) {
       spawnCoin: 34,
       spawnCard: 0,
       spawnPlatform: 120,
+      spawnPowerup: 260,
+      lastObstacleZByLane: [-999, -999, -999],
+      platformAccessLane: null,
+      platformAccessUntil: 0,
+      onPlatformLane: null,
+      magnetUntil: 0,
+      shieldUntil: 0,
+      multiplierUntil: 0,
+      sneakersUntil: 0,
       targetLane: 1,
       playerX: LANE_POSITIONS[1],
       jumping: false,
@@ -645,39 +743,83 @@ export default function FlashcardDash({ studySet, onExit }) {
     pool.push({ mesh, hit: false, ...data });
   }
 
+  function laneBlockedNear(pool, lane, z, minDist = SAFE_LANE_GAP) {
+    return pool.some((item) => {
+      if (!["obstacle", "platform", "ramp"].includes(item.kind)) return false;
+      if (item.lane !== lane) return false;
+      return Math.abs(item.mesh.position.z - z) < minDist;
+    });
+  }
+
   function spawnObstacle(scene, pool, difficulty = 0) {
-    const lane = rndLane();
     const builders = [buildCone3D, buildBackpack3D, buildBarrier3D, buildLockerObstacle3D];
+    const z = SPAWN_Z - Math.random() * 4;
+    const possibleLanes = [0, 1, 2].filter((lane) => !laneBlockedNear(pool, lane, z, SAFE_LANE_GAP));
+    if (!possibleLanes.length) return;
+
+    const lane = choice(possibleLanes);
     const mesh = choice(builders)();
-    mesh.position.set(LANE_POSITIONS[lane], 0, SPAWN_Z - Math.random() * 6);
+    mesh.position.set(LANE_POSITIONS[lane], 0, z);
     addPoolItem(scene, pool, mesh, { kind: "obstacle", subtype: mesh.userData.subtype, baseY: 0, lane });
 
-    if (Math.random() < 0.24 + difficulty * 0.28) {
-      const lane2 = choice([0, 1, 2].filter((l) => l !== lane));
-      const mesh2 = choice(builders)();
-      mesh2.position.set(LANE_POSITIONS[lane2], 0, SPAWN_Z - 8 - Math.random() * 5);
-      addPoolItem(scene, pool, mesh2, { kind: "obstacle", subtype: mesh2.userData.subtype, baseY: 0, lane: lane2 });
+    // Only add a second obstacle if it still leaves one lane fully open. This prevents impossible patterns.
+    const canDouble = Math.random() < 0.18 + difficulty * 0.2 && mesh.userData.subtype !== "barrier";
+    if (canDouble) {
+      const secondOptions = possibleLanes.filter((l) => l !== lane);
+      if (secondOptions.length >= 1) {
+        const lane2 = choice(secondOptions);
+        const mesh2 = choice([buildCone3D, buildBackpack3D, buildLockerObstacle3D])();
+        mesh2.position.set(LANE_POSITIONS[lane2], 0, z - 2.2);
+        addPoolItem(scene, pool, mesh2, { kind: "obstacle", subtype: mesh2.userData.subtype, baseY: 0, lane: lane2 });
+      }
     }
   }
 
   function spawnPlatform(scene, pool) {
-    const lane = rndLane();
-    const mesh = buildStudyShuttle3D();
-    mesh.position.set(LANE_POSITIONS[lane], 0, SPAWN_Z - Math.random() * 8);
-    addPoolItem(scene, pool, mesh, {
+    const z = SPAWN_Z - Math.random() * 4;
+    const possibleLanes = [0, 1, 2].filter((lane) => !laneBlockedNear(pool, lane, z, 24));
+    if (!possibleLanes.length) return;
+
+    const lane = choice(possibleLanes);
+    const platform = buildStudyShuttle3D();
+    platform.position.set(LANE_POSITIONS[lane], 0, z);
+    addPoolItem(scene, pool, platform, {
       kind: "platform",
       subtype: "study-shuttle",
       lane,
       baseY: 0,
-      length: mesh.userData.length,
-      topY: mesh.userData.topY,
+      length: platform.userData.length,
+      topY: platform.userData.topY,
     });
 
-    for (let i = 0; i < 4; i += 1) {
+    const ramp = buildRamp3D();
+    ramp.position.set(LANE_POSITIONS[lane], 0, z + platform.userData.length / 2 + RAMP_LENGTH / 2 - 0.2);
+    addPoolItem(scene, pool, ramp, {
+      kind: "ramp",
+      subtype: "study-ramp",
+      lane,
+      baseY: 0,
+      length: RAMP_LENGTH,
+      topY: platform.userData.topY,
+      platformZ: z,
+    });
+
+    for (let i = 0; i < 6; i += 1) {
       const coin = buildCoin3D();
-      coin.position.set(LANE_POSITIONS[lane], mesh.userData.topY + 0.75, mesh.position.z - 2.8 + i * 1.45);
-      addPoolItem(scene, pool, coin, { kind: "coin", lane, baseY: mesh.userData.topY + 0.75, ridesPlatform: true });
+      coin.position.set(LANE_POSITIONS[lane], platform.userData.topY + 0.75, z + 2.8 - i * 1.45);
+      addPoolItem(scene, pool, coin, { kind: "coin", lane, baseY: platform.userData.topY + 0.75, ridesPlatform: true });
     }
+  }
+
+  function spawnPowerup(scene, pool) {
+    const z = SPAWN_Z - Math.random() * 5;
+    const possibleLanes = [0, 1, 2].filter((lane) => !laneBlockedNear(pool, lane, z, 13));
+    if (!possibleLanes.length) return;
+    const lane = choice(possibleLanes);
+    const type = choice(POWERUP_TYPES);
+    const mesh = buildPowerup3D(type);
+    mesh.position.set(LANE_POSITIONS[lane], 1.55, z);
+    addPoolItem(scene, pool, mesh, { kind: "powerup", subtype: type, baseY: 1.55, lane });
   }
 
   function spawnCoins(scene, pool) {
@@ -736,11 +878,17 @@ export default function FlashcardDash({ studySet, onExit }) {
         const speedRatio = Math.min(1, (gs.speed - START_SPEED) / (MAX_SPEED - START_SPEED));
         const scrollStep = gs.speed * delta;
 
-        scoreRef.current += Math.floor(scrollStep * 36);
+        scoreRef.current += Math.floor(scrollStep * 36 * (gs.multiplierUntil > now ? 2 : 1));
         distRef.current += scrollStep * 5.6;
         setScore(scoreRef.current);
         setDistance(distRef.current);
         setSpeedHud(Math.round(gs.speed * 1000));
+        setPowerHud([
+          gs.magnetUntil > now ? "🧲 Magnet" : null,
+          gs.shieldUntil > now ? "🛡 Shield" : null,
+          gs.multiplierUntil > now ? "2× Score" : null,
+          gs.sneakersUntil > now ? "👟 Jump" : null,
+        ].filter(Boolean));
 
         const targetX = LANE_POSITIONS[gs.targetLane];
         gs.playerX += (targetX - gs.playerX) * LANE_SWITCH_SNAP * delta;
@@ -765,6 +913,7 @@ export default function FlashcardDash({ studySet, onExit }) {
         const toRemove = [];
         let supportY = 0;
         let standingOnPlatform = false;
+        let onRamp = false;
         const playerWorldZ = player.position.z;
         const playerWorldX = player.position.x;
 
@@ -782,19 +931,47 @@ export default function FlashcardDash({ studySet, onExit }) {
             item.mesh.rotation.y = Math.sin(now * 0.001 + fp) * 0.22;
           }
 
+          if (item.kind === "powerup") {
+            const fp = item.mesh.userData.floatPhase || 0;
+            item.mesh.position.y = item.baseY + Math.sin(now * 0.002 + fp) * 0.18;
+            item.mesh.rotation.y += 0.055 * delta;
+          }
+
           if (item.kind === "obstacle") {
             item.mesh.rotation.y += Math.sin(now * 0.001 + item.mesh.position.z) * 0.0015;
           }
 
+          if (item.kind === "ramp") {
+            const halfLen = (item.length || RAMP_LENGTH) / 2;
+            const localZ = playerWorldZ - item.mesh.position.z;
+            const dxRamp = Math.abs(item.mesh.position.x - playerWorldX);
+
+            if (dxRamp < 1.15 && localZ <= halfLen && localZ >= -halfLen) {
+              const t = Math.min(1, Math.max(0, (halfLen - localZ) / (item.length || RAMP_LENGTH)));
+              const rampY = t * item.topY;
+              if (gs.playerY <= rampY + 0.45 && gs.jumpVel <= 0.1) {
+                supportY = Math.max(supportY, rampY);
+                onRamp = true;
+                if (t > 0.72) {
+                  gs.platformAccessLane = item.lane;
+                  gs.platformAccessUntil = now + 2600;
+                }
+              }
+            }
+          }
+
           if (item.kind === "platform") {
             item.mesh.position.y = Math.sin(now * 0.002 + item.mesh.position.z) * 0.018;
-            const halfLen = (item.length || 8.8) / 2;
+            const halfLen = (item.length || PLATFORM_LENGTH) / 2;
             const dzPlatform = Math.abs(item.mesh.position.z - playerWorldZ);
             const dxPlatform = Math.abs(item.mesh.position.x - playerWorldX);
+            const hasRampAccess = gs.platformAccessLane === item.lane && now < gs.platformAccessUntil;
+            const stayingOnPlatform = gs.onPlatformLane === item.lane && gs.playerY >= item.topY - 0.55;
 
-            if (dxPlatform < 1.15 && dzPlatform < halfLen && gs.playerY >= item.topY - 0.5 && gs.jumpVel <= 0.08) {
+            if (dxPlatform < 1.15 && dzPlatform < halfLen && (hasRampAccess || stayingOnPlatform) && gs.jumpVel <= 0.12) {
               supportY = Math.max(supportY, item.topY);
               standingOnPlatform = true;
+              gs.onPlatformLane = item.lane;
             }
           }
 
@@ -816,6 +993,7 @@ export default function FlashcardDash({ studySet, onExit }) {
         }
 
         gs.onPlatform = standingOnPlatform;
+        if (!standingOnPlatform && !onRamp) gs.onPlatformLane = null;
         player.position.y = gs.playerY;
 
         if (gs.sliding) {
@@ -865,15 +1043,22 @@ export default function FlashcardDash({ studySet, onExit }) {
         gs.spawnCoin += delta;
         gs.spawnCard += delta;
         gs.spawnPlatform += delta;
+        gs.spawnPowerup += delta;
 
         const obsThresh = Math.max(34, 92 - speedRatio * 52);
         const coinThresh = Math.max(44, 76 - speedRatio * 20);
         const cardThresh = Math.max(168, 250 - speedRatio * 55);
-        const platformThresh = Math.max(210, 360 - speedRatio * 80);
+        const platformThresh = Math.max(170, 310 - speedRatio * 90);
+        const powerupThresh = Math.max(340, 520 - speedRatio * 110);
 
         if (gs.spawnPlatform > platformThresh) {
           gs.spawnPlatform = 0;
           spawnPlatform(scene, itemPool);
+        }
+
+        if (gs.spawnPowerup > powerupThresh) {
+          gs.spawnPowerup = 0;
+          spawnPowerup(scene, itemPool);
         }
 
         if (gs.spawnObs > obsThresh) {
@@ -897,12 +1082,65 @@ export default function FlashcardDash({ studySet, onExit }) {
           const dz = Math.abs(item.mesh.position.z - playerWorldZ);
           const dx = Math.abs(item.mesh.position.x - playerWorldX);
 
-          if (item.kind === "coin" && dz < 1.15 && dx < 0.9 && Math.abs(item.mesh.position.y - (gs.playerY + 1.35)) < 1.2) {
+          if (item.kind === "coin" && gs.magnetUntil > now && dz < 8.5) {
+            item.mesh.position.x += (playerWorldX - item.mesh.position.x) * 0.2 * delta;
+            item.mesh.position.y += (gs.playerY + 1.25 - item.mesh.position.y) * 0.18 * delta;
+          }
+
+          if (item.kind === "coin" && dz < 1.2 && dx < (gs.magnetUntil > now ? 1.45 : 0.9) && Math.abs(item.mesh.position.y - (gs.playerY + 1.35)) < 1.35) {
             coinsRef.current += 1;
-            scoreRef.current += 24;
+            scoreRef.current += gs.multiplierUntil > now ? 48 : 24;
             setCoins(coinsRef.current);
             setScore(scoreRef.current);
             toRemove.push(item);
+            continue;
+          }
+
+          if (item.kind === "powerup" && dz < 1.25 && dx < 0.95 && Math.abs(item.mesh.position.y - (gs.playerY + 1.35)) < 1.5) {
+            if (item.subtype === "magnet") {
+              gs.magnetUntil = now + 9500;
+              setPowerToast("Magnet: coins pull toward you 🧲");
+            } else if (item.subtype === "shield") {
+              gs.shieldUntil = now + 12000;
+              setPowerToast("Shield: block one crash 🛡");
+            } else if (item.subtype === "multiplier") {
+              gs.multiplierUntil = now + 9000;
+              setPowerToast("2× score activated ✨");
+            } else if (item.subtype === "sneakers") {
+              gs.sneakersUntil = now + 10500;
+              setPowerToast("Super jump sneakers 👟");
+            }
+            setTimeout(() => setPowerToast(null), 1600);
+            scoreRef.current += 80;
+            setScore(scoreRef.current);
+            toRemove.push(item);
+            continue;
+          }
+
+          if (item.kind === "platform" && !item.hit && dz < (item.length || PLATFORM_LENGTH) / 2 && dx < 1.08 && !gs.onPlatform && gs.playerY < item.topY - 0.15) {
+            if (gs.shieldUntil > now) {
+              gs.shieldUntil = 0;
+              gs.shakeDur = 10;
+              toRemove.push(item);
+              continue;
+            }
+            item.hit = true;
+            if (gs.shieldUntil > now) {
+              gs.shieldUntil = 0;
+              gs.shakeDur = 10;
+              toRemove.push(item);
+              continue;
+            }
+            const nextHearts = Math.max(0, heartRef.current - 1);
+            heartRef.current = nextHearts;
+            streakRef.current = 0;
+            setHearts(nextHearts);
+            setStreak(0);
+            gs.shakeDur = 18;
+            if (nextHearts <= 0) {
+              setPhase("gameover");
+              phaseRef.current = "gameover";
+            }
             continue;
           }
 
@@ -923,6 +1161,12 @@ export default function FlashcardDash({ studySet, onExit }) {
             if (clearedCone || clearedBackpack || clearedBarrier || clearedLocker) continue;
 
             item.hit = true;
+            if (gs.shieldUntil > now) {
+              gs.shieldUntil = 0;
+              gs.shakeDur = 10;
+              toRemove.push(item);
+              continue;
+            }
             const nextHearts = Math.max(0, heartRef.current - 1);
             heartRef.current = nextHearts;
             streakRef.current = 0;
@@ -982,6 +1226,15 @@ export default function FlashcardDash({ studySet, onExit }) {
       spawnCoin: 34,
       spawnCard: 0,
       spawnPlatform: 120,
+      spawnPowerup: 260,
+      lastObstacleZByLane: [-999, -999, -999],
+      platformAccessLane: null,
+      platformAccessUntil: 0,
+      onPlatformLane: null,
+      magnetUntil: 0,
+      shieldUntil: 0,
+      multiplierUntil: 0,
+      sneakersUntil: 0,
       targetLane: 1,
       playerX: LANE_POSITIONS[1],
       jumping: false,
@@ -1019,6 +1272,8 @@ export default function FlashcardDash({ studySet, onExit }) {
     setAnswerStatus(null);
     setComboText(null);
     setSpeedHud(Math.round(START_SPEED * 1000));
+    setPowerHud([]);
+    setPowerToast(null);
     setPhase("running");
     phaseRef.current = "running";
   }
@@ -1037,9 +1292,10 @@ export default function FlashcardDash({ studySet, onExit }) {
 
   const doJump = useCallback(() => {
     const gs = gameStateRef.current;
-    if (!gs || phaseRef.current !== "running" || gs.jumping || gs.sliding) return;
+    if (!gs || phaseRef.current !== "running" || gs.jumping) return;
+    if (gs.sliding) gs.sliding = false;
     gs.jumping = true;
-    gs.jumpVel = JUMP_POWER;
+    gs.jumpVel = gs.sneakersUntil > performance.now() ? SUPER_JUMP_POWER : JUMP_POWER;
   }, []);
 
   const doSlide = useCallback(() => {
@@ -1135,7 +1391,7 @@ export default function FlashcardDash({ studySet, onExit }) {
           <p className="fd-eyebrow">Gradeify Games</p>
           <h1>Flashcard Dash</h1>
           <p className="fd-subtitle">
-            Sprint through the hallway, jump on Study Shuttles, slide under barriers, dodge lockers, and answer flashcards.
+            Sprint through the hallway, use ramps onto Study Shuttles, grab powerups, slide under barriers, and answer flashcards.
           </p>
         </div>
 
@@ -1183,6 +1439,12 @@ export default function FlashcardDash({ studySet, onExit }) {
 
       <div className="fd-game-wrap" ref={mountRef}>
         {comboText && <div className="fd-combo">{comboText}</div>}
+        {powerToast && <div className="fd-power-toast">{powerToast}</div>}
+        {powerHud.length > 0 && (
+          <div className="fd-power-hud">
+            {powerHud.map((p) => <span key={p}>{p}</span>)}
+          </div>
+        )}
 
         {phase === "idle" && (
           <div className="fd-overlay">
@@ -1190,7 +1452,7 @@ export default function FlashcardDash({ studySet, onExit }) {
               <p className="fd-eyebrow">Ready?</p>
               <h2>Flashcard Dash</h2>
               <p>
-                Jump over cones and backpacks, slide under red barriers, dodge lockers, and jump onto blue Study Shuttles for coins above the floor.
+                Jump over cones and backpacks, slide under red barriers, dodge lockers, use ramps to get onto Study Shuttles, and grab powerups like magnet, shield, 2× score, and super jump.
               </p>
               <div className="fd-key-grid">
                 <div className="fd-key-row"><kbd>← / A</kbd><span>Move left</span></div>
