@@ -668,7 +668,7 @@ export default function SomethingHeardYou({onExit}){
           r.message="ALL FRAGMENTS. EXIT IS OPEN — RUN!";
           r.glitch=Math.max(r.glitch,0.55);
         } else {
-          r.message=`${ITEM_COUNT-r.collected} fragments remain. The relic made noise, but no cheap jump scare.`;
+          r.message=`${ITEM_COUNT-r.collected} fragments remain. The relic made noise.`;
         }
         return;
       }
