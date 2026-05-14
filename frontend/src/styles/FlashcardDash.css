@@ -29,15 +29,7 @@
   color: var(--text);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  overflow-x: hidden;
-}
-
-.fd-header,
-.fd-stats,
-.fd-game-wrap,
-.fd-controls {
-  width: min(100%, 1180px);
+  overflow: visible;
 }
 
 .fd-header {
@@ -155,7 +147,6 @@
   flex-shrink: 0;
 }
 
-
 .fd-stat {
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(59, 130, 246, 0.16);
@@ -203,10 +194,8 @@
 .fd-game-wrap {
   position: relative;
   flex: 0 0 auto;
-  min-height: 340px;
-  height: clamp(340px, 44vh, 460px);
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
+  min-height: 390px;
+  height: clamp(400px, 58vh, 560px);
   overflow: hidden;
   background:
     radial-gradient(circle at center, rgba(14, 165, 233, 0.18), transparent 42%),
@@ -568,8 +557,8 @@
   }
 
   .fd-game-wrap {
-    min-height: 390px;
-    height: min(52vh, 470px);
+    min-height: 520px;
+    height: calc(100vh - 255px);
   }
 
   .fd-controls {
@@ -590,8 +579,8 @@
   }
 
   .fd-game-wrap {
-    min-height: 360px;
-    height: min(50vh, 430px);
+    min-height: 470px;
+    height: calc(100vh - 330px);
   }
 
   .fd-controls {
