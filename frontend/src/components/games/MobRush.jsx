@@ -62,8 +62,33 @@ function inHitZone(objY, worldY, window = HIT_WORLD_WINDOW) {
 }
 
 function roundRect(ctx, x, y, w, h, r) {
-  const rr = Math.min(r, w / 2, h / 2);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  if (!Number.isFinite(w) || !Number.isFinite(h)) return;
+  if (!Number.isFinite(r)) r = 0;
+
+  // Normalize negative width/height so arcTo never receives a negative radius.
+  if (w < 0) {
+    x += w;
+    w = Math.abs(w);
+  }
+
+  if (h < 0) {
+    y += h;
+    h = Math.abs(h);
+  }
+
+  if (w <= 0 || h <= 0) return;
+
+  const rr = Math.max(0, Math.min(Math.abs(r), w / 2, h / 2));
+
   ctx.beginPath();
+
+  if (rr === 0) {
+    ctx.rect(x, y, w, h);
+    ctx.closePath();
+    return;
+  }
+
   ctx.moveTo(x + rr, y);
   ctx.arcTo(x + w, y, x + w, y + h, rr);
   ctx.arcTo(x + w, y + h, x, y + h, rr);
@@ -734,6 +759,7 @@ export default function MobRush() {
           if (Math.abs(s.playerX - section.x) < 210) {
             const damage = Math.max(1, Math.floor(s.crowd * 0.65));
             section.hp -= damage;
+            section.hp = Math.max(0, section.hp);
 
             const lost = Math.min(s.crowd - 1, Math.ceil(section.maxHp / 16));
             s.crowd = Math.max(1, s.crowd - lost);
@@ -798,6 +824,7 @@ export default function MobRush() {
             const lost = Math.min(s.crowd - 1, Math.ceil(section.maxHp / 85));
 
             section.hp -= damage;
+            section.hp = Math.max(0, section.hp);
             s.crowd = Math.max(1, s.crowd - lost);
 
             addFloat(`-${damage}`, TRACK_CX, PLAYER_Y - 166, "#ffffff", 34);
