@@ -1,240 +1,353 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import "../../styles/MobRush.css";
 
-/* ─────────────────── CONSTANTS ─────────────────── */
 const CW = 1000;
 const CH = 640;
 
 const TRACK_L = 250;
 const TRACK_R = 750;
-const TRACK_CX = (TRACK_L + TRACK_R) / 2;
-const HORIZON_Y = 120;          // where the road vanishes
-const PLAYER_Y = 530;           // player screen Y (bottom of view)
-const WORLD_LEN = 6200;
-const FINISH_WORLD = 5350;
-const MAX_VIS = 95;
+const TRACK_CX = 500;
 
-/* perspective helpers */
-const persScale = (screenY) => {
-  const t = Math.max(0.01, (screenY - HORIZON_Y) / (PLAYER_Y - HORIZON_Y));
-  return t;
-};
-const persX = (worldX, screenY) => {
-  const t = persScale(screenY);
-  return TRACK_CX + (worldX - TRACK_CX) * t;
-};
-const persW = (w, screenY) => w * persScale(screenY);
+const HORIZON_Y = 118;
+const PLAYER_Y = 530;
 
-/* world-space lane limits */
 const LANE_L = TRACK_L + 45;
 const LANE_R = TRACK_R - 45;
 
+const WORLD_LEN = 6200;
+const FINISH_WORLD = 5520;
+const LOOKAHEAD_WORLD = 1600;
+
+const MAX_VISIBLE_RUNNERS = 100;
+const HIT_WORLD_WINDOW = 48;
+const COIN_HIT_WORLD_WINDOW = 36;
+
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => Math.random() * (b - a) + a;
 
-/* ─────────────────── GATE / LEVEL LOGIC ─────────────────── */
-function fmtGate(g) {
-  return g.type === "add" ? `+${g.value}`
-    : g.type === "sub" ? `-${g.value}`
-    : g.type === "mul" ? `×${g.value}`
-    : `÷${g.value}`;
-}
-function applyGate(n, g) {
-  if (g.type === "add") return n + g.value;
-  if (g.type === "sub") return Math.max(1, n - g.value);
-  if (g.type === "mul") return n * g.value;
-  if (g.type === "div") return Math.max(1, Math.floor(n / g.value));
-  return n;
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
 }
 
-const GATE_PAIRS = [
-  [{ lane: -1, type: "add", value: 12 }, { lane: 1, type: "mul", value: 2 }],
-  [{ lane: -1, type: "sub", value: 8 },  { lane: 1, type: "add", value: 28 }],
-  [{ lane: -1, type: "mul", value: 3 },  { lane: 1, type: "add", value: 35 }],
-  [{ lane: -1, type: "div", value: 2 },  { lane: 1, type: "add", value: 50 }],
-  [{ lane: -1, type: "add", value: 40 }, { lane: 1, type: "mul", value: 2 }],
-  [{ lane: -1, type: "mul", value: 4 },  { lane: 1, type: "sub", value: 25 }],
-];
+function worldToScreenY(objY, worldY) {
+  const dist = objY - worldY;
+
+  if (dist < 0) {
+    return PLAYER_Y + Math.abs(dist) * 0.72;
+  }
+
+  const t = 1 - clamp(dist / LOOKAHEAD_WORLD, 0, 1);
+  const eased = easeOutCubic(t);
+
+  return HORIZON_Y + (PLAYER_Y - HORIZON_Y) * eased;
+}
+
+function perspectiveScale(screenY) {
+  const t = clamp((screenY - HORIZON_Y) / (PLAYER_Y - HORIZON_Y), 0.04, 1.22);
+  return t;
+}
+
+function perspectiveX(worldX, screenY) {
+  const t = perspectiveScale(screenY);
+  return TRACK_CX + (worldX - TRACK_CX) * t;
+}
+
+function perspectiveW(width, screenY) {
+  return width * perspectiveScale(screenY);
+}
+
+function inHitZone(objY, worldY, window = HIT_WORLD_WINDOW) {
+  return Math.abs(objY - worldY) <= window;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+function fmtGate(gate) {
+  if (gate.type === "add") return `+${gate.value}`;
+  if (gate.type === "sub") return `-${gate.value}`;
+  if (gate.type === "mul") return `×${gate.value}`;
+  if (gate.type === "div") return `÷${gate.value}`;
+  return "";
+}
+
+function applyGate(count, gate) {
+  if (gate.type === "add") return count + gate.value;
+  if (gate.type === "sub") return Math.max(1, count - gate.value);
+  if (gate.type === "mul") return count * gate.value;
+  if (gate.type === "div") return Math.max(1, Math.floor(count / gate.value));
+  return count;
+}
 
 function makeLevels() {
   const levels = [];
-  let y = 720;
-  GATE_PAIRS.forEach((pair, i) => {
+
+  const gatePairs = [
+    [{ lane: -1, type: "add", value: 14 }, { lane: 1, type: "mul", value: 2 }],
+    [{ lane: -1, type: "sub", value: 8 }, { lane: 1, type: "add", value: 32 }],
+    [{ lane: -1, type: "mul", value: 3 }, { lane: 1, type: "add", value: 38 }],
+    [{ lane: -1, type: "div", value: 2 }, { lane: 1, type: "add", value: 55 }],
+    [{ lane: -1, type: "add", value: 45 }, { lane: 1, type: "mul", value: 2 }],
+    [{ lane: -1, type: "mul", value: 4 }, { lane: 1, type: "sub", value: 30 }],
+    [{ lane: -1, type: "add", value: 70 }, { lane: 1, type: "mul", value: 2 }],
+  ];
+
+  let y = 760;
+
+  gatePairs.forEach((pair, i) => {
     levels.push({
-      id: `g${i}`, kind: "gates", y,
-      gates: pair.map(g => ({
-        ...g,
-        x: TRACK_CX + g.lane * 135,
-        width: 190, height: 88,
+      id: `gates-${i}`,
+      kind: "gates",
+      y,
+      gates: pair.map((gate) => ({
+        ...gate,
+        x: TRACK_CX + gate.lane * 138,
+        width: 190,
+        height: 92,
         triggered: false,
       })),
     });
-    y += 550;
-    if (i % 2 === 0) {
-      levels.push({ id: `e${i}`, kind: "enemies", y,
-        count: 14 + i * 8, defeated: false,
-        x: TRACK_CX + (i % 3 === 0 ? -60 : 70) });
-      y += 480;
-    } else {
-      levels.push({ id: `o${i}`, kind: "obstacle", y,
+
+    y += 520;
+
+    if (i % 3 === 0) {
+      levels.push({
+        id: `enemies-${i}`,
+        kind: "enemies",
+        y,
+        x: TRACK_CX + (i % 2 === 0 ? -65 : 70),
+        count: 16 + i * 7,
+        defeated: false,
+      });
+      y += 430;
+    } else if (i % 3 === 1) {
+      levels.push({
+        id: `obstacles-${i}`,
+        kind: "obstacle",
+        y,
         blades: [
-          { x: TRACK_CX - 110, radius: 54, hit: false, phase: Math.random() * Math.PI * 2 },
-          { x: TRACK_CX + 110, radius: 54, hit: false, phase: Math.random() * Math.PI * 2 },
-        ]});
-      y += 480;
+          {
+            x: TRACK_CX - 115,
+            radius: 56,
+            hit: false,
+            phase: i * 1.3,
+          },
+          {
+            x: TRACK_CX + 115,
+            radius: 56,
+            hit: false,
+            phase: i * 1.9,
+          },
+        ],
+      });
+      y += 430;
+    } else {
+      levels.push({
+        id: `wall-${i}`,
+        kind: "wall",
+        y,
+        x: TRACK_CX,
+        hp: 42 + i * 16,
+        maxHp: 42 + i * 16,
+        broken: false,
+      });
+      y += 420;
     }
-    levels.push({ id: `c${i}`, kind: "coins", y,
-      coins: Array.from({ length: 12 }, (_, k) => ({
-        x: TRACK_CX + Math.sin(k * 0.8) * 150,
-        yOffset: k * 34,
+
+    levels.push({
+      id: `coins-${i}`,
+      kind: "coins",
+      y,
+      coins: Array.from({ length: 14 }, (_, k) => ({
+        x: TRACK_CX + Math.sin(k * 0.72 + i) * 155,
+        yOffset: k * 42,
         taken: false,
-      }))});
-    y += 420;
+      })),
+    });
+
+    y += 510;
   });
-  levels.push({ id: "boss", kind: "boss", y: FINISH_WORLD,
-    hp: 260, maxHp: 260, defeated: false });
+
+  levels.push({
+    id: "boss",
+    kind: "boss",
+    y: FINISH_WORLD,
+    hp: 340,
+    maxHp: 340,
+    defeated: false,
+  });
+
   return levels;
 }
 
-function spawnParticles(x, y, n, type) {
-  return Array.from({ length: n }, () => ({
-    x, y,
-    vx: rand(-3, 3),
-    vy: rand(-6, -1.5),
-    life: rand(30, 60),
-    maxLife: 60,
+function spawnParticles(x, y, amount, type) {
+  return Array.from({ length: amount }, () => ({
+    x,
+    y,
+    vx: rand(-4.2, 4.2),
+    vy: rand(-7.2, -1.4),
+    life: rand(34, 64),
+    maxLife: 64,
     size: rand(3, 9),
     type,
   }));
 }
 
 function formationPositions(count) {
-  const vis = Math.min(count, MAX_VIS);
-  const out = [];
-  for (let i = 0; i < vis; i++) {
-    const row = Math.floor(i / 9);
-    const col = i % 9;
-    const rowCount = Math.min(9, vis - row * 9);
-    out.push({
-      x: (col - (rowCount - 1) / 2) * 26 + Math.sin(i * 13.1) * 2,
-      y: row * 24,
-      s: 1 - row * 0.014,
+  const visible = Math.min(count, MAX_VISIBLE_RUNNERS);
+  const positions = [];
+
+  for (let i = 0; i < visible; i += 1) {
+    const row = Math.floor(i / 10);
+    const col = i % 10;
+    const rowCount = Math.min(10, visible - row * 10);
+
+    positions.push({
+      x: (col - (rowCount - 1) / 2) * 25 + Math.sin(i * 9.7) * 2.2,
+      y: row * 23,
+      scale: Math.max(0.55, 1 - row * 0.018),
+      phase: i * 0.37,
     });
   }
-  return out;
+
+  return positions;
 }
 
-/* ─────────────────── DRAWING HELPERS ─────────────────── */
-function roundRect(ctx, x, y, w, h, r) {
-  const rc = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rc, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rc);
-  ctx.arcTo(x + w, y + h, x, y + h, rc);
-  ctx.arcTo(x, y + h, x, y, rc);
-  ctx.arcTo(x, y, x + w, y, rc);
-  ctx.closePath();
-}
-
-/* draw a lil runner blob with face */
-function drawRunner(ctx, x, y, scale = 1, hue = 210, runPhase = 0) {
+function drawRunner(ctx, x, y, scale = 1, hue = 210, phase = 0) {
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(scale, scale);
 
-  const bob = Math.sin(runPhase) * 2.5;
+  const bob = Math.sin(phase * 2) * 2.2;
   ctx.translate(0, bob);
 
-  /* shadow */
-  ctx.fillStyle = "rgba(0,0,0,0.18)";
+  ctx.fillStyle = "rgba(0,0,0,0.24)";
   ctx.beginPath();
-  ctx.ellipse(0, 44, 16 * scale, 6 * scale, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 45, 18, 7, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  const c1 = `hsl(${hue},90%,55%)`;
-  const c2 = `hsl(${hue},90%,35%)`;
+  const top = `hsl(${hue}, 95%, 58%)`;
+  const bottom = `hsl(${hue}, 95%, 35%)`;
 
-  /* legs */
-  const lA = Math.sin(runPhase * 2) * 22;
-  const rA = -lA;
-  ctx.strokeStyle = c2;
-  ctx.lineWidth = 9;
+  const legSwing = Math.sin(phase * 2) * 0.55;
   ctx.lineCap = "round";
+  ctx.strokeStyle = bottom;
+  ctx.lineWidth = 8;
 
-  ctx.save();
-  ctx.translate(-6, 28);
-  ctx.rotate((lA * Math.PI) / 180);
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 22); ctx.stroke();
-  ctx.restore();
-
-  ctx.save();
-  ctx.translate(6, 28);
-  ctx.rotate((rA * Math.PI) / 180);
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 22); ctx.stroke();
-  ctx.restore();
-
-  /* arms */
-  const aL = Math.sin(runPhase * 2 + 1.2) * 30;
-  ctx.lineWidth = 7;
-  ctx.save(); ctx.translate(-14, 6); ctx.rotate((aL * Math.PI) / 180);
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-8, 18); ctx.stroke();
-  ctx.restore();
-  ctx.save(); ctx.translate(14, 6); ctx.rotate((-aL * Math.PI) / 180);
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(8, 18); ctx.stroke();
-  ctx.restore();
-
-  /* body */
-  const gBody = ctx.createLinearGradient(-14, -16, 14, 28);
-  gBody.addColorStop(0, c1);
-  gBody.addColorStop(1, c2);
-  ctx.fillStyle = gBody;
   ctx.beginPath();
-  ctx.ellipse(0, 8, 14, 22, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  /* head */
-  const gHead = ctx.createRadialGradient(-4, -22, 3, 0, -18, 16);
-  gHead.addColorStop(0, `hsl(${hue},85%,72%)`);
-  gHead.addColorStop(1, c1);
-  ctx.fillStyle = gHead;
-  ctx.beginPath();
-  ctx.arc(0, -18, 14, 0, Math.PI * 2);
-  ctx.fill();
-
-  /* face */
-  ctx.fillStyle = "rgba(0,0,0,0.7)";
-  ctx.beginPath(); ctx.arc(-5, -20, 2.5, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(5, -20, 2.5, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,0.7)";
-  ctx.lineWidth = 1.8;
-  ctx.beginPath();
-  ctx.arc(0, -15, 5, 0.2, Math.PI - 0.2);
+  ctx.moveTo(-7, 28);
+  ctx.lineTo(-11 - legSwing * 8, 50);
   ctx.stroke();
 
-  /* shine */
-  ctx.fillStyle = "rgba(255,255,255,0.45)";
   ctx.beginPath();
-  ctx.ellipse(-5, -24, 4, 3, -0.5, 0, Math.PI * 2);
+  ctx.moveTo(7, 28);
+  ctx.lineTo(11 + legSwing * 8, 50);
+  ctx.stroke();
+
+  const armSwing = Math.sin(phase * 2 + 1.3) * 0.55;
+  ctx.lineWidth = 7;
+
+  ctx.beginPath();
+  ctx.moveTo(-13, 5);
+  ctx.lineTo(-24 - armSwing * 8, 22);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(13, 5);
+  ctx.lineTo(24 + armSwing * 8, 22);
+  ctx.stroke();
+
+  const bodyGrad = ctx.createLinearGradient(-16, -18, 16, 30);
+  bodyGrad.addColorStop(0, top);
+  bodyGrad.addColorStop(1, bottom);
+
+  ctx.fillStyle = bodyGrad;
+  ctx.beginPath();
+  ctx.ellipse(0, 10, 16, 24, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const headGrad = ctx.createRadialGradient(-5, -25, 3, 0, -18, 17);
+  headGrad.addColorStop(0, `hsl(${hue}, 95%, 76%)`);
+  headGrad.addColorStop(1, top);
+
+  ctx.fillStyle = headGrad;
+  ctx.beginPath();
+  ctx.arc(0, -20, 15, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(0,0,0,0.72)";
+  ctx.beginPath();
+  ctx.arc(-5, -21, 2.4, 0, Math.PI * 2);
+  ctx.arc(5, -21, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(0,0,0,0.68)";
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.arc(0, -16, 5, 0.15, Math.PI - 0.15);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(255,255,255,0.42)";
+  ctx.beginPath();
+  ctx.ellipse(-6, -27, 4, 3, -0.4, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
 }
 
-/* ─────────────────── MAIN COMPONENT ─────────────────── */
+function drawMiniCoin(ctx, x, y, r, text = "$") {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, 0.86);
+
+  const grad = ctx.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.12, 0, 0, r);
+  grad.addColorStop(0, "#fff9aa");
+  grad.addColorStop(0.45, "#ffd43b");
+  grad.addColorStop(1, "#d98b00");
+
+  ctx.shadowColor = "rgba(255,210,40,0.8)";
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(115,70,0,0.72)";
+  ctx.font = `900 ${Math.max(8, r * 0.95)}px Arial`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 0, 1);
+
+  ctx.restore();
+}
+
 export default function MobRush() {
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
   const keysRef = useRef({});
-  const dragRef = useRef({ active: false, startX: 0, baseX: TRACK_CX, lastClientX: 0 });
+  const dragRef = useRef({ active: false, startX: 0, baseTargetX: TRACK_CX });
+  const mountedRef = useRef(true);
+  const timeoutRef = useRef([]);
+  const runIdRef = useRef(0);
 
-  const [uiState, setUiState] = useState("menu");
-  const [tick, setTick] = useState(0);
+  const [, forceRender] = useState(0);
 
   const gs = useRef({
     phase: "menu",
     playerX: TRACK_CX,
-    playerVX: 0,     // smooth velocity
+    targetX: TRACK_CX,
     worldY: 0,
-    speed: 5.2,
+    speed: 6.4,
     crowd: 1,
     coins: 0,
     runCoins: 0,
@@ -244,37 +357,87 @@ export default function MobRush() {
     flash: { r: 0, g: 0, b: 0, a: 0 },
     shake: 0,
     runPhase: 0,
-    bossDmgTimer: 0,
-    upgrades: { startCrowd: 1, income: 1, damage: 1, speed: 1 },
-    stats: { bestCrowd: 1, bestCoins: 0 },
+    bossTimer: 0,
+    combo: 0,
+    upgrades: {
+      startCrowd: 1,
+      income: 1,
+      damage: 1,
+      speed: 1,
+    },
+    stats: {
+      bestCrowd: 1,
+      bestCoins: 0,
+    },
   });
 
-  const sync = useCallback((phase) => {
+  const rerender = () => forceRender((v) => v + 1);
+
+  const clearTimers = () => {
+    timeoutRef.current.forEach((id) => clearTimeout(id));
+    timeoutRef.current = [];
+  };
+
+  const setPhase = useCallback((phase) => {
+    if (!mountedRef.current) return;
     gs.current.phase = phase;
-    setUiState(phase);
+    rerender();
   }, []);
 
-  const bump = () => setTick(t => t + 1);
+  const safeDelayPhase = useCallback(
+    (phase, delay, runId) => {
+      const id = setTimeout(() => {
+        if (!mountedRef.current) return;
+        if (runIdRef.current !== runId) return;
+        setPhase(phase);
+      }, delay);
 
-  const addFloat = (text, x, y, color = "#fff", size = 34) => {
-    gs.current.floatTexts.push({ text, x, y, vy: -1.8, life: 60, maxLife: 60, color, size });
+      timeoutRef.current.push(id);
+    },
+    [setPhase]
+  );
+
+  const addFloat = (text, x, y, color = "#ffffff", size = 34) => {
+    const s = gs.current;
+    s.floatTexts.push({
+      text,
+      x,
+      y,
+      vy: -1.9,
+      life: 62,
+      maxLife: 62,
+      color,
+      size,
+    });
+
+    if (s.floatTexts.length > 40) {
+      s.floatTexts.splice(0, s.floatTexts.length - 40);
+    }
   };
 
-  const addPfx = (x, y, n, type) => {
-    gs.current.particles.push(...spawnParticles(x, y, n, type));
+  const addParticles = (x, y, amount, type) => {
+    const s = gs.current;
+    s.particles.push(...spawnParticles(x, y, amount, type));
+
+    if (s.particles.length > 260) {
+      s.particles.splice(0, s.particles.length - 260);
+    }
   };
 
-  const screenFlash = (r, g, b, a) => {
+  const flash = (r, g, b, a) => {
     gs.current.flash = { r, g, b, a };
   };
 
-  /* ── reset ── */
-  const resetRun = useCallback(() => {
+  const startRun = useCallback(() => {
+    clearTimers();
+    runIdRef.current += 1;
+
     const s = gs.current;
+    s.phase = "playing";
     s.playerX = TRACK_CX;
-    s.playerVX = 0;
+    s.targetX = TRACK_CX;
     s.worldY = 0;
-    s.speed = 5.2 + s.upgrades.speed * 0.18;
+    s.speed = 6.25 + s.upgrades.speed * 0.22;
     s.crowd = Math.max(1, s.upgrades.startCrowd);
     s.runCoins = 0;
     s.levels = makeLevels();
@@ -283,837 +446,933 @@ export default function MobRush() {
     s.flash = { r: 0, g: 0, b: 0, a: 0 };
     s.shake = 0;
     s.runPhase = 0;
-    s.bossDmgTimer = 0;
-    sync("playing");
-  }, [sync]);
+    s.bossTimer = 0;
+    s.combo = 0;
+    rerender();
+  }, []);
 
   const hardReset = useCallback(() => {
+    clearTimers();
+    runIdRef.current += 1;
+
     gs.current = {
       phase: "menu",
-      playerX: TRACK_CX, playerVX: 0,
-      worldY: 0, speed: 5.2,
-      crowd: 1, coins: 0, runCoins: 0,
+      playerX: TRACK_CX,
+      targetX: TRACK_CX,
+      worldY: 0,
+      speed: 6.4,
+      crowd: 1,
+      coins: 0,
+      runCoins: 0,
       levels: makeLevels(),
-      particles: [], floatTexts: [],
+      particles: [],
+      floatTexts: [],
       flash: { r: 0, g: 0, b: 0, a: 0 },
-      shake: 0, runPhase: 0, bossDmgTimer: 0,
-      upgrades: { startCrowd: 1, income: 1, damage: 1, speed: 1 },
-      stats: { bestCrowd: 1, bestCoins: 0 },
+      shake: 0,
+      runPhase: 0,
+      bossTimer: 0,
+      combo: 0,
+      upgrades: {
+        startCrowd: 1,
+        income: 1,
+        damage: 1,
+        speed: 1,
+      },
+      stats: {
+        bestCrowd: 1,
+        bestCoins: 0,
+      },
     };
-    sync("menu");
-    bump();
-  }, [sync]);
+
+    rerender();
+  }, []);
 
   const buyUpgrade = useCallback((key) => {
     const s = gs.current;
-    const lv = s.upgrades[key];
-    const costs = { startCrowd: 45 + lv * 35, income: 60 + lv * 45, damage: 70 + lv * 50, speed: 50 + lv * 40 };
+    const level = s.upgrades[key];
+
+    const costs = {
+      startCrowd: 45 + level * 35,
+      income: 60 + level * 45,
+      damage: 70 + level * 52,
+      speed: 50 + level * 42,
+    };
+
     const cost = costs[key];
+
     if (s.coins < cost) return;
+
     s.coins -= cost;
-    s.upgrades[key]++;
-    bump();
+    s.upgrades[key] += 1;
+    rerender();
   }, []);
 
-  /* ── input ── */
   useEffect(() => {
-    const dn = (e) => {
+    mountedRef.current = true;
+
+    const keyDown = (e) => {
       keysRef.current[e.key.toLowerCase()] = true;
-      if (e.key === " " && gs.current.phase === "menu") resetRun();
+
+      if (e.key === " " && gs.current.phase !== "playing") {
+        e.preventDefault();
+        startRun();
+      }
     };
-    const up = (e) => { keysRef.current[e.key.toLowerCase()] = false; };
-    window.addEventListener("keydown", dn);
-    window.addEventListener("keyup", up);
-    return () => { window.removeEventListener("keydown", dn); window.removeEventListener("keyup", up); };
-  }, [resetRun]);
+
+    const keyUp = (e) => {
+      keysRef.current[e.key.toLowerCase()] = false;
+    };
+
+    window.addEventListener("keydown", keyDown);
+    window.addEventListener("keyup", keyUp);
+
+    return () => {
+      window.removeEventListener("keydown", keyDown);
+      window.removeEventListener("keyup", keyUp);
+    };
+  }, [startRun]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const cx = (clientX) => ((clientX - canvas.getBoundingClientRect().left) / canvas.getBoundingClientRect().width) * CW;
-    const pd = (e) => {
+
+    const getCanvasX = (clientX) => {
+      const rect = canvas.getBoundingClientRect();
+      return ((clientX - rect.left) / rect.width) * CW;
+    };
+
+    const pointerDown = (e) => {
       dragRef.current.active = true;
-      dragRef.current.startX = cx(e.clientX);
-      dragRef.current.baseX = gs.current.playerX;
-      dragRef.current.lastClientX = e.clientX;
+      dragRef.current.startX = getCanvasX(e.clientX);
+      dragRef.current.baseTargetX = gs.current.targetX;
       canvas.setPointerCapture?.(e.pointerId);
     };
-    const pm = (e) => {
+
+    const pointerMove = (e) => {
       if (!dragRef.current.active) return;
-      const nowX = cx(e.clientX);
-      const dx = (nowX - dragRef.current.startX) * 1.15;
-      gs.current.playerX = clamp(dragRef.current.baseX + dx, LANE_L, LANE_R);
-      gs.current.playerVX = (e.clientX - dragRef.current.lastClientX) * 2;
-      dragRef.current.lastClientX = e.clientX;
+
+      const nowX = getCanvasX(e.clientX);
+      const dx = (nowX - dragRef.current.startX) * 1.12;
+
+      gs.current.targetX = clamp(
+        dragRef.current.baseTargetX + dx,
+        LANE_L,
+        LANE_R
+      );
     };
-    const pu = () => { dragRef.current.active = false; };
-    canvas.addEventListener("pointerdown", pd);
-    canvas.addEventListener("pointermove", pm);
-    canvas.addEventListener("pointerup", pu);
-    canvas.addEventListener("pointercancel", pu);
+
+    const pointerUp = (e) => {
+      dragRef.current.active = false;
+      canvas.releasePointerCapture?.(e.pointerId);
+    };
+
+    canvas.addEventListener("pointerdown", pointerDown);
+    canvas.addEventListener("pointermove", pointerMove);
+    canvas.addEventListener("pointerup", pointerUp);
+    canvas.addEventListener("pointercancel", pointerUp);
+
     return () => {
-      canvas.removeEventListener("pointerdown", pd);
-      canvas.removeEventListener("pointermove", pm);
-      canvas.removeEventListener("pointerup", pu);
-      canvas.removeEventListener("pointercancel", pu);
+      canvas.removeEventListener("pointerdown", pointerDown);
+      canvas.removeEventListener("pointermove", pointerMove);
+      canvas.removeEventListener("pointerup", pointerUp);
+      canvas.removeEventListener("pointercancel", pointerUp);
     };
   }, []);
 
-  /* ── game loop ── */
-  useEffect(() => {
-    const ctx = canvasRef.current.getContext("2d");
-    let last = performance.now();
+  const update = useCallback(
+    (dt, now) => {
+      const s = gs.current;
 
-    const loop = (now) => {
-      const dt = Math.min(2.5, (now - last) / 16.67);
-      last = now;
-      update(dt, now);
-      draw(ctx, now);
-      rafRef.current = requestAnimationFrame(loop);
-    };
+      s.particles = s.particles
+        .map((p) => ({
+          ...p,
+          x: p.x + p.vx * dt,
+          y: p.y + p.vy * dt,
+          vy: p.vy + 0.24 * dt,
+          life: p.life - dt,
+        }))
+        .filter((p) => p.life > 0);
 
-    rafRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, []); // eslint-disable-line
+      s.floatTexts = s.floatTexts
+        .map((f) => ({
+          ...f,
+          y: f.y + f.vy * dt,
+          life: f.life - dt,
+        }))
+        .filter((f) => f.life > 0);
 
-  /* ════════════════════ UPDATE ════════════════════ */
-  const update = (dt, now) => {
-    const s = gs.current;
+      s.shake = Math.max(0, s.shake - 0.9 * dt);
+      s.flash.a = Math.max(0, s.flash.a - 0.045 * dt);
 
-    /* particles */
-    s.particles = s.particles
-      .map(p => ({ ...p, x: p.x + p.vx * dt, y: p.y + p.vy * dt, vy: p.vy + 0.22 * dt, life: p.life - dt }))
-      .filter(p => p.life > 0);
+      if (s.phase !== "playing") return;
 
-    s.floatTexts = s.floatTexts
-      .map(f => ({ ...f, y: f.y + f.vy * dt, life: f.life - dt }))
-      .filter(f => f.life > 0);
+      const left = keysRef.current.a || keysRef.current.arrowleft;
+      const right = keysRef.current.d || keysRef.current.arrowright;
 
-    s.shake = Math.max(0, s.shake - 0.9 * dt);
-    s.flash.a = Math.max(0, s.flash.a - 0.04 * dt);
-
-    if (s.phase !== "playing") return;
-
-    /* ── horizontal movement ── */
-    if (!dragRef.current.active) {
-      const kL = keysRef.current["a"] || keysRef.current["arrowleft"];
-      const kR = keysRef.current["d"] || keysRef.current["arrowright"];
-      const acc = 18;
-      if (kL) s.playerVX -= acc * dt;
-      if (kR) s.playerVX += acc * dt;
-      if (!kL && !kR) s.playerVX *= Math.pow(0.75, dt); // friction
-    } else {
-      // drag mode — playerX already set
-    }
-
-    s.playerVX = clamp(s.playerVX, -22, 22);
-    s.playerX = clamp(s.playerX + s.playerVX * dt, LANE_L, LANE_R);
-
-    /* running animation */
-    s.runPhase += s.speed * 0.12 * dt;
-
-    /* ── scroll forward (world moves toward player) ── */
-    if (s.worldY < FINISH_WORLD - 80) {
-      s.worldY += s.speed * dt;
-    } else {
-      s.worldY += 2.0 * dt;
-    }
-
-    /* ── level interactions ── */
-    for (const sec of s.levels) {
-      /* screenY = PLAYER_Y - dist, dist = sec.y - worldY. Ahead objects appear above player. */
-      const screenY = PLAYER_Y - (sec.y - s.worldY);
-
-      if (screenY > CH + 200 || screenY < HORIZON_Y - 200) continue;
-
-      /* hit zone: when object is at/near player */
-      const hitZone = Math.abs(screenY - PLAYER_Y) < 55;
-
-      if (sec.kind === "gates") {
-        for (const gate of sec.gates) {
-          if (gate.triggered) continue;
-          if (!hitZone) continue;
-          const gScreenX = persX(gate.x, PLAYER_Y);
-          const gW = persW(gate.width * 0.55, PLAYER_Y);
-          if (Math.abs(s.playerX - gate.x) < gate.width / 2) {
-            gate.triggered = true;
-            const before = s.crowd;
-            s.crowd = clamp(applyGate(s.crowd, gate), 1, 9999);
-            const gained = s.crowd >= before;
-            addFloat(fmtGate(gate), s.playerX, PLAYER_Y - 100,
-              gained ? "#4dff9b" : "#ff4d6d", 48);
-            addPfx(s.playerX, PLAYER_Y - 60, gained ? 40 : 24, gained ? "good" : "bad");
-            screenFlash(gained ? 0 : 255, gained ? 255 : 0, 0, gained ? 0.18 : 0.22);
-            s.shake = gained ? 4 : 9;
-          }
-        }
+      if (!dragRef.current.active) {
+        if (left) s.targetX -= 12 * dt;
+        if (right) s.targetX += 12 * dt;
+        s.targetX = clamp(s.targetX, LANE_L, LANE_R);
       }
 
-      if (sec.kind === "enemies" && !sec.defeated) {
-        if (!hitZone) continue;
-        if (Math.abs(s.playerX - sec.x) < 140) {
-          const lost = Math.min(s.crowd - 1, sec.count);
-          s.crowd = Math.max(1, s.crowd - lost);
-          sec.count -= Math.min(sec.count, s.crowd + lost);
-          addFloat(`-${lost}`, sec.x, PLAYER_Y - 90, "#ff4d6d", 38);
-          addPfx(sec.x, PLAYER_Y - 50, 40, "hit");
-          s.shake = 11;
-          screenFlash(255, 60, 60, 0.2);
-          if (sec.count <= 0) {
-            sec.defeated = true;
-            const rew = Math.floor((18 + lost * 1.5) * s.upgrades.income);
-            s.coins += rew; s.runCoins += rew;
-            addFloat(`+${rew} 🪙`, sec.x, PLAYER_Y - 140, "#ffd43b", 30);
-            addPfx(sec.x, PLAYER_Y - 90, 50, "coin");
-            bump();
-          }
-        }
+      const follow = 1 - Math.pow(0.001, dt / 10);
+      s.playerX = lerp(s.playerX, s.targetX, follow);
+      s.playerX = clamp(s.playerX, LANE_L, LANE_R);
+
+      s.runPhase += s.speed * 0.13 * dt;
+
+      if (s.worldY < FINISH_WORLD - 90) {
+        s.worldY += s.speed * dt;
+      } else {
+        s.worldY += Math.max(2.25, s.speed * 0.34) * dt;
       }
 
-      if (sec.kind === "obstacle") {
-        if (!hitZone) continue;
-        for (const blade of sec.blades) {
-          if (blade.hit) continue;
-          const bx = blade.x + Math.sin(now / 280 + blade.phase) * 65;
-          if (Math.abs(s.playerX - bx) < blade.radius + 32) {
-            blade.hit = true;
-            const lost = Math.min(s.crowd - 1, Math.ceil(s.crowd * 0.28) + 4);
+      for (const section of s.levels) {
+        const screenY = worldToScreenY(section.y, s.worldY);
+
+        if (screenY > CH + 250 || screenY < HORIZON_Y - 120) continue;
+
+        if (section.kind === "gates") {
+          if (!inHitZone(section.y, s.worldY)) continue;
+
+          for (const gate of section.gates) {
+            if (gate.triggered) continue;
+
+            if (Math.abs(s.playerX - gate.x) < gate.width / 2) {
+              gate.triggered = true;
+
+              const before = s.crowd;
+              s.crowd = clamp(applyGate(s.crowd, gate), 1, 9999);
+
+              const good = s.crowd >= before;
+              s.combo = good ? s.combo + 1 : 0;
+
+              addFloat(
+                fmtGate(gate),
+                s.playerX,
+                PLAYER_Y - 108,
+                good ? "#00ff85" : "#ff4d6d",
+                48
+              );
+              addParticles(
+                s.playerX,
+                PLAYER_Y - 62,
+                good ? 46 : 28,
+                good ? "good" : "bad"
+              );
+              flash(good ? 0 : 255, good ? 255 : 45, good ? 135 : 70, good ? 0.16 : 0.24);
+              s.shake = good ? 4 : 10;
+
+              if (good && s.combo >= 3) {
+                const bonus = Math.floor(4 * s.upgrades.income);
+                s.coins += bonus;
+                s.runCoins += bonus;
+                addFloat(`COMBO +${bonus}🪙`, s.playerX, PLAYER_Y - 154, "#ffd43b", 26);
+                rerender();
+              }
+            }
+          }
+        }
+
+        if (section.kind === "enemies" && !section.defeated) {
+          if (!inHitZone(section.y, s.worldY)) continue;
+
+          if (Math.abs(s.playerX - section.x) < 140) {
+            const attackingCrowd = s.crowd;
+            const enemyDefeated = Math.min(section.count, attackingCrowd);
+            const lost = Math.min(s.crowd - 1, Math.ceil(section.count * 0.72));
+
+            section.count -= enemyDefeated;
             s.crowd = Math.max(1, s.crowd - lost);
-            addFloat(`-${lost}`, bx, PLAYER_Y - 90, "#ff4d6d", 38);
-            addPfx(bx, PLAYER_Y - 55, 35, "bad");
-            s.shake = 13;
-            screenFlash(255, 80, 0, 0.25);
+            s.combo = 0;
+
+            addFloat(`-${lost}`, section.x, PLAYER_Y - 94, "#ff4d6d", 38);
+            addParticles(section.x, PLAYER_Y - 55, 44, "hit");
+            flash(255, 75, 75, 0.22);
+            s.shake = 12;
+
+            if (section.count <= 0) {
+              section.defeated = true;
+
+              const reward = Math.floor((24 + enemyDefeated * 1.6) * s.upgrades.income);
+              s.coins += reward;
+              s.runCoins += reward;
+
+              addFloat(`+${reward}🪙`, section.x, PLAYER_Y - 142, "#ffd43b", 32);
+              addParticles(section.x, PLAYER_Y - 92, 54, "coin");
+              rerender();
+            }
           }
         }
-      }
 
-      if (sec.kind === "coins") {
-        for (const coin of sec.coins) {
-          if (coin.taken) continue;
-          const coinScreenY = screenY + coin.yOffset;
-          if (Math.abs(coinScreenY - PLAYER_Y) > 50) continue;
-          if (Math.abs(s.playerX - coin.x) < 60) {
-            coin.taken = true;
-            const gain = 2 * s.upgrades.income;
-            s.coins += gain; s.runCoins += gain;
-            addPfx(coin.x, PLAYER_Y - 40, 10, "coin");
-            bump();
+        if (section.kind === "obstacle") {
+          if (!inHitZone(section.y, s.worldY)) continue;
+
+          for (const blade of section.blades) {
+            if (blade.hit) continue;
+
+            const bx = blade.x + Math.sin(now / 280 + blade.phase) * 66;
+
+            if (Math.abs(s.playerX - bx) < blade.radius + 34) {
+              blade.hit = true;
+
+              const lost = Math.min(s.crowd - 1, Math.ceil(s.crowd * 0.28) + 4);
+              s.crowd = Math.max(1, s.crowd - lost);
+              s.combo = 0;
+
+              addFloat(`-${lost}`, bx, PLAYER_Y - 94, "#ff4d6d", 38);
+              addParticles(bx, PLAYER_Y - 55, 38, "bad");
+              flash(255, 110, 0, 0.26);
+              s.shake = 14;
+            }
           }
         }
-      }
 
-      if (sec.kind === "boss" && !sec.defeated) {
-        const inRange = Math.abs(screenY - PLAYER_Y) < 90;
-        if (inRange) {
-          s.bossDmgTimer += dt;
-          if (s.bossDmgTimer > 5) {
-            s.bossDmgTimer = 0;
-            const dmg = Math.max(1, Math.floor(s.crowd * (0.4 + s.upgrades.damage * 0.09)));
-            sec.hp -= dmg;
-            const lostCrowd = Math.min(s.crowd - 1, Math.ceil(sec.maxHp / 80));
-            s.crowd = Math.max(1, s.crowd - lostCrowd);
-            addFloat(`-${dmg}`, TRACK_CX, PLAYER_Y - 160, "#fff", 34);
-            addPfx(TRACK_CX, PLAYER_Y - 90, 22, "hit");
-            s.shake = 9;
-            screenFlash(200, 0, 0, 0.15);
+        if (section.kind === "wall" && !section.broken) {
+          if (!inHitZone(section.y, s.worldY)) continue;
 
-            if (sec.hp <= 0) {
-              sec.defeated = true;
-              const rew = Math.floor((100 + s.crowd * 3) * s.upgrades.income);
-              s.coins += rew; s.runCoins += rew;
+          if (Math.abs(s.playerX - section.x) < 210) {
+            const damage = Math.max(1, Math.floor(s.crowd * 0.65));
+            section.hp -= damage;
+
+            const lost = Math.min(s.crowd - 1, Math.ceil(section.maxHp / 16));
+            s.crowd = Math.max(1, s.crowd - lost);
+            s.combo = 0;
+
+            addFloat(`-${damage}`, section.x, PLAYER_Y - 126, "#ffffff", 30);
+            addParticles(section.x, PLAYER_Y - 70, 34, "hit");
+            s.shake = 10;
+            flash(120, 160, 255, 0.13);
+
+            if (section.hp <= 0) {
+              section.broken = true;
+
+              const reward = Math.floor((30 + section.maxHp * 0.8) * s.upgrades.income);
+              s.coins += reward;
+              s.runCoins += reward;
+
+              addFloat(`WALL BROKEN +${reward}🪙`, section.x, PLAYER_Y - 168, "#ffd43b", 28);
+              addParticles(section.x, PLAYER_Y - 100, 70, "coin");
+              rerender();
+            } else if (s.crowd <= 1) {
+              safeDelayPhase("failed", 450, runIdRef.current);
+            }
+          }
+        }
+
+        if (section.kind === "coins") {
+          for (const coin of section.coins) {
+            if (coin.taken) continue;
+
+            const coinWorldY = section.y + coin.yOffset;
+            const coinScreenY = worldToScreenY(coinWorldY, s.worldY);
+
+            if (coinScreenY > CH + 80 || coinScreenY < HORIZON_Y - 50) continue;
+            if (!inHitZone(coinWorldY, s.worldY, COIN_HIT_WORLD_WINDOW)) continue;
+
+            if (Math.abs(s.playerX - coin.x) < 64) {
+              coin.taken = true;
+
+              const gain = 2 * s.upgrades.income;
+              s.coins += gain;
+              s.runCoins += gain;
+
+              addParticles(coin.x, PLAYER_Y - 40, 12, "coin");
+              rerender();
+            }
+          }
+        }
+
+        if (section.kind === "boss" && !section.defeated) {
+          if (!inHitZone(section.y, s.worldY, 90)) continue;
+
+          s.bossTimer += dt;
+
+          if (s.bossTimer >= 4.2) {
+            s.bossTimer = 0;
+
+            const damage = Math.max(
+              1,
+              Math.floor(s.crowd * (0.45 + s.upgrades.damage * 0.1))
+            );
+            const lost = Math.min(s.crowd - 1, Math.ceil(section.maxHp / 85));
+
+            section.hp -= damage;
+            s.crowd = Math.max(1, s.crowd - lost);
+
+            addFloat(`-${damage}`, TRACK_CX, PLAYER_Y - 166, "#ffffff", 34);
+            addParticles(TRACK_CX, PLAYER_Y - 95, 28, "hit");
+            flash(200, 40, 60, 0.16);
+            s.shake = 10;
+
+            if (section.hp <= 0) {
+              section.defeated = true;
+
+              const reward = Math.floor((130 + s.crowd * 3.2) * s.upgrades.income);
+              s.coins += reward;
+              s.runCoins += reward;
+
               s.stats.bestCrowd = Math.max(s.stats.bestCrowd, s.crowd);
               s.stats.bestCoins = Math.max(s.stats.bestCoins, s.runCoins);
-              addFloat(`BOSS DOWN! +${rew}🪙`, TRACK_CX, PLAYER_Y - 180, "#ffd43b", 38);
-              addPfx(TRACK_CX, PLAYER_Y - 100, 120, "coin");
+
+              addFloat(`BOSS DOWN +${reward}🪙`, TRACK_CX, PLAYER_Y - 190, "#ffd43b", 38);
+              addParticles(TRACK_CX, PLAYER_Y - 110, 130, "coin");
+              flash(255, 220, 0, 0.42);
               s.shake = 22;
-              screenFlash(255, 220, 0, 0.4);
-              bump();
-              setTimeout(() => { sync("complete"); bump(); }, 1100);
-            }
-            if (s.crowd <= 1 && sec.hp > 0) {
-              setTimeout(() => { sync("failed"); bump(); }, 500);
+              rerender();
+
+              safeDelayPhase("complete", 1100, runIdRef.current);
+            } else if (s.crowd <= 1) {
+              safeDelayPhase("failed", 520, runIdRef.current);
             }
           }
         }
       }
-    }
 
-    if (s.worldY >= WORLD_LEN && s.phase === "playing") {
-      sync("complete"); bump();
-    }
-  };
+      if (s.worldY >= WORLD_LEN && s.phase === "playing") {
+        setPhase("complete");
+      }
+    },
+    [safeDelayPhase, setPhase]
+  );
 
-  /* ════════════════════ DRAW ════════════════════ */
-  const worldToScreen = (objY) => {
-    const s = gs.current;
-    // Correct "running forward into screen" perspective:
-    // - Player is always at screen bottom (PLAYER_Y)
-    // - Objects AHEAD have higher worldY values (e.g. 720, 1270...)
-    // - They should appear near HORIZON_Y when far away, slide DOWN to PLAYER_Y when adjacent
-    // - dist = objY - s.worldY  (positive = object is still ahead)
-    // - when dist == 0: screenY = PLAYER_Y (object at player)
-    // - when dist is large: screenY approaches HORIZON_Y
-    // Use: screenY = PLAYER_Y - dist  clamped to [HORIZON_Y, PLAYER_Y+200]
-    const dist = objY - s.worldY;
-    return PLAYER_Y - dist;
-  };
-
-  const draw = (ctx, now) => {
-    const s = gs.current;
-
-    ctx.clearRect(0, 0, CW, CH);
-
-    const sx = s.shake ? rand(-s.shake, s.shake) : 0;
-    const sy = s.shake ? rand(-s.shake * 0.6, s.shake * 0.6) : 0;
-
-    ctx.save();
-    ctx.translate(sx, sy);
-
-    drawSky(ctx, now);
-    drawTrack(ctx, now);
-    drawLevelObjects(ctx, now, worldToScreen);
-    drawCrowd(ctx, now);
-    drawParticles(ctx);
-    drawHUD(ctx, now);
-
-    ctx.restore();
-
-    /* screen flash */
-    if (s.flash.a > 0.01) {
-      ctx.fillStyle = `rgba(${s.flash.r},${s.flash.g},${s.flash.b},${s.flash.a})`;
-      ctx.fillRect(0, 0, CW, CH);
-    }
-
-    drawOverlay(ctx, now);
-  };
-
-  /* ── sky + environment ── */
   const drawSky = (ctx, now) => {
-    const s = gs.current;
-    const t = now * 0.0002;
-
-    /* sky gradient */
-    const sky = ctx.createLinearGradient(0, 0, 0, HORIZON_Y + 60);
-    sky.addColorStop(0, "#0a1628");
-    sky.addColorStop(0.5, "#1a3c6e");
-    sky.addColorStop(1, "#2d6ca8");
+    const sky = ctx.createLinearGradient(0, 0, 0, HORIZON_Y + 70);
+    sky.addColorStop(0, "#071126");
+    sky.addColorStop(0.48, "#173766");
+    sky.addColorStop(1, "#2d74ad");
     ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, CW, HORIZON_Y + 60);
+    ctx.fillRect(0, 0, CW, HORIZON_Y + 70);
 
-    /* stars */
-    const starSeed = [13, 47, 89, 134, 200, 255, 312, 379, 430, 490,
-                      550, 610, 665, 720, 780, 820, 875, 930, 970, 999];
+    const starSeed = [13, 47, 89, 134, 200, 255, 312, 379, 430, 490, 550, 610, 665, 720, 780, 820, 875, 930, 970, 999];
+
     starSeed.forEach((seed, i) => {
-      const sx2 = (seed * 37 + i * 17) % CW;
-      const sy2 = (seed * 13 + i * 7) % (HORIZON_Y - 10);
-      const brightness = 0.5 + Math.sin(t + i) * 0.3;
-      ctx.fillStyle = `rgba(255,255,255,${brightness})`;
+      const x = (seed * 37 + i * 17) % CW;
+      const y = (seed * 13 + i * 7) % (HORIZON_Y - 12);
+      const a = 0.45 + Math.sin(now * 0.002 + i) * 0.25;
+
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
       ctx.beginPath();
-      ctx.arc(sx2, sy2, 1.5, 0, Math.PI * 2);
+      ctx.arc(x, y, 1.4, 0, Math.PI * 2);
       ctx.fill();
     });
 
-    /* horizon glow */
-    const glow = ctx.createLinearGradient(0, HORIZON_Y - 40, 0, HORIZON_Y + 60);
-    glow.addColorStop(0, "rgba(80,180,255,0.0)");
-    glow.addColorStop(0.5, "rgba(120,210,255,0.35)");
-    glow.addColorStop(1, "rgba(180,230,255,0.0)");
+    const glow = ctx.createLinearGradient(0, HORIZON_Y - 50, 0, HORIZON_Y + 65);
+    glow.addColorStop(0, "rgba(90,190,255,0)");
+    glow.addColorStop(0.5, "rgba(120,215,255,0.36)");
+    glow.addColorStop(1, "rgba(120,215,255,0)");
     ctx.fillStyle = glow;
-    ctx.fillRect(0, HORIZON_Y - 40, CW, 100);
+    ctx.fillRect(0, HORIZON_Y - 50, CW, 115);
 
-    /* distant buildings silhouette */
-    ctx.fillStyle = "rgba(10,20,50,0.7)";
+    ctx.fillStyle = "rgba(6,15,36,0.72)";
     const buildings = [
-      [200, 60, 40, 80], [260, 45, 30, 95], [310, 70, 50, 70],
-      [650, 55, 35, 85], [700, 40, 45, 100], [760, 65, 30, 75],
+      [190, 45, 42, 72],
+      [252, 28, 34, 90],
+      [304, 58, 56, 62],
+      [641, 47, 40, 74],
+      [700, 24, 52, 97],
+      [770, 52, 35, 68],
     ];
-    buildings.forEach(([bx, by, bw, bh]) => {
-      ctx.fillRect(bx, HORIZON_Y - bh, bw, bh);
-      /* windows */
-      ctx.fillStyle = `rgba(255,240,120,${0.4 + Math.sin(now * 0.003 + bx) * 0.1})`;
-      for (let wr = 0; wr < 3; wr++) {
-        for (let wc = 0; wc < Math.floor(bw / 10); wc++) {
-          if (Math.random() > 0.35) {
-            ctx.fillRect(bx + wc * 10 + 3, HORIZON_Y - bh + wr * 18 + 5, 5, 7);
+
+    buildings.forEach(([x, , w, h]) => {
+      ctx.fillStyle = "rgba(6,15,36,0.72)";
+      ctx.fillRect(x, HORIZON_Y - h, w, h);
+
+      ctx.fillStyle = "rgba(255,230,120,0.45)";
+      for (let row = 0; row < 4; row += 1) {
+        for (let col = 0; col < Math.floor(w / 10); col += 1) {
+          const lit = ((x + row * 17 + col * 31) % 7) !== 0;
+          if (lit) {
+            ctx.fillRect(x + col * 10 + 3, HORIZON_Y - h + row * 17 + 5, 5, 6);
           }
         }
       }
-      ctx.fillStyle = "rgba(10,20,50,0.7)";
     });
   };
 
   const drawTrack = (ctx, now) => {
     const s = gs.current;
 
-    /* road surface — trapezoid from horizon to bottom */
-    const roadGrad = ctx.createLinearGradient(0, HORIZON_Y, 0, CH);
-    roadGrad.addColorStop(0, "#1e2535");
-    roadGrad.addColorStop(0.4, "#252c3f");
-    roadGrad.addColorStop(1, "#2e3550");
-    ctx.fillStyle = roadGrad;
+    ctx.fillStyle = "#0a1124";
+    ctx.fillRect(0, HORIZON_Y + 70, CW, CH);
 
+    const roadGrad = ctx.createLinearGradient(0, HORIZON_Y, 0, CH);
+    roadGrad.addColorStop(0, "#1c2537");
+    roadGrad.addColorStop(0.52, "#252e46");
+    roadGrad.addColorStop(1, "#323956");
+
+    ctx.fillStyle = roadGrad;
     ctx.beginPath();
-    ctx.moveTo(TRACK_CX - 20, HORIZON_Y);
-    ctx.lineTo(TRACK_CX + 20, HORIZON_Y);
-    ctx.lineTo(TRACK_R + 80, CH);
-    ctx.lineTo(TRACK_L - 80, CH);
+    ctx.moveTo(TRACK_CX - 18, HORIZON_Y);
+    ctx.lineTo(TRACK_CX + 18, HORIZON_Y);
+    ctx.lineTo(TRACK_R + 85, CH);
+    ctx.lineTo(TRACK_L - 85, CH);
     ctx.closePath();
     ctx.fill();
 
-    /* road edge glow lines */
-    const drawEdge = (worldX, color) => {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(TRACK_CX + (worldX - TRACK_CX) * 0.02 + TRACK_CX - TRACK_CX, HORIZON_Y);
-      /* properly lerp edge to screen */
-      const topX = TRACK_CX + (worldX - TRACK_CX) * 0.04;
-      const botX = worldX + (worldX > TRACK_CX ? 80 : -80);
-      ctx.moveTo(topX, HORIZON_Y);
-      ctx.lineTo(botX, CH);
-      ctx.stroke();
-    };
-
-    /* left/right road edges */
-    ctx.strokeStyle = "rgba(255,140,0,0.9)";
+    ctx.strokeStyle = "rgba(255,145,0,0.9)";
     ctx.lineWidth = 5;
-    ctx.shadowColor = "rgba(255,140,0,0.6)";
+    ctx.shadowColor = "rgba(255,145,0,0.75)";
     ctx.shadowBlur = 12;
+
     ctx.beginPath();
     ctx.moveTo(TRACK_CX - 5, HORIZON_Y);
-    ctx.lineTo(TRACK_L - 80, CH);
+    ctx.lineTo(TRACK_L - 85, CH);
     ctx.stroke();
+
     ctx.beginPath();
     ctx.moveTo(TRACK_CX + 5, HORIZON_Y);
-    ctx.lineTo(TRACK_R + 80, CH);
+    ctx.lineTo(TRACK_R + 85, CH);
     ctx.stroke();
+
     ctx.shadowBlur = 0;
 
-    /* lane divider — dashed center line in perspective */
-    const dashCount = 18;
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    for (let i = 0; i < dashCount; i++) {
-      /* animate scrolling */
-      const rawT = (i / dashCount + (s.worldY * 0.008) % 1) % 1;
-      const t1 = rawT;
-      const t2 = rawT + 0.035;
-      if (t1 > 0.98 || t2 < 0.01) continue;
-      const y1 = HORIZON_Y + (CH - HORIZON_Y) * t1;
-      const y2 = HORIZON_Y + (CH - HORIZON_Y) * Math.min(t2, 1);
-      const x1 = TRACK_CX;
-      const x2 = TRACK_CX;
-      const lw = 3 + t1 * 6;
-      ctx.lineWidth = lw;
+    ctx.strokeStyle = "rgba(255,255,255,0.48)";
+    for (let i = 0; i < 20; i += 1) {
+      const raw = (i / 20 + (s.worldY * 0.0045) % 1) % 1;
+      const y1 = HORIZON_Y + (CH - HORIZON_Y) * raw;
+      const y2 = y1 + 16 + raw * 42;
+
+      ctx.lineWidth = 2 + raw * 5;
       ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
+      ctx.moveTo(TRACK_CX, y1);
+      ctx.lineTo(TRACK_CX, Math.min(y2, CH));
       ctx.stroke();
     }
 
-    /* road shoulder stripes */
-    const stripeCount = 10;
-    for (let i = 0; i < stripeCount; i++) {
-      const rawT = (i / stripeCount + (s.worldY * 0.005) % 1) % 1;
-      const y = HORIZON_Y + (CH - HORIZON_Y) * rawT;
-      const t = persScale(y);
-      const leftX = TRACK_CX - 5 + (TRACK_L - 80 - TRACK_CX) * rawT;
-      const rightX = TRACK_CX + 5 + (TRACK_R + 80 - TRACK_CX) * rawT;
-      const alpha = rawT * 0.4;
-      ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-      ctx.fillRect(leftX - t * 15, y, t * 30, t * 6);
-      ctx.fillRect(rightX - t * 15, y, t * 30, t * 6);
+    for (let i = 0; i < 12; i += 1) {
+      const raw = (i / 12 + (s.worldY * 0.003) % 1) % 1;
+      const y = HORIZON_Y + (CH - HORIZON_Y) * raw;
+      const leftX = lerp(TRACK_CX - 6, TRACK_L - 85, raw);
+      const rightX = lerp(TRACK_CX + 6, TRACK_R + 85, raw);
+
+      ctx.fillStyle = `rgba(255,255,255,${raw * 0.35})`;
+      ctx.fillRect(leftX - raw * 20, y, raw * 40, raw * 6);
+      ctx.fillRect(rightX - raw * 20, y, raw * 40, raw * 6);
     }
 
-    /* road surface shimmer */
-    const shimmer = ctx.createLinearGradient(TRACK_CX - 150, 0, TRACK_CX + 150, 0);
-    shimmer.addColorStop(0, "transparent");
-    shimmer.addColorStop(0.5, `rgba(100,160,255,${0.04 + Math.sin(now * 0.003) * 0.02})`);
-    shimmer.addColorStop(1, "transparent");
+    const shimmer = ctx.createLinearGradient(TRACK_CX - 170, 0, TRACK_CX + 170, 0);
+    shimmer.addColorStop(0, "rgba(100,180,255,0)");
+    shimmer.addColorStop(0.5, `rgba(100,180,255,${0.04 + Math.sin(now * 0.003) * 0.02})`);
+    shimmer.addColorStop(1, "rgba(100,180,255,0)");
+
     ctx.fillStyle = shimmer;
     ctx.beginPath();
-    ctx.moveTo(TRACK_CX - 5, HORIZON_Y);
-    ctx.lineTo(TRACK_CX + 5, HORIZON_Y);
-    ctx.lineTo(TRACK_R + 80, CH);
-    ctx.lineTo(TRACK_L - 80, CH);
+    ctx.moveTo(TRACK_CX - 10, HORIZON_Y);
+    ctx.lineTo(TRACK_CX + 10, HORIZON_Y);
+    ctx.lineTo(TRACK_R + 85, CH);
+    ctx.lineTo(TRACK_L - 85, CH);
     ctx.closePath();
     ctx.fill();
   };
 
-  /* ── level objects ── */
-  const drawLevelObjects = (ctx, now, w2s) => {
-    const s = gs.current;
-
-    for (const sec of s.levels) {
-      const screenY = w2s(sec.y);
-      if (screenY > CH + 300 || screenY < HORIZON_Y - 100) continue;
-
-      const pScale = clamp(persScale(screenY), 0.05, 1.2);
-
-      if (sec.kind === "gates") {
-        sec.gates.forEach(gate => drawGate3D(ctx, gate, screenY, pScale));
-      }
-      if (sec.kind === "enemies" && !sec.defeated) {
-        drawEnemies3D(ctx, sec, screenY, pScale, now);
-      }
-      if (sec.kind === "obstacle") {
-        drawObstacle3D(ctx, sec, screenY, pScale, now);
-      }
-      if (sec.kind === "coins") {
-        drawCoins3D(ctx, sec, screenY, pScale, now);
-      }
-      if (sec.kind === "boss") {
-        drawBoss3D(ctx, sec, screenY, pScale, now);
-      }
-    }
-  };
-
-  const drawGate3D = (ctx, gate, screenY, pScale) => {
+  const drawGate = (ctx, gate, screenY) => {
     const positive = gate.type === "add" || gate.type === "mul";
-    const sx = persX(gate.x, screenY);
-    const w = persW(gate.width, screenY);
-    const h = Math.max(20, gate.height * pScale);
+    const scale = perspectiveScale(screenY);
+    const x = perspectiveX(gate.x, screenY);
+    const w = perspectiveW(gate.width, screenY);
+    const h = Math.max(18, gate.height * scale);
 
     ctx.save();
-    ctx.globalAlpha = gate.triggered ? 0.35 : 1;
+    ctx.globalAlpha = gate.triggered ? 0.28 : 1;
 
-    /* gate beam going into ground */
-    const beamGrad = ctx.createLinearGradient(sx, screenY - h, sx, screenY + h * 0.3);
-    if (positive) {
-      beamGrad.addColorStop(0, "rgba(0,255,120,0)");
-      beamGrad.addColorStop(0.5, "rgba(0,255,120,0.15)");
-      beamGrad.addColorStop(1, "rgba(0,255,120,0)");
-    } else {
-      beamGrad.addColorStop(0, "rgba(255,60,80,0)");
-      beamGrad.addColorStop(0.5, "rgba(255,60,80,0.15)");
-      beamGrad.addColorStop(1, "rgba(255,60,80,0)");
-    }
-    ctx.fillStyle = beamGrad;
-    ctx.fillRect(sx - w / 2, screenY - h * 1.5, w, h * 2);
+    const beam = ctx.createLinearGradient(x, screenY - h * 1.4, x, screenY + h);
+    beam.addColorStop(0, positive ? "rgba(0,255,140,0)" : "rgba(255,70,95,0)");
+    beam.addColorStop(0.5, positive ? "rgba(0,255,140,0.16)" : "rgba(255,70,95,0.16)");
+    beam.addColorStop(1, positive ? "rgba(0,255,140,0)" : "rgba(255,70,95,0)");
 
-    /* main gate box */
-    const grad = ctx.createLinearGradient(sx - w / 2, screenY, sx + w / 2, screenY + h);
+    ctx.fillStyle = beam;
+    ctx.fillRect(x - w / 2, screenY - h * 1.4, w, h * 2.4);
+
+    const grad = ctx.createLinearGradient(x - w / 2, screenY, x + w / 2, screenY + h);
     if (positive) {
       grad.addColorStop(0, "#00ff85");
-      grad.addColorStop(1, "#00b35c");
+      grad.addColorStop(1, "#00a85a");
     } else {
-      grad.addColorStop(0, "#ff3c5a");
-      grad.addColorStop(1, "#b51020");
+      grad.addColorStop(0, "#ff4567");
+      grad.addColorStop(1, "#aa1024");
     }
+
     ctx.fillStyle = grad;
-    roundRect(ctx, sx - w / 2, screenY - h / 2, w, h, 10 * pScale);
+    roundRect(ctx, x - w / 2, screenY - h / 2, w, h, 13 * scale);
     ctx.fill();
 
-    /* border glow */
-    ctx.strokeStyle = positive ? "rgba(100,255,180,0.9)" : "rgba(255,100,120,0.9)";
-    ctx.lineWidth = 3 * pScale;
-    ctx.shadowColor = positive ? "#00ff85" : "#ff3c5a";
+    ctx.strokeStyle = positive ? "rgba(110,255,190,0.95)" : "rgba(255,140,150,0.95)";
+    ctx.lineWidth = Math.max(1, 4 * scale);
+    ctx.shadowColor = positive ? "#00ff85" : "#ff405f";
     ctx.shadowBlur = 15;
-    roundRect(ctx, sx - w / 2, screenY - h / 2, w, h, 10 * pScale);
+    roundRect(ctx, x - w / 2, screenY - h / 2, w, h, 13 * scale);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    /* text */
-    const fontSize = Math.max(12, 40 * pScale);
-    ctx.font = `900 ${fontSize}px "Segoe UI", Arial`;
+    const fontSize = Math.max(11, 42 * scale);
+    ctx.font = `900 ${fontSize}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#fff";
-    ctx.strokeStyle = "rgba(0,0,0,0.4)";
-    ctx.lineWidth = Math.max(1, 6 * pScale);
-    ctx.strokeText(fmtGate(gate), sx, screenY);
-    ctx.fillText(fmtGate(gate), sx, screenY);
+    ctx.lineWidth = Math.max(1, 6 * scale);
+    ctx.strokeStyle = "rgba(0,0,0,0.44)";
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeText(fmtGate(gate), x, screenY);
+    ctx.fillText(fmtGate(gate), x, screenY);
 
     ctx.restore();
   };
 
-  const drawEnemies3D = (ctx, sec, screenY, pScale, now) => {
-    const count = Math.min(sec.count, 40);
-    const positions = formationPositions(count);
-    const sx = persX(sec.x, screenY);
+  const drawEnemies = (ctx, section, screenY, now) => {
+    const scale = perspectiveScale(screenY);
+    const x = perspectiveX(section.x, screenY);
+    const positions = formationPositions(Math.min(section.count, 42));
 
     ctx.save();
 
-    const runPhase = now * 0.007;
-    for (let i = positions.length - 1; i >= 0; i--) {
+    for (let i = positions.length - 1; i >= 0; i -= 1) {
       const p = positions[i];
-      const ex = sx + p.x * pScale * 0.8;
-      const ey = screenY + p.y * pScale * 0.7;
-      const es = pScale * p.s * 0.72;
-      drawRunner(ctx, ex, ey, es, 0, runPhase + i * 0.3); // red hue=0
+      drawRunner(
+        ctx,
+        x + p.x * scale * 0.78,
+        screenY + p.y * scale * 0.62,
+        scale * p.scale * 0.72,
+        350,
+        now * 0.006 + p.phase
+      );
     }
 
-    /* count badge */
-    const badgeFontSize = Math.max(10, 28 * pScale);
-    ctx.font = `900 ${badgeFontSize}px Arial`;
+    ctx.font = `900 ${Math.max(11, 28 * scale)}px Arial`;
     ctx.textAlign = "center";
-    ctx.fillStyle = "#ff2244";
-    ctx.strokeStyle = "rgba(0,0,0,0.5)";
-    ctx.lineWidth = 5 * pScale;
-    ctx.strokeText(`${sec.count}`, sx, screenY - 60 * pScale);
-    ctx.fillText(`${sec.count}`, sx, screenY - 60 * pScale);
+    ctx.lineWidth = Math.max(2, 5 * scale);
+    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.fillStyle = "#ff3c5a";
+    ctx.strokeText(`${section.count}`, x, screenY - 64 * scale);
+    ctx.fillText(`${section.count}`, x, screenY - 64 * scale);
 
     ctx.restore();
   };
 
-  const drawObstacle3D = (ctx, sec, screenY, pScale, now) => {
+  const drawObstacle = (ctx, section, screenY, now) => {
+    const scale = perspectiveScale(screenY);
+
     ctx.save();
-    for (const blade of sec.blades) {
-      const bx = persX(blade.x + Math.sin(now / 280 + blade.phase) * 65, screenY);
-      const by = screenY;
-      const r = blade.radius * pScale;
-      const angle = now / 120 + blade.phase;
 
-      if (blade.hit) ctx.globalAlpha = 0.3;
-      else ctx.globalAlpha = 1;
-
-      /* glow */
-      ctx.shadowColor = "rgba(200,220,255,0.8)";
-      ctx.shadowBlur = 20;
+    section.blades.forEach((blade) => {
+      const movingX = blade.x + Math.sin(now / 280 + blade.phase) * 66;
+      const x = perspectiveX(movingX, screenY);
+      const r = blade.radius * scale;
 
       ctx.save();
-      ctx.translate(bx, by);
-      ctx.rotate(angle);
+      ctx.globalAlpha = blade.hit ? 0.25 : 1;
+      ctx.translate(x, screenY);
+      ctx.rotate(now / 120 + blade.phase);
 
-      /* hub */
-      ctx.fillStyle = "#1e2840";
-      ctx.beginPath();
-      ctx.arc(0, 0, r * 0.25, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.shadowColor = "rgba(210,230,255,0.9)";
+      ctx.shadowBlur = 16;
 
-      /* blades */
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 4; i += 1) {
         ctx.rotate(Math.PI / 2);
-        const bg = ctx.createLinearGradient(0, 0, r, 0);
-        bg.addColorStop(0, "#d0d8f0");
-        bg.addColorStop(0.6, "#a8b4d0");
-        bg.addColorStop(1, "rgba(200,210,240,0)");
-        ctx.fillStyle = bg;
+
+        const grad = ctx.createLinearGradient(0, 0, r, 0);
+        grad.addColorStop(0, "#eef4ff");
+        grad.addColorStop(0.65, "#aab7d3");
+        grad.addColorStop(1, "rgba(220,230,255,0)");
+
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.moveTo(0, -r * 0.12);
-        ctx.lineTo(r * 0.75, -r * 0.06);
+        ctx.moveTo(0, -r * 0.13);
+        ctx.lineTo(r * 0.76, -r * 0.06);
         ctx.lineTo(r, 0);
-        ctx.lineTo(r * 0.75, r * 0.06);
-        ctx.lineTo(0, r * 0.12);
+        ctx.lineTo(r * 0.76, r * 0.06);
+        ctx.lineTo(0, r * 0.13);
         ctx.closePath();
         ctx.fill();
       }
 
-      /* center cap */
-      ctx.fillStyle = "#0d1220";
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#10182b";
       ctx.beginPath();
-      ctx.arc(0, 0, r * 0.14, 0, Math.PI * 2);
+      ctx.arc(0, 0, r * 0.24, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#050914";
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.13, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.restore();
-      ctx.shadowBlur = 0;
-    }
+    });
+
     ctx.restore();
   };
 
-  const drawCoins3D = (ctx, sec, screenY, pScale, now) => {
-    for (const coin of sec.coins) {
-      if (coin.taken) continue;
-      const coinScreenY = screenY + coin.yOffset * pScale;
-      if (coinScreenY < HORIZON_Y || coinScreenY > CH + 40) continue;
-      const cps = clamp(persScale(coinScreenY), 0.05, 1.2);
-      const cx2 = persX(coin.x, coinScreenY);
-      const r = 18 * cps;
-      const bob = Math.sin(now / 180 + coin.x) * 4 * cps;
+  const drawWall = (ctx, section, screenY) => {
+    if (section.broken) return;
 
-      ctx.save();
-      ctx.translate(cx2, coinScreenY + bob);
-      ctx.scale(1, 0.85);
+    const scale = perspectiveScale(screenY);
+    const x = perspectiveX(section.x, screenY);
+    const w = 360 * scale;
+    const h = 110 * scale;
+    const pct = clamp(section.hp / section.maxHp, 0, 1);
 
-      ctx.shadowColor = "rgba(255,200,0,0.7)";
-      ctx.shadowBlur = 12;
+    ctx.save();
 
-      const cg = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.1, 0, 0, r);
-      cg.addColorStop(0, "#fff9aa");
-      cg.addColorStop(0.45, "#ffd43b");
-      cg.addColorStop(1, "#e08800");
-      ctx.fillStyle = cg;
-      ctx.beginPath();
-      ctx.arc(0, 0, r, 0, Math.PI * 2);
-      ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.32)";
+    ctx.beginPath();
+    ctx.ellipse(x, screenY + h * 0.54, w * 0.48, 16 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
 
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = "rgba(120,70,0,0.6)";
-      ctx.font = `900 ${Math.max(7, 16 * cps)}px Arial`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("$", 0, 1 * cps);
+    const grad = ctx.createLinearGradient(x - w / 2, screenY - h / 2, x + w / 2, screenY + h / 2);
+    grad.addColorStop(0, "#324160");
+    grad.addColorStop(0.5, "#526381");
+    grad.addColorStop(1, "#25314c");
 
-      ctx.restore();
-    }
+    ctx.fillStyle = grad;
+    roundRect(ctx, x - w / 2, screenY - h / 2, w, h, 18 * scale);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(120,190,255,0.7)";
+    ctx.lineWidth = Math.max(1, 3 * scale);
+    ctx.shadowColor = "rgba(60,160,255,0.7)";
+    ctx.shadowBlur = 12;
+    roundRect(ctx, x - w / 2, screenY - h / 2, w, h, 18 * scale);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    roundRect(ctx, x - w * 0.36, screenY - h * 0.72, w * 0.72, 15 * scale, 10 * scale);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffcc00";
+    roundRect(ctx, x - w * 0.36, screenY - h * 0.72, w * 0.72 * pct, 15 * scale, 10 * scale);
+    ctx.fill();
+
+    ctx.font = `900 ${Math.max(11, 30 * scale)}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.lineWidth = Math.max(2, 5 * scale);
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeText(`${Math.max(0, section.hp)}`, x, screenY);
+    ctx.fillText(`${Math.max(0, section.hp)}`, x, screenY);
+
+    ctx.restore();
   };
 
-  const drawBoss3D = (ctx, sec, screenY, pScale, now) => {
-    const x = persX(TRACK_CX, screenY);
+  const drawCoins = (ctx, section, now) => {
+    section.coins.forEach((coin) => {
+      if (coin.taken) return;
 
-    if (sec.defeated) {
+      const coinWorldY = section.y + coin.yOffset;
+      const screenY = worldToScreenY(coinWorldY, gs.current.worldY);
+
+      if (screenY < HORIZON_Y - 40 || screenY > CH + 80) return;
+
+      const scale = perspectiveScale(screenY);
+      const x = perspectiveX(coin.x, screenY);
+      const bob = Math.sin(now / 170 + coin.x) * 4 * scale;
+
+      drawMiniCoin(ctx, x, screenY + bob, 18 * scale);
+    });
+  };
+
+  const drawBoss = (ctx, section, screenY, now) => {
+    const scale = perspectiveScale(screenY);
+    const x = perspectiveX(TRACK_CX, screenY);
+
+    if (section.defeated) {
       ctx.save();
-      ctx.globalAlpha = 0.5;
-      ctx.font = `900 ${Math.max(18, 48 * pScale)}px Arial`;
+      ctx.globalAlpha = 0.55;
+      ctx.font = `900 ${Math.max(18, 48 * scale)}px Arial`;
       ctx.textAlign = "center";
+      ctx.strokeStyle = "rgba(0,0,0,0.65)";
+      ctx.lineWidth = 8 * scale;
       ctx.fillStyle = "#ffd43b";
-      ctx.strokeStyle = "rgba(0,0,0,0.5)";
-      ctx.lineWidth = 7;
-      ctx.strokeText("DESTROYED", x, screenY - 20);
-      ctx.fillText("DESTROYED", x, screenY - 20);
+      ctx.strokeText("DESTROYED", x, screenY - 15 * scale);
+      ctx.fillText("DESTROYED", x, screenY - 15 * scale);
       ctx.restore();
       return;
     }
 
-    const bw = 280 * pScale;
-    const bh = 200 * pScale;
-    const pulse = Math.sin(now * 0.004) * 3;
+    const w = 300 * scale;
+    const h = 210 * scale;
+    const pulse = Math.sin(now * 0.004) * 4 * scale;
 
     ctx.save();
 
-    /* boss shadow on road */
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillStyle = "rgba(0,0,0,0.42)";
     ctx.beginPath();
-    ctx.ellipse(x, screenY + bh * 0.55, bw * 0.55, 22 * pScale, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, screenY + h * 0.57, w * 0.58, 22 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    /* body */
-    const bodyGrad = ctx.createLinearGradient(x - bw / 2, screenY - bh / 2, x + bw / 2, screenY + bh / 2);
-    bodyGrad.addColorStop(0, "#3a0a4a");
-    bodyGrad.addColorStop(0.5, "#5a1060");
-    bodyGrad.addColorStop(1, "#2a0635");
-    ctx.fillStyle = bodyGrad;
-    roundRect(ctx, x - bw / 2, screenY - bh * 0.55, bw, bh, 24 * pScale);
+    const body = ctx.createLinearGradient(x - w / 2, screenY - h / 2, x + w / 2, screenY + h / 2);
+    body.addColorStop(0, "#3a0a4a");
+    body.addColorStop(0.5, "#65106d");
+    body.addColorStop(1, "#250330");
+
+    ctx.fillStyle = body;
+    roundRect(ctx, x - w / 2, screenY - h * 0.55, w, h, 26 * scale);
     ctx.fill();
 
-    /* glow border */
-    ctx.strokeStyle = `rgba(180,0,255,${0.7 + Math.sin(now * 0.008) * 0.2})`;
-    ctx.lineWidth = 4 * pScale;
+    ctx.strokeStyle = `rgba(190,0,255,${0.68 + Math.sin(now * 0.008) * 0.2})`;
+    ctx.lineWidth = Math.max(1, 4 * scale);
     ctx.shadowColor = "#aa00ff";
-    ctx.shadowBlur = 25;
-    roundRect(ctx, x - bw / 2, screenY - bh * 0.55, bw, bh, 24 * pScale);
+    ctx.shadowBlur = 22;
+    roundRect(ctx, x - w / 2, screenY - h * 0.55, w, h, 26 * scale);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    /* eyes */
-    const eyeY = screenY - bh * 0.25;
-    const eyeR = 18 * pScale;
-    [x - bw * 0.22, x + bw * 0.22].forEach(ex => {
-      const eyeGrad = ctx.createRadialGradient(ex, eyeY, 0, ex, eyeY, eyeR);
-      eyeGrad.addColorStop(0, "#ffffff");
-      eyeGrad.addColorStop(0.3, "#ff2040");
-      eyeGrad.addColorStop(1, "#800020");
-      ctx.fillStyle = eyeGrad;
+    const eyeY = screenY - h * 0.26;
+    const eyeR = 18 * scale;
+
+    [x - w * 0.22, x + w * 0.22].forEach((eyeX) => {
+      const eye = ctx.createRadialGradient(eyeX, eyeY, 0, eyeX, eyeY, eyeR);
+      eye.addColorStop(0, "#ffffff");
+      eye.addColorStop(0.3, "#ff2040");
+      eye.addColorStop(1, "#800020");
+
+      ctx.fillStyle = eye;
       ctx.shadowColor = "#ff2040";
-      ctx.shadowBlur = 20;
+      ctx.shadowBlur = 18;
       ctx.beginPath();
-      ctx.arc(ex, eyeY + pulse, eyeR, 0, Math.PI * 2);
+      ctx.arc(eyeX, eyeY + pulse, eyeR, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
     });
 
-    /* mouth */
     ctx.strokeStyle = "#ff2040";
-    ctx.lineWidth = 4 * pScale;
+    ctx.lineWidth = Math.max(1, 4 * scale);
     ctx.beginPath();
-    ctx.arc(x, screenY + bh * 0.05, bw * 0.2, 0.1, Math.PI - 0.1);
+    ctx.arc(x, screenY + h * 0.04, w * 0.2, 0.1, Math.PI - 0.1);
     ctx.stroke();
 
-    /* health bar */
-    const barW = 280 * pScale;
-    const barH = 22 * pScale;
+    const barW = 300 * scale;
+    const barH = 22 * scale;
     const barX = x - barW / 2;
-    const barY = screenY - bh * 0.55 - barH - 8 * pScale;
-    const pct = clamp(sec.hp / sec.maxHp, 0, 1);
+    const barY = screenY - h * 0.72;
+    const pct = clamp(section.hp / section.maxHp, 0, 1);
 
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.fillStyle = "rgba(0,0,0,0.58)";
     roundRect(ctx, barX, barY, barW, barH, barH / 2);
     ctx.fill();
 
-    const hpGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
-    hpGrad.addColorStop(0, "#ff1040");
-    hpGrad.addColorStop(0.5, "#ff6000");
-    hpGrad.addColorStop(1, "#ffcc00");
-    ctx.fillStyle = hpGrad;
-    roundRect(ctx, barX + 2, barY + 2, (barW - 4) * pct, barH - 4, barH / 2 - 1);
+    const hp = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+    hp.addColorStop(0, "#ff1040");
+    hp.addColorStop(0.55, "#ff6600");
+    hp.addColorStop(1, "#ffcc00");
+
+    ctx.fillStyle = hp;
+    roundRect(ctx, barX + 2, barY + 2, (barW - 4) * pct, barH - 4, barH / 2);
     ctx.fill();
 
-    const labelFS = Math.max(10, 22 * pScale);
-    ctx.font = `900 ${labelFS}px Arial`;
+    ctx.font = `900 ${Math.max(10, 22 * scale)}px Arial`;
     ctx.textAlign = "center";
-    ctx.fillStyle = "#ff1040";
-    ctx.strokeStyle = "rgba(0,0,0,0.5)";
-    ctx.lineWidth = 5;
-    const labelY = barY - 8 * pScale;
-    ctx.strokeText("⚡ FINAL BOSS ⚡", x, labelY);
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
+    ctx.lineWidth = Math.max(2, 5 * scale);
     ctx.fillStyle = "#ffffff";
-    ctx.fillText("⚡ FINAL BOSS ⚡", x, labelY);
+    ctx.strokeText("⚡ FINAL BOSS ⚡", x, barY - 10 * scale);
+    ctx.fillText("⚡ FINAL BOSS ⚡", x, barY - 10 * scale);
 
     ctx.restore();
   };
 
-  /* ── player crowd ── */
+  const drawLevelObjects = (ctx, now) => {
+    const s = gs.current;
+
+    s.levels.forEach((section) => {
+      const screenY = worldToScreenY(section.y, s.worldY);
+
+      if (screenY > CH + 300 || screenY < HORIZON_Y - 150) return;
+
+      if (section.kind === "gates") {
+        section.gates.forEach((gate) => drawGate(ctx, gate, screenY));
+      }
+
+      if (section.kind === "enemies" && !section.defeated) {
+        drawEnemies(ctx, section, screenY, now);
+      }
+
+      if (section.kind === "obstacle") {
+        drawObstacle(ctx, section, screenY, now);
+      }
+
+      if (section.kind === "wall") {
+        drawWall(ctx, section, screenY);
+      }
+
+      if (section.kind === "coins") {
+        drawCoins(ctx, section, now);
+      }
+
+      if (section.kind === "boss") {
+        drawBoss(ctx, section, screenY, now);
+      }
+    });
+  };
+
   const drawCrowd = (ctx, now) => {
     const s = gs.current;
     const positions = formationPositions(s.crowd);
 
-    /* crowd shadow */
     ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,0.2)";
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
     ctx.beginPath();
-    ctx.ellipse(s.playerX, PLAYER_Y + 50, 80, 18, 0, 0, Math.PI * 2);
+    ctx.ellipse(s.playerX, PLAYER_Y + 50, 90, 19, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
-    /* draw back to front */
-    for (let i = positions.length - 1; i >= 0; i--) {
+    for (let i = positions.length - 1; i >= 0; i -= 1) {
       const p = positions[i];
-      const px = s.playerX + p.x;
-      const py = PLAYER_Y + p.y * 0.6;
-      const runOffset = (i % 2 === 0 ? 1 : -0.4);
-      drawRunner(ctx, px, py, p.s, 210, s.runPhase * runOffset);
+
+      drawRunner(
+        ctx,
+        s.playerX + p.x,
+        PLAYER_Y + p.y * 0.58,
+        p.scale,
+        210,
+        s.runPhase + p.phase + now * 0.0005
+      );
     }
 
-    /* crowd count badge */
     ctx.save();
-    const badgeX = s.playerX;
-    const badgeY = PLAYER_Y - 90;
-    const bText = `${s.crowd}`;
-    const bFS = 36;
-    ctx.font = `900 ${bFS}px Arial`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
 
-    /* badge pill */
-    const tw = ctx.measureText(bText).width + 28;
-    const th = 44;
-    const bgGrad = ctx.createLinearGradient(badgeX - tw / 2, badgeY, badgeX + tw / 2, badgeY);
-    bgGrad.addColorStop(0, "rgba(30,60,120,0.85)");
-    bgGrad.addColorStop(1, "rgba(20,40,90,0.85)");
-    ctx.fillStyle = bgGrad;
-    roundRect(ctx, badgeX - tw / 2, badgeY - th / 2, tw, th, th / 2);
+    const text = `${s.crowd}`;
+    const badgeY = PLAYER_Y - 92;
+
+    ctx.font = "900 38px Arial";
+    const width = ctx.measureText(text).width + 32;
+
+    const grad = ctx.createLinearGradient(s.playerX - width / 2, 0, s.playerX + width / 2, 0);
+    grad.addColorStop(0, "rgba(25,55,120,0.92)");
+    grad.addColorStop(1, "rgba(15,35,88,0.92)");
+
+    ctx.fillStyle = grad;
+    roundRect(ctx, s.playerX - width / 2, badgeY - 24, width, 48, 24);
     ctx.fill();
-    ctx.strokeStyle = "rgba(100,180,255,0.7)";
+
+    ctx.strokeStyle = "rgba(100,190,255,0.85)";
     ctx.lineWidth = 2;
-    roundRect(ctx, badgeX - tw / 2, badgeY - th / 2, tw, th, th / 2);
+    roundRect(ctx, s.playerX - width / 2, badgeY - 24, width, 48, 24);
     ctx.stroke();
 
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(bText, badgeX, badgeY + 1);
+    ctx.fillText(text, s.playerX, badgeY + 1);
+
     ctx.restore();
   };
 
   const drawParticles = (ctx) => {
     const s = gs.current;
-    for (const p of s.particles) {
-      const a = clamp(p.life / p.maxLife, 0, 1);
-      ctx.save();
-      ctx.globalAlpha = a;
-      let color;
-      if (p.type === "coin") color = "#ffd43b";
-      else if (p.type === "good") color = "#00ff85";
-      else if (p.type === "bad") color = "#ff4d6d";
-      else color = "#ffffff";
 
+    s.particles.forEach((p) => {
+      const alpha = clamp(p.life / p.maxLife, 0, 1);
+
+      let color = "#ffffff";
+      if (p.type === "coin") color = "#ffd43b";
+      if (p.type === "good") color = "#00ff85";
+      if (p.type === "bad") color = "#ff4d6d";
+      if (p.type === "hit") color = "#ffffff";
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
       ctx.shadowColor = color;
       ctx.shadowBlur = 8;
       ctx.fillStyle = color;
@@ -1121,316 +1380,423 @@ export default function MobRush() {
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-    }
+    });
 
-    for (const f of s.floatTexts) {
-      const a = clamp(f.life / f.maxLife, 0, 1);
+    s.floatTexts.forEach((f) => {
+      const alpha = clamp(f.life / f.maxLife, 0, 1);
+
       ctx.save();
-      ctx.globalAlpha = a;
+      ctx.globalAlpha = alpha;
       ctx.font = `900 ${f.size}px Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.strokeStyle = "rgba(0,0,0,0.5)";
       ctx.lineWidth = 7;
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
       ctx.strokeText(f.text, f.x, f.y);
-      ctx.fillStyle = f.color;
       ctx.shadowColor = f.color;
       ctx.shadowBlur = 12;
+      ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);
       ctx.restore();
-    }
+    });
   };
 
-  const drawHUD = (ctx, now) => {
+  const drawHUD = (ctx) => {
     const s = gs.current;
     if (s.phase !== "playing") return;
 
     const pct = clamp(s.worldY / FINISH_WORLD, 0, 1);
 
-    /* top bar backdrop */
-    const hudGrad = ctx.createLinearGradient(0, 0, 0, 80);
-    hudGrad.addColorStop(0, "rgba(8,14,30,0.8)");
-    hudGrad.addColorStop(1, "rgba(8,14,30,0)");
-    ctx.fillStyle = hudGrad;
-    ctx.fillRect(0, 0, CW, 80);
+    const bg = ctx.createLinearGradient(0, 0, 0, 86);
+    bg.addColorStop(0, "rgba(6,12,28,0.84)");
+    bg.addColorStop(1, "rgba(6,12,28,0)");
 
-    /* coins */
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, CW, 86);
+
     ctx.save();
-    ctx.font = "900 22px Arial";
+
+    ctx.font = "900 23px Arial";
     ctx.textAlign = "left";
     ctx.fillStyle = "#ffd43b";
-    ctx.shadowColor = "#ffd43b";
-    ctx.shadowBlur = 10;
     ctx.fillText("🪙", 22, 38);
-    ctx.shadowBlur = 0;
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(`${s.coins}`, 52, 38);
-    ctx.font = "700 14px Arial";
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
-    ctx.fillText(`+${s.runCoins} this run`, 52, 58);
-    ctx.restore();
+    ctx.fillText(`${s.coins}`, 54, 38);
 
-    /* progress bar */
-    const barX = 260, barY = 20, barW = 480, barH = 20;
-    ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.font = "700 14px Arial";
+    ctx.fillStyle = "rgba(220,235,255,0.58)";
+    ctx.fillText(`+${s.runCoins} this run`, 54, 59);
+
+    const barX = 260;
+    const barY = 20;
+    const barW = 480;
+    const barH = 20;
+
+    ctx.fillStyle = "rgba(0,0,0,0.48)";
     roundRect(ctx, barX, barY, barW, barH, 10);
     ctx.fill();
 
-    const progGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
-    progGrad.addColorStop(0, "#00d4ff");
-    progGrad.addColorStop(0.5, "#0077ff");
-    progGrad.addColorStop(1, "#aa00ff");
-    ctx.fillStyle = progGrad;
+    const prog = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+    prog.addColorStop(0, "#00d4ff");
+    prog.addColorStop(0.5, "#0077ff");
+    prog.addColorStop(1, "#aa00ff");
+
+    ctx.fillStyle = prog;
     ctx.shadowColor = "#0077ff";
     ctx.shadowBlur = 12;
     roundRect(ctx, barX + 2, barY + 2, (barW - 4) * pct, barH - 4, 8);
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
-    ctx.font = "700 13px Arial";
+    ctx.font = "800 13px Arial";
     ctx.textAlign = "center";
-    ctx.fillText(`${Math.floor(pct * 100)}%`, barX + barW / 2, barY + barH * 0.75);
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.fillText(`${Math.floor(pct * 100)}%`, barX + barW / 2, barY + 15);
 
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "700 13px Arial";
-    ctx.textAlign = "left";
-    ctx.fillText("START", barX - 40, barY + 14);
     ctx.textAlign = "right";
-    ctx.fillText("🏁", barX + barW + 25, barY + 14);
-    ctx.restore();
-
-    /* crowd display */
-    ctx.save();
-    ctx.font = "900 22px Arial";
-    ctx.textAlign = "right";
+    ctx.font = "900 23px Arial";
     ctx.fillStyle = "#00d4ff";
-    ctx.shadowColor = "#00d4ff";
-    ctx.shadowBlur = 10;
-    ctx.fillText("👥", CW - 52, 38);
-    ctx.shadowBlur = 0;
+    ctx.fillText("👥", CW - 58, 38);
     ctx.fillStyle = "#ffffff";
     ctx.fillText(`${s.crowd}`, CW - 22, 38);
+
     ctx.font = "700 14px Arial";
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
-    ctx.fillText("CROWD", CW - 22, 58);
-    ctx.restore();
-  };
-
-  const drawOverlay = (ctx, now) => {
-    const s = gs.current;
-    if (s.phase === "playing") return;
-
-    /* backdrop blur panel */
-    ctx.save();
-    ctx.fillStyle = "rgba(5,10,25,0.65)";
-    ctx.fillRect(0, 0, CW, CH);
-
-    /* panel */
-    const px = CW / 2 - 240, py = CH / 2 - 200;
-    const pw = 480, ph = 400;
-
-    /* panel glow */
-    ctx.shadowColor = "rgba(0,180,255,0.4)";
-    ctx.shadowBlur = 40;
-    const panelGrad = ctx.createLinearGradient(px, py, px, py + ph);
-    panelGrad.addColorStop(0, "rgba(15,25,55,0.97)");
-    panelGrad.addColorStop(1, "rgba(8,16,40,0.97)");
-    ctx.fillStyle = panelGrad;
-    roundRect(ctx, px, py, pw, ph, 28);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    ctx.strokeStyle = "rgba(60,140,255,0.4)";
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, px, py, pw, ph, 28);
-    ctx.stroke();
-
-    const cx2 = CW / 2;
-    ctx.textAlign = "center";
-
-    if (s.phase === "menu") {
-      /* title */
-      const titleGrad = ctx.createLinearGradient(cx2 - 180, 0, cx2 + 180, 0);
-      titleGrad.addColorStop(0, "#00d4ff");
-      titleGrad.addColorStop(0.5, "#aa00ff");
-      titleGrad.addColorStop(1, "#ff2266");
-      ctx.font = "900 62px Arial";
-      ctx.fillStyle = titleGrad;
-      ctx.shadowColor = "rgba(120,0,255,0.5)";
-      ctx.shadowBlur = 22;
-      ctx.fillText("MOB RUSH", cx2, py + 90);
-      ctx.shadowBlur = 0;
-
-      ctx.font = "700 18px Arial";
-      ctx.fillStyle = "rgba(160,200,255,0.8)";
-      ctx.fillText("Swipe · Multiply · Smash the Boss", cx2, py + 130);
-
-      /* tips */
-      const tips = ["Hit GREEN gates to GROW your mob", "Avoid RED gates & spinning blades", "Build crowd → boss damage"];
-      tips.forEach((tip, i) => {
-        ctx.font = "600 15px Arial";
-        ctx.fillStyle = `rgba(130,180,255,${0.7 - i * 0.1})`;
-        ctx.fillText(`${i + 1}. ${tip}`, cx2, py + 175 + i * 26);
-      });
-
-      drawButton(ctx, cx2, py + 310, 220, 56, "#0077ff", "#00aaff", "▶  START RUN");
-    }
-
-    if (s.phase === "complete") {
-      ctx.font = "900 52px Arial";
-      const cg = ctx.createLinearGradient(cx2 - 150, 0, cx2 + 150, 0);
-      cg.addColorStop(0, "#00ff85");
-      cg.addColorStop(1, "#00d4ff");
-      ctx.fillStyle = cg;
-      ctx.shadowColor = "#00ff85";
-      ctx.shadowBlur = 20;
-      ctx.fillText("CLEARED! 🎉", cx2, py + 90);
-      ctx.shadowBlur = 0;
-
-      ctx.font = "700 24px Arial";
-      ctx.fillStyle = "#ffd43b";
-      ctx.fillText(`+${s.runCoins} coins earned`, cx2, py + 145);
-      ctx.fillStyle = "rgba(160,200,255,0.8)";
-      ctx.font = "600 20px Arial";
-      ctx.fillText(`Final crowd: ${s.crowd}`, cx2, py + 180);
-      ctx.fillText(`Best crowd ever: ${s.stats.bestCrowd}`, cx2, py + 210);
-
-      drawButton(ctx, cx2, py + 310, 220, 56, "#00a050", "#00cc66", "↺  RUN AGAIN");
-    }
-
-    if (s.phase === "failed") {
-      ctx.font = "900 52px Arial";
-      const fg = ctx.createLinearGradient(cx2 - 150, 0, cx2 + 150, 0);
-      fg.addColorStop(0, "#ff1040");
-      fg.addColorStop(1, "#ff6600");
-      ctx.fillStyle = fg;
-      ctx.shadowColor = "#ff1040";
-      ctx.shadowBlur = 20;
-      ctx.fillText("MOB WIPED 💀", cx2, py + 90);
-      ctx.shadowBlur = 0;
-
-      ctx.font = "700 24px Arial";
-      ctx.fillStyle = "#ffd43b";
-      ctx.fillText(`+${s.runCoins} coins earned`, cx2, py + 145);
-      ctx.fillStyle = "rgba(160,200,255,0.8)";
-      ctx.font = "600 19px Arial";
-      ctx.fillText("Upgrade your mob and try again!", cx2, py + 185);
-
-      drawButton(ctx, cx2, py + 310, 220, 56, "#cc1040", "#ff2255", "↺  RETRY");
-    }
+    ctx.fillStyle = "rgba(220,235,255,0.58)";
+    ctx.fillText("CROWD", CW - 22, 59);
 
     ctx.restore();
   };
 
-  const drawButton = (ctx, cx2, cy, w, h, c1, c2, label) => {
-    const bx = cx2 - w / 2, by = cy - h / 2;
+  const drawButton = (ctx, cx, cy, w, h, c1, c2, label) => {
+    const x = cx - w / 2;
+    const y = cy - h / 2;
+
+    const grad = ctx.createLinearGradient(x, y, x, y + h);
+    grad.addColorStop(0, c2);
+    grad.addColorStop(1, c1);
+
     ctx.save();
-    const bg = ctx.createLinearGradient(bx, by, bx, by + h);
-    bg.addColorStop(0, c2);
-    bg.addColorStop(1, c1);
     ctx.shadowColor = c2;
-    ctx.shadowBlur = 22;
-    ctx.fillStyle = bg;
-    roundRect(ctx, bx, by, w, h, h / 2);
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = grad;
+    roundRect(ctx, x, y, w, h, h / 2);
     ctx.fill();
+
     ctx.shadowBlur = 0;
     ctx.fillStyle = "#ffffff";
     ctx.font = "900 22px Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(label, cx2, cy);
+    ctx.fillText(label, cx, cy);
     ctx.restore();
   };
 
-  /* ── canvas clicks ── */
-  const handleClick = (e) => {
+  const drawOverlay = (ctx) => {
     const s = gs.current;
     if (s.phase === "playing") return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const cx2 = ((e.clientX - rect.left) / rect.width) * CW;
-    const cy = ((e.clientY - rect.top) / rect.height) * CH;
-    const bx = CW / 2, by = CH / 2 + 110;
-    if (Math.abs(cx2 - bx) < 115 && Math.abs(cy - by) < 32) resetRun();
+
+    ctx.save();
+
+    ctx.fillStyle = "rgba(4,8,22,0.68)";
+    ctx.fillRect(0, 0, CW, CH);
+
+    const panelX = CW / 2 - 246;
+    const panelY = CH / 2 - 210;
+    const panelW = 492;
+    const panelH = 420;
+
+    ctx.shadowColor = "rgba(0,180,255,0.42)";
+    ctx.shadowBlur = 42;
+
+    const panel = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    panel.addColorStop(0, "rgba(16,27,58,0.98)");
+    panel.addColorStop(1, "rgba(7,14,36,0.98)");
+
+    ctx.fillStyle = panel;
+    roundRect(ctx, panelX, panelY, panelW, panelH, 30);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(80,150,255,0.42)";
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, panelX, panelY, panelW, panelH, 30);
+    ctx.stroke();
+
+    const cx = CW / 2;
+
+    ctx.textAlign = "center";
+
+    if (s.phase === "menu") {
+      const title = ctx.createLinearGradient(cx - 190, 0, cx + 190, 0);
+      title.addColorStop(0, "#00d4ff");
+      title.addColorStop(0.48, "#aa00ff");
+      title.addColorStop(1, "#ff2266");
+
+      ctx.font = "900 64px Arial";
+      ctx.fillStyle = title;
+      ctx.shadowColor = "rgba(120,0,255,0.55)";
+      ctx.shadowBlur = 22;
+      ctx.fillText("MOB RUSH", cx, panelY + 92);
+      ctx.shadowBlur = 0;
+
+      ctx.font = "800 18px Arial";
+      ctx.fillStyle = "rgba(170,210,255,0.82)";
+      ctx.fillText("Swipe · Multiply · Smash the Boss", cx, panelY + 132);
+
+      const tips = [
+        "Hit green gates to grow your mob",
+        "Avoid red gates and spinning blades",
+        "Break walls, farm coins, upgrade fast",
+      ];
+
+      tips.forEach((tip, i) => {
+        ctx.font = "700 15px Arial";
+        ctx.fillStyle = `rgba(170,210,255,${0.75 - i * 0.09})`;
+        ctx.fillText(`${i + 1}. ${tip}`, cx, panelY + 180 + i * 27);
+      });
+
+      drawButton(ctx, cx, panelY + 322, 224, 58, "#0077ff", "#00d4ff", "▶ START RUN");
+    }
+
+    if (s.phase === "complete") {
+      const title = ctx.createLinearGradient(cx - 170, 0, cx + 170, 0);
+      title.addColorStop(0, "#00ff85");
+      title.addColorStop(1, "#00d4ff");
+
+      ctx.font = "900 54px Arial";
+      ctx.fillStyle = title;
+      ctx.shadowColor = "#00ff85";
+      ctx.shadowBlur = 20;
+      ctx.fillText("CLEARED 🎉", cx, panelY + 92);
+      ctx.shadowBlur = 0;
+
+      ctx.font = "800 25px Arial";
+      ctx.fillStyle = "#ffd43b";
+      ctx.fillText(`+${s.runCoins} coins earned`, cx, panelY + 150);
+
+      ctx.font = "700 20px Arial";
+      ctx.fillStyle = "rgba(170,210,255,0.85)";
+      ctx.fillText(`Final crowd: ${s.crowd}`, cx, panelY + 188);
+      ctx.fillText(`Best crowd: ${s.stats.bestCrowd}`, cx, panelY + 220);
+
+      drawButton(ctx, cx, panelY + 322, 224, 58, "#00a050", "#00dd75", "↺ RUN AGAIN");
+    }
+
+    if (s.phase === "failed") {
+      const title = ctx.createLinearGradient(cx - 170, 0, cx + 170, 0);
+      title.addColorStop(0, "#ff1040");
+      title.addColorStop(1, "#ff7700");
+
+      ctx.font = "900 50px Arial";
+      ctx.fillStyle = title;
+      ctx.shadowColor = "#ff1040";
+      ctx.shadowBlur = 20;
+      ctx.fillText("MOB WIPED 💀", cx, panelY + 92);
+      ctx.shadowBlur = 0;
+
+      ctx.font = "800 25px Arial";
+      ctx.fillStyle = "#ffd43b";
+      ctx.fillText(`+${s.runCoins} coins earned`, cx, panelY + 150);
+
+      ctx.font = "700 20px Arial";
+      ctx.fillStyle = "rgba(170,210,255,0.85)";
+      ctx.fillText("Upgrade and run it back.", cx, panelY + 190);
+
+      drawButton(ctx, cx, panelY + 322, 224, 58, "#cc1040", "#ff2255", "↺ RETRY");
+    }
+
+    ctx.restore();
   };
 
-  /* ── upgrade data ── */
+  const draw = useCallback((ctx, now) => {
+    const s = gs.current;
+
+    ctx.clearRect(0, 0, CW, CH);
+
+    const shakeX = s.shake ? rand(-s.shake, s.shake) : 0;
+    const shakeY = s.shake ? rand(-s.shake * 0.6, s.shake * 0.6) : 0;
+
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+
+    drawSky(ctx, now);
+    drawTrack(ctx, now);
+    drawLevelObjects(ctx, now);
+    drawCrowd(ctx, now);
+    drawParticles(ctx);
+    drawHUD(ctx);
+
+    ctx.restore();
+
+    if (s.flash.a > 0.01) {
+      ctx.fillStyle = `rgba(${s.flash.r}, ${s.flash.g}, ${s.flash.b}, ${s.flash.a})`;
+      ctx.fillRect(0, 0, CW, CH);
+    }
+
+    drawOverlay(ctx);
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    let last = performance.now();
+
+    const loop = (now) => {
+      const dt = clamp((now - last) / 16.67, 0.25, 2.15);
+      last = now;
+
+      update(dt, now);
+      draw(ctx, now);
+
+      rafRef.current = requestAnimationFrame(loop);
+    };
+
+    rafRef.current = requestAnimationFrame(loop);
+
+    return () => {
+      mountedRef.current = false;
+      clearTimers();
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, [draw, update]);
+
+  const handleCanvasClick = (e) => {
+    const s = gs.current;
+
+    if (s.phase === "playing") return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * CW;
+    const y = ((e.clientY - rect.top) / rect.height) * CH;
+
+    const buttonX = CW / 2;
+    const buttonY = CH / 2 + 112;
+
+    if (Math.abs(x - buttonX) < 116 && Math.abs(y - buttonY) < 34) {
+      startRun();
+    }
+  };
+
   const s = gs.current;
-  const upgrades = [
-    { key: "startCrowd", icon: "👥", name: "Starting Mob", desc: "Begin with more runners", lv: s.upgrades.startCrowd, cost: 45 + s.upgrades.startCrowd * 35 },
-    { key: "income",     icon: "🪙", name: "Coin Magnet",  desc: "Earn more from everything", lv: s.upgrades.income, cost: 60 + s.upgrades.income * 45 },
-    { key: "damage",     icon: "⚡", name: "Boss Damage",  desc: "Hit the final boss harder", lv: s.upgrades.damage, cost: 70 + s.upgrades.damage * 50 },
-    { key: "speed",      icon: "💨", name: "Rush Speed",   desc: "Move through levels faster", lv: s.upgrades.speed, cost: 50 + s.upgrades.speed * 40 },
+
+  const upgradeData = [
+    {
+      key: "startCrowd",
+      icon: "👥",
+      name: "Starting Mob",
+      desc: "Begin each run with more runners.",
+      level: s.upgrades.startCrowd,
+      cost: 45 + s.upgrades.startCrowd * 35,
+    },
+    {
+      key: "income",
+      icon: "🪙",
+      name: "Coin Magnet",
+      desc: "Earn more coins from everything.",
+      level: s.upgrades.income,
+      cost: 60 + s.upgrades.income * 45,
+    },
+    {
+      key: "damage",
+      icon: "⚡",
+      name: "Boss Damage",
+      desc: "Your mob hits bosses and walls harder.",
+      level: s.upgrades.damage,
+      cost: 70 + s.upgrades.damage * 52,
+    },
+    {
+      key: "speed",
+      icon: "💨",
+      name: "Rush Speed",
+      desc: "Move through levels faster.",
+      level: s.upgrades.speed,
+      cost: 50 + s.upgrades.speed * 42,
+    },
   ];
 
   return (
-    <div style={CSS.page}>
-      <div style={CSS.shell}>
-        {/* header */}
-        <div style={CSS.header}>
+    <div className="mob-rush-page">
+      <div className="mob-rush-shell">
+        <div className="mob-rush-header">
           <div>
-            <div style={CSS.titleRow}>
-              <span style={CSS.titleIcon}>🏃</span>
-              <h1 style={CSS.title}>Mob Rush</h1>
+            <div className="mob-rush-title-row">
+              <span className="mob-rush-title-icon">🏃</span>
+              <h1>Mob Rush</h1>
             </div>
-            <p style={CSS.subtitle}>Pick gates · grow your mob · smash the final boss</p>
+            <p>Pick gates · grow your mob · smash the final boss</p>
           </div>
-          <div style={CSS.headerBtns}>
-            <button style={{ ...CSS.btn, ...CSS.btnPrimary }} onClick={resetRun}>▶ Start Run</button>
-            <button style={{ ...CSS.btn, ...CSS.btnSecondary }} onClick={hardReset}>Reset</button>
+
+          <div className="mob-rush-header-buttons">
+            <button className="mob-rush-primary-btn" onClick={startRun}>
+              ▶ Start Run
+            </button>
+            <button className="mob-rush-secondary-btn" onClick={hardReset}>
+              Reset
+            </button>
           </div>
         </div>
 
-        <div style={CSS.main}>
-          {/* canvas */}
-          <div style={CSS.canvasWrap}>
-            <canvas ref={canvasRef} width={CW} height={CH}
-              onClick={handleClick} style={CSS.canvas} />
+        <div className="mob-rush-main">
+          <div className="mob-rush-canvas-wrap">
+            <canvas
+              ref={canvasRef}
+              width={CW}
+              height={CH}
+              className="mob-rush-canvas"
+              onClick={handleCanvasClick}
+            />
           </div>
 
-          {/* side panel */}
-          <aside style={CSS.panel}>
-            <div style={CSS.statCard}>
-              <span style={CSS.statLabel}>🪙 Total Coins</span>
-              <strong style={CSS.statBig}>{s.coins}</strong>
+          <aside className="mob-rush-panel">
+            <div className="mob-rush-stat-card">
+              <span>🪙 Total Coins</span>
+              <strong>{s.coins}</strong>
             </div>
 
-            <div style={CSS.statGrid}>
-              <div style={CSS.statSmall}>
-                <span style={CSS.statLabel}>👥 Best Mob</span>
-                <strong style={CSS.statMid}>{s.stats.bestCrowd}</strong>
+            <div className="mob-rush-stat-grid">
+              <div>
+                <span>👥 Best Mob</span>
+                <strong>{s.stats.bestCrowd}</strong>
               </div>
-              <div style={CSS.statSmall}>
-                <span style={CSS.statLabel}>🏆 Best Run</span>
-                <strong style={CSS.statMid}>{s.stats.bestCoins}</strong>
+              <div>
+                <span>🏆 Best Run</span>
+                <strong>{s.stats.bestCoins}</strong>
               </div>
             </div>
 
-            <div style={CSS.upgradesBox}>
-              <h2 style={CSS.panelH2}>Upgrades</h2>
-              {upgrades.map(u => (
-                <button key={u.key} style={{ ...CSS.upgradeBtn, opacity: s.coins < u.cost ? 0.45 : 1 }}
-                  onClick={() => buyUpgrade(u.key)} disabled={s.coins < u.cost}>
-                  <div style={CSS.upgradeIcon}>{u.icon}</div>
-                  <div style={CSS.upgradeInfo}>
-                    <strong style={CSS.upgradeName}>{u.name}</strong>
-                    <span style={CSS.upgradeDesc}>{u.desc}</span>
-                    <span style={CSS.upgradeLv}>Lv {u.lv}</span>
+            <div className="mob-rush-upgrades">
+              <h2>Upgrades</h2>
+
+              {upgradeData.map((upgrade) => (
+                <button
+                  key={upgrade.key}
+                  className="mob-rush-upgrade-btn"
+                  onClick={() => buyUpgrade(upgrade.key)}
+                  disabled={s.coins < upgrade.cost}
+                >
+                  <div className="mob-rush-upgrade-icon">{upgrade.icon}</div>
+
+                  <div className="mob-rush-upgrade-info">
+                    <strong>{upgrade.name}</strong>
+                    <span>{upgrade.desc}</span>
+                    <small>Lv {upgrade.level}</small>
                   </div>
-                  <div style={CSS.upgradeCost}>
+
+                  <div className="mob-rush-upgrade-cost">
                     <span>🪙</span>
-                    <b>{u.cost}</b>
+                    <b>{upgrade.cost}</b>
                   </div>
                 </button>
               ))}
             </div>
 
-            <div style={CSS.helpBox}>
-              <h2 style={CSS.panelH2}>Controls</h2>
-              <p style={CSS.helpText}>Drag to steer · A/D or ← → keys</p>
-              <p style={CSS.helpText}>🟢 Gates grow your mob &nbsp;🔴 Gates shrink it</p>
-              <p style={CSS.helpText}>Bigger mob = more boss damage!</p>
+            <div className="mob-rush-help">
+              <h2>Controls</h2>
+              <p>Drag to steer · A/D or ← → keys</p>
+              <p>🟢 Gates grow your mob · 🔴 Gates shrink it</p>
+              <p>Bigger mob = more boss damage.</p>
             </div>
           </aside>
         </div>
@@ -1438,102 +1804,3 @@ export default function MobRush() {
     </div>
   );
 }
-
-/* ── STYLES ── */
-const CSS = {
-  page: {
-    minHeight: "100vh",
-    width: "100%",
-    padding: "24px",
-    background: "linear-gradient(135deg, #060c1e 0%, #0d1830 50%, #0a1228 100%)",
-    color: "#e0eaff",
-    boxSizing: "border-box",
-    fontFamily: "'Segoe UI', Arial, sans-serif",
-  },
-  shell: { maxWidth: 1380, margin: "0 auto" },
-  header: {
-    display: "flex", alignItems: "center", justifyContent: "space-between",
-    gap: 20, marginBottom: 20,
-  },
-  titleRow: { display: "flex", alignItems: "center", gap: 12 },
-  titleIcon: { fontSize: 40 },
-  title: {
-    margin: 0, fontSize: 48, fontWeight: 950,
-    background: "linear-gradient(135deg, #00d4ff, #aa00ff, #ff2266)",
-    WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-    letterSpacing: "-2px",
-  },
-  subtitle: { margin: "6px 0 0", color: "rgba(160,200,255,0.7)", fontSize: 15, fontWeight: 700 },
-  headerBtns: { display: "flex", gap: 10 },
-  btn: {
-    border: 0, borderRadius: 18, padding: "13px 20px",
-    fontWeight: 900, fontSize: 14, cursor: "pointer",
-    transition: "transform 0.15s, box-shadow 0.15s",
-  },
-  btnPrimary: {
-    background: "linear-gradient(135deg, #0077ff, #00d4ff)",
-    color: "#fff", boxShadow: "0 8px 28px rgba(0,120,255,0.35)",
-  },
-  btnSecondary: {
-    background: "rgba(255,255,255,0.08)",
-    color: "rgba(200,220,255,0.85)",
-    border: "1px solid rgba(100,150,255,0.2)",
-    boxShadow: "none",
-  },
-  main: { display: "grid", gridTemplateColumns: "minmax(0,1fr) 310px", gap: 20, alignItems: "start" },
-  canvasWrap: {
-    background: "rgba(0,0,0,0.4)",
-    border: "1px solid rgba(60,120,255,0.25)",
-    boxShadow: "0 24px 70px rgba(0,20,80,0.6)",
-    borderRadius: 28, padding: 12, overflow: "hidden",
-  },
-  canvas: {
-    width: "100%", display: "block", borderRadius: 20,
-    touchAction: "none", cursor: "grab", userSelect: "none",
-  },
-  panel: { display: "flex", flexDirection: "column", gap: 14 },
-  statCard: {
-    background: "rgba(15,25,55,0.9)",
-    border: "1px solid rgba(60,120,255,0.2)",
-    boxShadow: "0 12px 40px rgba(0,20,80,0.4)",
-    borderRadius: 22, padding: 20,
-  },
-  statGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-  statSmall: {
-    background: "rgba(15,25,55,0.9)",
-    border: "1px solid rgba(60,120,255,0.2)",
-    boxShadow: "0 12px 40px rgba(0,20,80,0.4)",
-    borderRadius: 22, padding: 16,
-  },
-  statLabel: { display: "block", color: "rgba(130,180,255,0.7)", fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.6px" },
-  statBig: { display: "block", marginTop: 4, fontSize: 44, fontWeight: 950, color: "#ffd43b", lineHeight: 1 },
-  statMid: { display: "block", marginTop: 4, fontSize: 28, fontWeight: 950, color: "#ffffff" },
-  upgradesBox: {
-    background: "rgba(15,25,55,0.9)",
-    border: "1px solid rgba(60,120,255,0.2)",
-    boxShadow: "0 12px 40px rgba(0,20,80,0.4)",
-    borderRadius: 22, padding: 18,
-  },
-  panelH2: { margin: "0 0 14px", fontSize: 18, fontWeight: 950, color: "#e0eaff", letterSpacing: "-0.5px" },
-  upgradeBtn: {
-    width: "100%", border: "1px solid rgba(80,140,255,0.2)",
-    background: "rgba(255,255,255,0.04)",
-    borderRadius: 18, padding: "12px 14px", marginBottom: 10,
-    cursor: "pointer", display: "flex", alignItems: "center",
-    gap: 12, textAlign: "left", color: "#e0eaff",
-    transition: "transform 0.15s, background 0.15s",
-  },
-  upgradeIcon: { fontSize: 26, flexShrink: 0 },
-  upgradeInfo: { flex: 1, display: "flex", flexDirection: "column", gap: 2 },
-  upgradeName: { color: "#e0eaff", fontSize: 14, fontWeight: 900 },
-  upgradeDesc: { color: "rgba(130,180,255,0.7)", fontSize: 11, fontWeight: 700 },
-  upgradeLv: { display: "inline-block", background: "rgba(0,120,255,0.2)", color: "#60b0ff", fontSize: 10, fontWeight: 900, borderRadius: 99, padding: "2px 8px", marginTop: 3 },
-  upgradeCost: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flexShrink: 0 },
-  helpBox: {
-    background: "rgba(15,25,55,0.9)",
-    border: "1px solid rgba(60,120,255,0.2)",
-    boxShadow: "0 12px 40px rgba(0,20,80,0.4)",
-    borderRadius: 22, padding: 18,
-  },
-  helpText: { margin: "8px 0 0", color: "rgba(130,180,255,0.7)", fontWeight: 700, fontSize: 13, lineHeight: 1.5 },
-};
