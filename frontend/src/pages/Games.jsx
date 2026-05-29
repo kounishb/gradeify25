@@ -299,6 +299,7 @@ export default function Games() {
     return (
       <div className="active-game">
         <button
+          type="button"
           className="back-to-games-button"
           onClick={() => setActiveGame(null)}
         >
@@ -315,11 +316,10 @@ export default function Games() {
       <div className="games-hero">
         <div>
           <p className="games-eyebrow">Gradeify Games</p>
-          <h1>Turn studying into gameplay.</h1>
+          <h1>Choose a game.</h1>
           <p>
-            Pick a study set, then choose a game. Your flashcards and practice
-            questions become the way you earn rewards, survive longer, and keep
-            progressing.
+            Play fast arcade-style games, runners, tower defense, horror, and
+            hyper-casual challenges all inside Gradeify.
           </p>
         </div>
       </div>
@@ -370,6 +370,7 @@ export default function Games() {
           </div>
 
           <button
+            type="button"
             className="start-game-btn"
             onClick={() => setActiveGame("study-siege")}
           >
@@ -380,15 +381,15 @@ export default function Games() {
         <div className="game-card featured-game-card">
           <div className="game-card-top">
             <div>
-              <p className="game-label">New Game</p>
+              <p className="game-label">Runner Game</p>
               <h2>Flashcard Dash</h2>
             </div>
             <span className="game-pill">Runner</span>
           </div>
 
           <p className="game-description">
-            A Subway Surfers-style study runner. Dodge obstacles, collect coins,
-            grab flashcards, and answer questions to keep your streak alive.
+            A Subway Surfers-style runner. Dodge obstacles, collect coins, grab
+            boosts, and keep your streak alive.
           </p>
 
           <div className="study-set-picker">
@@ -421,6 +422,7 @@ export default function Games() {
           </div>
 
           <button
+            type="button"
             className="start-game-btn"
             onClick={() => setActiveGame("flashcard-dash")}
           >
@@ -429,41 +431,42 @@ export default function Games() {
         </div>
 
         <div className="game-card featured-game-card mob-rush-card">
-  <div className="game-card-top">
-    <div>
-      <p className="game-label">New Game</p>
-      <h2>Mob Rush</h2>
-    </div>
-    <span className="game-pill">Crowd Runner</span>
-  </div>
+          <div className="game-card-top">
+            <div>
+              <p className="game-label">New Game</p>
+              <h2>Mob Rush</h2>
+            </div>
+            <span className="game-pill">Crowd Runner</span>
+          </div>
 
-  <p className="game-description">
-    A Count Masters-style hyper-casual runner. Pick multiplier gates, grow your
-    mob, dodge blades, collect coins, and smash the final boss.
-  </p>
+          <p className="game-description">
+            A Count Masters-style hyper-casual runner. Pick multiplier gates,
+            grow your mob, dodge blades, collect coins, and smash the final boss.
+          </p>
 
-  <div className="game-details-row">
-    <div>
-      <strong>👥</strong>
-      <span>Mob Growth</span>
-    </div>
-    <div>
-      <strong>x2</strong>
-      <span>Gates</span>
-    </div>
-    <div>
-      <strong>⚔️</strong>
-      <span>Boss Fight</span>
-    </div>
-  </div>
+          <div className="game-details-row">
+            <div>
+              <strong>👥</strong>
+              <span>Mob Growth</span>
+            </div>
+            <div>
+              <strong>x2</strong>
+              <span>Gates</span>
+            </div>
+            <div>
+              <strong>⚔️</strong>
+              <span>Boss Fight</span>
+            </div>
+          </div>
 
-  <button
-    className="start-game-btn"
-    onClick={() => setActiveGame("mob-rush")}
-  >
-    Start Mob Rush
-  </button>
-</div>
+          <button
+            type="button"
+            className="start-game-btn"
+            onClick={() => setActiveGame("mob-rush")}
+          >
+            Start Mob Rush
+          </button>
+        </div>
 
         <div className="game-card featured-game-card horror-game-card">
           <div className="game-card-top">
@@ -496,6 +499,7 @@ export default function Games() {
           </div>
 
           <button
+            type="button"
             className="start-game-btn horror-game-btn"
             onClick={() => setActiveGame("something-heard-you")}
           >
