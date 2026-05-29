@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import TowerDefenseGame from "../components/games/TowerDefenseGame";
 import FlashcardDash from "../components/games/FlashcardDash";
 import SomethingHeardYou from "../components/games/SomethingHeardYou";
+import MobRush from "../components/games/MobRush";
 import "../styles/Games.css";
 
 function normalizeFlashcards(cards = []) {
@@ -294,6 +295,21 @@ export default function Games() {
     return <SomethingHeardYou onExit={() => setActiveGame(null)} />;
   }
 
+  if (activeGame === "mob-rush") {
+    return (
+      <div className="active-game">
+        <button
+          className="back-to-games-button"
+          onClick={() => setActiveGame(null)}
+        >
+          ← Back to Games
+        </button>
+
+        <MobRush />
+      </div>
+    );
+  }
+
   return (
     <div className="games-page">
       <div className="games-hero">
@@ -411,6 +427,43 @@ export default function Games() {
             Start Flashcard Dash
           </button>
         </div>
+
+        <div className="game-card featured-game-card mob-rush-card">
+  <div className="game-card-top">
+    <div>
+      <p className="game-label">New Game</p>
+      <h2>Mob Rush</h2>
+    </div>
+    <span className="game-pill">Crowd Runner</span>
+  </div>
+
+  <p className="game-description">
+    A Count Masters-style hyper-casual runner. Pick multiplier gates, grow your
+    mob, dodge blades, collect coins, and smash the final boss.
+  </p>
+
+  <div className="game-details-row">
+    <div>
+      <strong>👥</strong>
+      <span>Mob Growth</span>
+    </div>
+    <div>
+      <strong>x2</strong>
+      <span>Gates</span>
+    </div>
+    <div>
+      <strong>⚔️</strong>
+      <span>Boss Fight</span>
+    </div>
+  </div>
+
+  <button
+    className="start-game-btn"
+    onClick={() => setActiveGame("mob-rush")}
+  >
+    Start Mob Rush
+  </button>
+</div>
 
         <div className="game-card featured-game-card horror-game-card">
           <div className="game-card-top">
