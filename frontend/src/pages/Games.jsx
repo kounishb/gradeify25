@@ -4,6 +4,7 @@ import TowerDefenseGame from "../components/games/TowerDefenseGame";
 import FlashcardDash from "../components/games/FlashcardDash";
 import SomethingHeardYou from "../components/games/SomethingHeardYou";
 import MobRush from "../components/games/MobRush";
+import FurryObbyGame from "../components/games/FurryObbyGame";
 import "../styles/Games.css";
 
 function normalizeFlashcards(cards = []) {
@@ -311,6 +312,10 @@ export default function Games() {
     );
   }
 
+  if (activeGame === "furry-obby") {
+    return <FurryObbyGame onBack={() => setActiveGame(null)} />;
+  }
+
   return (
     <div className="games-page">
       <div className="games-hero">
@@ -506,6 +511,43 @@ export default function Games() {
             Start Something Heard You
           </button>
         </div>
+        <div className="game-card featured-game-card">
+  <div className="game-card-top">
+    <div>
+      <p className="game-label">New Game</p>
+      <h2>Furry Obby</h2>
+    </div>
+    <span className="game-pill">First Person Obby</span>
+  </div>
+
+  <p className="game-description">
+    A cursed Roblox-style first-person obby with floaty jumps, checkpoints,
+    moving platforms, tail spinners, uwu lava, and painfully cringe furry chaos.
+  </p>
+
+  <div className="game-details-row">
+    <div>
+      <strong>43</strong>
+      <span>Levels</span>
+    </div>
+    <div>
+      <strong>🐾</strong>
+      <span>Checkpoints</span>
+    </div>
+    <div>
+      <strong>UwU</strong>
+      <span>Cringe</span>
+    </div>
+  </div>
+
+  <button
+    type="button"
+    className="start-game-btn"
+    onClick={() => setActiveGame("furry-obby")}
+  >
+    Start Furry Obby
+  </button>
+</div>
       </div>
     </div>
   );
