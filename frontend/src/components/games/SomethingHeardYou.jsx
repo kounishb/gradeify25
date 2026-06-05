@@ -238,8 +238,8 @@ function createFloor(floorNum = 1, previousPlayer = null) {
         x: spawn.x,
         y: spawn.y,
         angle: 0,
-        pitch: previousPlayer.pitch || 0,
-        targetPitch: previousPlayer.targetPitch || 0,
+        pitch: 0,
+        targetPitch: 0,
         bob: 0,
         vx: 0,
         vy: 0,
@@ -252,8 +252,8 @@ function createFloor(floorNum = 1, previousPlayer = null) {
         x: spawn.x,
         y: spawn.y,
         angle: 0,
-        pitch: previousPlayer.pitch || 0,
-        targetPitch: previousPlayer.targetPitch || 0,
+        pitch: 0,
+        targetPitch: 0,
         bob: 0,
         vx: 0,
         vy: 0,
@@ -1476,7 +1476,7 @@ export default function SomethingHeardYou({ onExit }) {
       if (k === "r") fireStunGun();
       if (k === "f") {
         const r = runRef.current;
-        if (r) { r.player.flashlightOff = !r.player.flashlightOff; r.message = r.player.flashlightOff ? "Flashlight off." : "Flashlight on."; setRun({ ...r }); }
+        if (r?.player) { r.player.flashlightOff = !r.player.flashlightOff; r.message = r.player.flashlightOff ? "Flashlight off." : "Flashlight on."; setRun({ ...r }); }
       }
       if (["1", "2", "3"].includes(k)) applyUpgradeChoice(Number(k) - 1);
     };
@@ -1484,8 +1484,8 @@ export default function SomethingHeardYou({ onExit }) {
     const move = (e) => {
       if (document.pointerLockElement === canvasRef.current) {
         const r = runRef.current;
-        if (r && started && !r.dead && !r.won) {
-          r.player.angle = normAng(r.player.angle + e.movementX * 0.0044);
+        if (r?.player && started && !r.dead && !r.won) {
+          r.player.angle = normAng((r.player.angle || 0) + e.movementX * 0.0044);
           r.player.targetPitch = clamp((r.player.targetPitch || 0) + e.movementY * 0.0034, -0.55, 0.55);
           runRef.current = r;
         }
