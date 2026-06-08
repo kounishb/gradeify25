@@ -1530,6 +1530,79 @@ export default function SomethingHeardYou({ onExit }) {
   }
 
 
+  function drawMiniMap(ctx, r) {
+    // Tiny radar/minimap. This was referenced by the HUD but accidentally missing,
+    // which caused the crash: ReferenceError: drawMiniMap is not defined.
+    const p = r.player;
+    const size = 118;
+    const scale = size / (CELL * 7.2);
+    const x0 = CANVAS_W - size - 22;
+    const y0 = CANVAS_H - size - 22;
+
+    ctx.save();
+    ctx.globalAlpha = 0.86;
+    ctx.fillStyle = "rgba(3,0,2,.62)";
+    ctx.fillRect(x0, y0, size, size);
+    ctx.strokeStyle = "rgba(255,80,80,.18)";
+    ctx.strokeRect(x0, y0, size, size);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0 + 1, y0 + 1, size - 2, size - 2);
+    ctx.clip();
+    ctx.translate(x0 + size / 2, y0 + size / 2);
+
+    const half = Math.ceil((size / scale) / CELL / 2) + 1;
+    const pgx = Math.floor(p.x / CELL);
+    const pgy = Math.floor(p.y / CELL);
+    for (let gy = pgy - half; gy <= pgy + half; gy++) {
+      for (let gx = pgx - half; gx <= pgx + half; gx++) {
+        const sx = (gx * CELL + CELL / 2 - p.x) * scale;
+        const sy = (gy * CELL + CELL / 2 - p.y) * scale;
+        const wall = gx < 0 || gy < 0 || gx >= MAP_W || gy >= MAP_H || r.grid[gy][gx] === 1;
+        ctx.fillStyle = wall ? "rgba(130,42,42,.28)" : "rgba(255,235,210,.055)";
+        ctx.fillRect(sx - CELL * scale / 2, sy - CELL * scale / 2, CELL * scale + 0.5, CELL * scale + 0.5);
+      }
+    }
+
+    const drawDot = (obj, color, rad = 2.7) => {
+      if (!obj) return;
+      const sx = (obj.x - p.x) * scale;
+      const sy = (obj.y - p.y) * scale;
+      if (Math.abs(sx) > size / 2 || Math.abs(sy) > size / 2) return;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(sx, sy, rad, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    // Only show nearby useful info so the minimap helps without spoiling the maze.
+    r.items?.filter((i) => !i.collected).forEach((i) => drawDot(i, "rgba(255,55,55,.86)", 2.2));
+    r.batteries?.filter((i) => !i.collected).forEach((i) => drawDot(i, "rgba(255,220,80,.72)", 1.9));
+    if (r.exit?.active) drawDot(r.exit, "rgba(90,255,130,.95)", 3.8);
+    if (r.securityPing > 0 || r.monster.mode === "chase" || dist(p, r.monster) < 360) drawDot(r.monster, "rgba(255,0,0,.95)", 4.0);
+
+    // Player arrow.
+    ctx.save();
+    ctx.rotate(p.angle);
+    ctx.fillStyle = "rgba(245,245,245,.96)";
+    ctx.beginPath();
+    ctx.moveTo(8, 0);
+    ctx.lineTo(-5, -5);
+    ctx.lineTo(-2, 0);
+    ctx.lineTo(-5, 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.restore();
+    ctx.fillStyle = "rgba(235,210,205,.62)";
+    ctx.font = "9px 'Share Tech Mono', monospace";
+    ctx.fillText("LOCAL MAP", x0 + 8, y0 - 6);
+    ctx.restore();
+  }
+
+
   function drawGame(ctx, r) {
     const p = r.player;
     const theme = r.theme;
