@@ -458,6 +458,48 @@ function openCellNear(grid, center, minR = CELL * 3, maxR = CELL * 7, preferBehi
   return best;
 }
 
+
+function findPathStep(grid, from, to) {
+  const sx = Math.floor(from.x / CELL), sy = Math.floor(from.y / CELL);
+  const tx = Math.floor(to.x / CELL), ty = Math.floor(to.y / CELL);
+  if (!isOpenCell(grid, sx, sy) || !isOpenCell(grid, tx, ty)) return null;
+  if (sx === tx && sy === ty) return cellCenter(tx, ty);
+
+  const q = [{ x: sx, y: sy }];
+  const seen = new Set([`${sx},${sy}`]);
+  const parent = new Map();
+  const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
+  let found = null;
+
+  for (let qi = 0; qi < q.length && qi < 420; qi++) {
+    const cur = q[qi];
+    if (cur.x === tx && cur.y === ty) { found = cur; break; }
+    const shuffled = dirs.slice().sort((a, b) => {
+      const da = Math.abs(cur.x + a.x - tx) + Math.abs(cur.y + a.y - ty);
+      const db = Math.abs(cur.x + b.x - tx) + Math.abs(cur.y + b.y - ty);
+      return da - db;
+    });
+    for (const d of shuffled) {
+      const nx = cur.x + d.x, ny = cur.y + d.y;
+      const key = `${nx},${ny}`;
+      if (seen.has(key) || !isOpenCell(grid, nx, ny)) continue;
+      seen.add(key);
+      parent.set(key, `${cur.x},${cur.y}`);
+      q.push({ x: nx, y: ny });
+    }
+  }
+
+  if (!found) return null;
+  let key = `${found.x},${found.y}`;
+  let prev = parent.get(key);
+  while (prev && prev !== `${sx},${sy}`) {
+    key = prev;
+    prev = parent.get(key);
+  }
+  const [nx, ny] = key.split(',').map(Number);
+  return cellCenter(nx, ny);
+}
+
 function moveEntityVector(grid, ent, mx, my, radius = 18) {
   const nx = ent.x + mx;
   const ny = ent.y + my;
@@ -792,48 +834,60 @@ export default function SomethingHeardYou({ onExit }) {
   function updateMonster(r, dt) {
     const p = r.player;
     const m = r.monster;
+    m.attackCooldown = Math.max(0, (m.attackCooldown || 0) - dt);
+    m.pathTimer = Math.max(0, (m.pathTimer || 0) - dt);
+    m.bodyAnim = (m.bodyAnim || 0) + dt * 0.006;
+    m.eyePulse = (m.eyePulse || 0) + dt * 0.009;
     if (m.stun > 0) { m.stun -= dt; return; }
 
     m.stalkTimer = (m.stalkTimer ?? 0) - dt;
     m.ambushCooldown = (m.ambushCooldown ?? 0) - dt;
-    m.pressureTimer = (m.pressureTimer ?? 0) - dt;
 
     const d = dist(p, m);
-    const los = d < (r.finalPhase ? 1100 : 900) && hasLineOfSight(r.grid, m, p);
-    const playerLookingAtMonster = Math.abs(normAng(Math.atan2(m.y - p.y, m.x - p.x) - p.angle)) < 0.42;
-    const flashlightOn = !p.flashlightOff && (p.battery > 0 || p.hasLighter);
+    const los = d < (r.finalPhase ? 1120 : 920) && hasLineOfSight(r.grid, m, p);
+    const facingPlayer = Math.abs(normAng(Math.atan2(p.y - m.y, p.x - m.x) - (m.angle || 0))) < 1.45;
+    const closeEnoughToHearBreathing = d < 260;
+    const seesPlayer = los && (facingPlayer || closeEnoughToHearBreathing || m.mode === "chase" || p.noise > 22 || r.finalPhase);
+
     const activeFlare = r.activeFlares
       .filter((f) => hasLineOfSight(r.grid, m, f))
       .sort((a, b) => dist(m, a) - dist(m, b))[0];
 
-    if (activeFlare && dist(m, activeFlare) < activeFlare.radius * 2.25 && m.mode !== "chase") {
+    if (activeFlare && dist(m, activeFlare) < activeFlare.radius * 2.2 && m.mode !== "chase" && p.noise < 55) {
       m.mode = "investigate";
       m.target = { x: activeFlare.x, y: activeFlare.y };
       m.lastKnown = m.target;
-    } else if (los) {
+    } else if (seesPlayer) {
       m.mode = "chase";
       m.target = { x: p.x, y: p.y };
       m.lastKnown = { x: p.x, y: p.y };
-      m.anger = clamp((m.anger || 0) + dt * 0.018, 0, 100);
-      if (playerLookingAtMonster && flashlightOn && d < 520) p.sanity = clamp(p.sanity - dt * 0.018, 0, p.maxSanity);
-    } else if (p.noise > 16 && d < 1500) {
-      m.mode = p.noise > 50 || d < 420 ? "chase" : "investigate";
+      m.lastSeenAt = r.time;
+      m.anger = clamp((m.anger || 0) + dt * 0.03, 0, 100);
+      if (d < 520) p.sanity = clamp(p.sanity - dt * 0.021, 0, p.maxSanity);
+    } else if (p.noise > 13 && d < 1600) {
+      m.mode = p.noise > 48 || d < 440 ? "chase" : "investigate";
       m.target = { x: p.x, y: p.y };
       m.lastKnown = { x: p.x, y: p.y };
-      m.anger = clamp((m.anger || 0) + p.noise * 0.18, 0, 100);
+      m.anger = clamp((m.anger || 0) + p.noise * 0.22, 0, 100);
     } else if (m.mode === "chase" && m.lastKnown) {
       m.target = m.lastKnown;
-      if (dist(m, m.lastKnown) < 56) { m.mode = "investigate"; m.stalkTimer = 700; }
+      if (dist(m, m.lastKnown) < 62 || r.time - (m.lastSeenAt || 0) > 4200) {
+        m.mode = "investigate";
+        m.stalkTimer = 650;
+      }
     }
 
-    // Floor-specific behavior
+    // Floor-specific stalking pressure, but never fake "face popups".
     if (r.floorNum === 2) {
       if (dist(p, r.lastPlayerPos) < 6) r.stillTimer += dt;
       else { r.stillTimer = 0; r.lastPlayerPos = { x: p.x, y: p.y }; }
-      if (r.stillTimer > 4200 && m.mode !== "chase") {
-        const blink = openCellNear(r.grid, p, CELL * 2.4, CELL * 4.2, p.angle) || { x: p.x - Math.cos(p.angle) * 260, y: p.y - Math.sin(p.angle) * 260 };
-        m.x = blink.x; m.y = blink.y; m.mode = "chase"; m.target = { x: p.x, y: p.y }; r.stillTimer = 0;
-        scare(r, "DON'T STOP", 1.2); r.message = "You stood still too long.";
+      if (r.stillTimer > 5200 && m.mode !== "chase") {
+        const blink = openCellNear(r.grid, p, CELL * 2.6, CELL * 4.8, p.angle);
+        if (blink) { m.x = blink.x; m.y = blink.y; }
+        m.mode = "investigate";
+        m.target = { x: p.x, y: p.y };
+        r.stillTimer = 0;
+        r.message = "It noticed you stop moving.";
       }
     }
     if (r.floorNum === 3) {
@@ -845,51 +899,51 @@ export default function SomethingHeardYou({ onExit }) {
       }
     }
 
-    // Stalk mode should actually stalk: stay near the player, then cut them off.
-    if (m.mode === "stalk" || !m.target) {
-      if (m.stalkTimer <= 0 || !m.target || dist(m, m.target) < 70 || d > 1200) {
-        const ambush = openCellNear(r.grid, p, CELL * 3.2, CELL * 7.5, p.angle);
-        if (ambush) m.target = ambush;
-        m.stalkTimer = rand(950, 2200);
-      }
-      if (d < 270 && hasLineOfSight(r.grid, m, p)) {
-        m.mode = "chase";
-        m.target = { x: p.x, y: p.y };
-        r.message = "It stepped out of the dark.";
-        scare(r, "MOVE", 0.8);
-      }
+    if ((m.mode === "stalk" || !m.target) && m.stalkTimer <= 0) {
+      const ambush = openCellNear(r.grid, p, CELL * 3.4, CELL * 7.0, p.angle);
+      if (ambush) m.target = ambush;
+      m.stalkTimer = rand(1000, 2400);
     }
 
-    // If the monster has been irrelevant for too long, move it near the player but usually out of sight.
-    if (m.ambushCooldown <= 0 && d > 760 && !los) {
-      const ambush = openCellNear(r.grid, p, CELL * 3.0, CELL * 5.6, p.angle);
+    // Keep the monster physically present, but stop teleporting it directly in your face.
+    if (m.ambushCooldown <= 0 && d > 980 && !los) {
+      const ambush = openCellNear(r.grid, p, CELL * 4.0, CELL * 7.4, p.angle);
       if (ambush) {
         m.x = ambush.x; m.y = ambush.y;
         m.mode = "investigate";
         m.target = { x: p.x, y: p.y };
         m.lastKnown = { x: p.x, y: p.y };
-        r.message = choice(["Something moved behind the wall.", "A wet footstep answered yours.", "The hallway behind you is not empty."]);
-        if (Math.random() < 0.45) makeNoise(r, m.x, m.y, 120, true);
+        r.message = choice(["Something heavy moved in the next hall.", "You hear nails scrape the floor.", "A shape crossed behind the wall."]);
       }
-      m.ambushCooldown = rand(4200, 8600);
+      m.ambushCooldown = rand(7600, 13000);
     }
 
     const target = m.mode === "chase" ? p : m.target;
     if (target) {
-      let spd = m.mode === "chase" ? m.baseSpeed + 1.35 : m.mode === "investigate" ? m.baseSpeed + 0.55 : 1.65 + r.floorNum * 0.12;
-      if (r.finalPhase) spd += 0.75;
-      if (r.event?.type === "hunt") spd += 0.9;
+      let spd = m.mode === "chase" ? m.baseSpeed + 1.85 : m.mode === "investigate" ? m.baseSpeed + 0.72 : 1.55 + r.floorNum * 0.1;
+      if (r.finalPhase) spd += 0.85;
+      if (r.event?.type === "hunt") spd += 1.0;
       if (r.event?.type === "listening" && p.noise > 22) spd += 0.45;
       if (r.floorNum >= 5) spd += 0.35;
-      const ang = Math.atan2(target.y - m.y, target.x - m.x);
+
+      let moveTarget = target;
+      const canRunStraight = hasLineOfSight(r.grid, m, target);
+      if (!canRunStraight && m.pathTimer <= 0) {
+        m.pathStep = findPathStep(r.grid, m, target);
+        m.pathTimer = 150;
+      }
+      if (!canRunStraight && m.pathStep) moveTarget = m.pathStep;
+
+      const ang = Math.atan2(moveTarget.y - m.y, moveTarget.x - m.x);
       m.angle = ang;
-      const beforeD = dist(m, target);
-      const moved = smartMoveEntity(r.grid, m, ang, spd * (dt / 16.67), 24);
-      const afterD = dist(m, target);
-      if (!moved || afterD > beforeD - 0.2) m.pathFrustration = (m.pathFrustration || 0) + dt;
+      const beforeD = dist(m, moveTarget);
+      const moved = smartMoveEntity(r.grid, m, ang, spd * (dt / 16.67), 25);
+      const afterD = dist(m, moveTarget);
+      if (afterD < 34) m.pathTimer = 0;
+      if (!moved || afterD > beforeD - 0.15) m.pathFrustration = (m.pathFrustration || 0) + dt;
       else m.pathFrustration = Math.max(0, (m.pathFrustration || 0) - dt * 2);
-      if (m.pathFrustration > 1450 && !hasLineOfSight(r.grid, m, p)) {
-        const ambush = openCellNear(r.grid, p, CELL * 2.5, CELL * 5.0, p.angle);
+      if (m.pathFrustration > 1700 && !hasLineOfSight(r.grid, m, p)) {
+        const ambush = openCellNear(r.grid, p, CELL * 3.2, CELL * 6.0, p.angle);
         if (ambush) { m.x = ambush.x; m.y = ambush.y; m.pathFrustration = 0; }
       }
     }
@@ -1012,20 +1066,23 @@ export default function SomethingHeardYou({ onExit }) {
       if (md < 230 && Math.random() < 0.018) r.message = choice(["It is breathing with you.", "Do not turn around.", "The walls are too quiet."]);
     }
 
-    if (md < 44 && p.invuln <= 0) {
+    if (md < 82 && p.invuln <= 0 && (r.monster.attackCooldown || 0) <= 0 && hasLineOfSight(r.grid, r.monster, p)) {
       p.hp -= 1;
-      p.invuln = 2300;
-      p.sanity = clamp(p.sanity - 36, 0, p.maxSanity);
-      scare(r, "CAUGHT");
+      p.invuln = 2600;
+      r.monster.attackCooldown = 1350;
+      p.sanity = clamp(p.sanity - 42, 0, p.maxSanity);
+      r.shake = Math.max(r.shake || 0, 18);
+      r.glitch = Math.max(r.glitch, 1);
+      scare(r, "CAUGHT", 1.15);
       if (p.hp <= 0) {
         r.dead = true;
         r.message = "The dark learned your name.";
       } else {
         const spawn = cellCenter(1, 1);
-        p.x = spawn.x; p.y = spawn.y; p.angle = 0;
+        p.x = spawn.x; p.y = spawn.y; p.angle = 0; p.vx = 0; p.vy = 0;
         const far = randomOpenCell(r.grid, new Set(["1,1"]), CELL * 8);
-        r.monster.x = far.x; r.monster.y = far.y; r.monster.mode = "stalk";
-        r.message = `It dragged you back to the start. ${p.hp} lives remaining.`;
+        r.monster.x = far.x; r.monster.y = far.y; r.monster.mode = "stalk"; r.monster.target = null;
+        r.message = `It hit you and dragged you back. ${p.hp} lives remaining.`;
       }
     }
 
@@ -1226,50 +1283,111 @@ export default function SomethingHeardYou({ onExit }) {
     const m = r.monster;
     const d = dist(p, m);
     const angle = normAng(Math.atan2(m.y - p.y, m.x - p.x) - p.angle);
-    if (Math.abs(angle) > FOV * 0.86 || d > MAX_DEPTH || !hasLineOfSight(r.grid, p, m)) {
-      if (m.mode === "chase" && d < 900) {
-        const side = angle < 0 ? 36 : CANVAS_W - 36;
-        ctx.save();
-        ctx.globalAlpha = 0.7 + Math.sin(r.time * 0.012) * 0.25;
-        ctx.fillStyle = `rgb(${r.theme.eye[0]},${r.theme.eye[1]},${r.theme.eye[2]})`;
-        ctx.shadowColor = ctx.fillStyle;
-        ctx.shadowBlur = 18;
-        ctx.beginPath();
-        ctx.moveTo(side, CANVAS_H / 2);
-        ctx.lineTo(side + (angle < 0 ? -18 : 18), CANVAS_H / 2 - 15);
-        ctx.lineTo(side + (angle < 0 ? -18 : 18), CANVAS_H / 2 + 15);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-      }
-      return;
-    }
+    if (Math.abs(angle) > FOV * 0.72 || d > MAX_DEPTH || !hasLineOfSight(r.grid, p, m)) return;
+
     const screenX = CANVAS_W / 2 + Math.tan(angle) * (CANVAS_W / 2) / Math.tan(FOV / 2);
     const col = Math.floor(screenX / (CANVAS_W / RAYS));
-    if (rays[col] && d > rays[col].depth + 24) return;
-    const size = clamp((CELL * 760) / d, 58, 460);
-    const y = CANVAS_H / 2 + Math.sin(p.bob) * 4 + (p.pitch || 0) * 230 - size * 0.52;
+    if (rays[col] && d > rays[col].depth + 22) return;
+
+    const horizon = CANVAS_H / 2 + Math.sin(p.bob) * 4 + (p.pitch || 0) * 230;
+    const scale = clamp((CELL * 560) / Math.max(1, d), 0.55, 4.35);
+    const bodyH = 118 * scale;
+    const bodyW = 48 * scale;
+    const footY = horizon + clamp((CELL * 260) / Math.max(1, d), 42, 260);
+    const baseY = footY - bodyH;
     const [er, eg, eb] = r.theme.eye;
+    const alpha = clamp(1 - d / 1180, 0.28, 1);
+    const walk = Math.sin((m.bodyAnim || 0) + (m.bodySeed || 0));
+    const chase = m.mode === "chase";
+    const stun = m.stun > 0;
+
     ctx.save();
-    ctx.translate(screenX, y + size * 0.52);
-    ctx.globalAlpha = clamp(1 - d / 1200, 0.32, 1);
-    ctx.shadowColor = `rgba(${er},${eg},${eb},.7)`;
-    ctx.shadowBlur = m.mode === "chase" ? 30 : 14;
-    const body = ctx.createRadialGradient(0, 0, 4, 0, 0, size * 0.55);
-    body.addColorStop(0, "rgba(20,0,0,.95)");
-    body.addColorStop(0.55, "rgba(6,0,0,.96)");
-    body.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = body;
+    ctx.globalAlpha = stun ? alpha * 0.55 : alpha;
+    ctx.translate(screenX, baseY);
+    ctx.shadowColor = chase ? `rgba(${er},${eg},${eb},.82)` : "rgba(0,0,0,.9)";
+    ctx.shadowBlur = chase ? 22 * scale : 10 * scale;
+
+    // ground shadow anchors the monster as a physical body in the hallway
+    ctx.save();
+    ctx.globalAlpha *= 0.32;
+    ctx.fillStyle = "rgba(0,0,0,.88)";
     ctx.beginPath();
-    ctx.ellipse(0, size * 0.04, size * 0.34, size * 0.55, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, bodyH + 2 * scale, bodyW * 0.85, 9 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = `rgba(${er},${eg},${eb},.95)`;
-    ctx.beginPath(); ctx.ellipse(-size * 0.105, -size * 0.12, size * 0.045, size * 0.025, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(size * 0.105, -size * 0.12, size * 0.045, size * 0.025, 0, 0, Math.PI * 2); ctx.fill();
-    if (d < 260 || m.mode === "chase") {
-      ctx.strokeStyle = `rgba(${er},${eg},${eb},.72)`;
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(-size * 0.13, size * 0.06); ctx.quadraticCurveTo(0, size * 0.19, size * 0.13, size * 0.06); ctx.stroke();
+    ctx.restore();
+
+    // legs
+    ctx.strokeStyle = "rgba(4,0,0,.98)";
+    ctx.lineCap = "round";
+    ctx.lineWidth = 10 * scale;
+    ctx.beginPath();
+    ctx.moveTo(-bodyW * 0.17, bodyH * 0.55);
+    ctx.lineTo(-bodyW * 0.25 + walk * 7 * scale, bodyH * 0.95);
+    ctx.moveTo(bodyW * 0.17, bodyH * 0.55);
+    ctx.lineTo(bodyW * 0.25 - walk * 7 * scale, bodyH * 0.95);
+    ctx.stroke();
+
+    // arms, long and readable
+    ctx.lineWidth = 9 * scale;
+    ctx.beginPath();
+    ctx.moveTo(-bodyW * 0.46, bodyH * 0.28);
+    ctx.quadraticCurveTo(-bodyW * 0.92, bodyH * 0.55 + walk * 8 * scale, -bodyW * 0.7, bodyH * 0.82);
+    ctx.moveTo(bodyW * 0.46, bodyH * 0.28);
+    ctx.quadraticCurveTo(bodyW * 0.92, bodyH * 0.55 - walk * 8 * scale, bodyW * 0.7, bodyH * 0.82);
+    ctx.stroke();
+
+    // torso silhouette
+    const torso = ctx.createLinearGradient(0, 0, 0, bodyH);
+    torso.addColorStop(0, "rgba(18,2,3,.98)");
+    torso.addColorStop(0.55, "rgba(5,0,0,.98)");
+    torso.addColorStop(1, "rgba(0,0,0,.96)");
+    ctx.fillStyle = torso;
+    ctx.beginPath();
+    ctx.moveTo(-bodyW * 0.46, bodyH * 0.22);
+    ctx.quadraticCurveTo(-bodyW * 0.62, bodyH * 0.52, -bodyW * 0.33, bodyH * 0.74);
+    ctx.lineTo(-bodyW * 0.18, bodyH * 0.96);
+    ctx.lineTo(bodyW * 0.18, bodyH * 0.96);
+    ctx.lineTo(bodyW * 0.33, bodyH * 0.74);
+    ctx.quadraticCurveTo(bodyW * 0.62, bodyH * 0.52, bodyW * 0.46, bodyH * 0.22);
+    ctx.quadraticCurveTo(0, bodyH * 0.1, -bodyW * 0.46, bodyH * 0.22);
+    ctx.fill();
+
+    // head and neck
+    ctx.fillStyle = "rgba(7,0,0,.99)";
+    ctx.beginPath();
+    ctx.ellipse(0, bodyH * 0.12, bodyW * 0.36, bodyH * 0.13, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(-bodyW * 0.15, bodyH * 0.2, bodyW * 0.3, bodyH * 0.16);
+
+    // eyes are part of the model, not a full-screen popup
+    const eyePulse = 0.72 + Math.sin((m.eyePulse || 0) + (m.bodySeed || 0)) * 0.22;
+    ctx.fillStyle = `rgba(${er},${eg},${eb},${chase ? 0.98 : 0.74})`;
+    ctx.shadowColor = `rgba(${er},${eg},${eb},.92)`;
+    ctx.shadowBlur = (chase ? 10 : 5) * scale;
+    ctx.beginPath();
+    ctx.ellipse(-bodyW * 0.12, bodyH * 0.105, bodyW * 0.052 * eyePulse, bodyH * 0.018, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(bodyW * 0.12, bodyH * 0.105, bodyW * 0.052 * eyePulse, bodyH * 0.018, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (chase || d < 260) {
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = `rgba(${er},${eg},${eb},.65)`;
+      ctx.lineWidth = Math.max(1.5, 1.1 * scale);
+      ctx.beginPath();
+      ctx.moveTo(-bodyW * 0.13, bodyH * 0.17);
+      ctx.quadraticCurveTo(0, bodyH * 0.23, bodyW * 0.13, bodyH * 0.17);
+      ctx.stroke();
+    }
+
+    if (stun) {
+      ctx.globalAlpha = alpha * 0.5;
+      ctx.strokeStyle = "rgba(120,210,255,.85)";
+      ctx.lineWidth = 2 * scale;
+      ctx.beginPath();
+      ctx.arc(0, bodyH * 0.16, bodyW * 0.7, 0, Math.PI * 2);
+      ctx.stroke();
     }
     ctx.restore();
   }
