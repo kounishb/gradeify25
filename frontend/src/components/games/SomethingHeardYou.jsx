@@ -343,10 +343,11 @@ function createFloor(floorNum = 1, previousPlayer = null) {
       blinkTimer: rand(2400, 5200),
       stalkTimer: rand(1200, 2600),
       ambushCooldown: rand(3200, 6200),
-      pressureTimer: rand(2200, 5200),
+      pressureTimer: rand(1600, 3600),
       pathFrustration: 0,
+      attackWindup: 0,
       lastDist: 9999,
-      baseSpeed: 2.05 + floorNum * 0.22,
+      baseSpeed: 2.55 + floorNum * 0.24,
     },
     exit: { ...exit, active: false, pulse: 0 },
     items,
@@ -374,6 +375,7 @@ function createFloor(floorNum = 1, previousPlayer = null) {
     event: null,
     eventTimer: rand(14000, 26000),
     scare: null,
+    killScare: null,
     loreRead: null,
     message: `${theme.name.toUpperCase()} — FLOOR ${floorNum}. Find the ${ITEM_COUNT} signal fragments. ${theme.monsterName}: ${theme.monsterDesc}`,
     hauntTimer: rand(4500, 9500),
@@ -843,15 +845,29 @@ export default function SomethingHeardYou({ onExit }) {
     if (m.stun > 0) { m.stun -= dt; return; }
 
     const d = dist(p, m);
-    const losToPlayer = d < (r.finalPhase ? 1250 : 980) && hasLineOfSight(r.grid, m, p);
+    const losToPlayer = d < (r.finalPhase ? 1400 : 1180) && hasLineOfSight(r.grid, m, p);
     const angleToPlayerFromMonster = Math.atan2(p.y - m.y, p.x - m.x);
     const monsterFov = Math.abs(normAng(angleToPlayerFromMonster - (m.angle || 0)));
     const playerLookingAtMonster = Math.abs(normAng(Math.atan2(m.y - p.y, m.x - p.x) - p.angle));
 
-    // Real sight system: it only hard-chases when its body has line of sight or you make noise.
-    const seesPlayer = losToPlayer && (monsterFov < 1.05 || d < 260 || m.mode === "chase" || r.finalPhase);
-    const hearsPlayer = p.noise > 18 && d < 1500;
-    const provokedByLight = losToPlayer && playerLookingAtMonster < 0.28 && d < 680 && !p.flashlightOff;
+    // Real sight system: if it has a hallway view of you, it sees you.
+    // The old FOV gate made level 1 feel dead because the monster could stare the wrong way forever.
+    const seesPlayer = losToPlayer && (d < 1180 || monsterFov < 1.65 || m.mode === "chase" || r.finalPhase);
+    const hearsPlayer = p.noise > 12 && d < 1700;
+    const provokedByLight = losToPlayer && playerLookingAtMonster < 0.42 && d < 860 && !p.flashlightOff;
+
+    // Keep level 1 alive: the monster patrols toward nearby halls instead of waiting across the map.
+    m.pressureTimer = (m.pressureTimer || 0) - dt;
+    if (m.pressureTimer <= 0 && m.mode !== "chase") {
+      const pressure = openCellNear(r.grid, p, CELL * 2.7, CELL * 6.7, p.angle);
+      if (pressure && !hasLineOfSight(r.grid, p, pressure)) {
+        m.target = pressure;
+        m.mode = "investigate";
+      } else if (pressure) {
+        m.target = pressure;
+      }
+      m.pressureTimer = rand(4200, 7800) - r.floorNum * 450;
+    }
 
     const activeFlare = r.activeFlares
       .filter((f) => hasLineOfSight(r.grid, m, f))
@@ -924,7 +940,7 @@ export default function SomethingHeardYou({ onExit }) {
 
     const target = m.mode === "chase" ? p : m.target;
     if (target) {
-      let spd = m.mode === "chase" ? m.baseSpeed + 2.05 : m.mode === "investigate" ? m.baseSpeed + 0.8 : 1.45 + r.floorNum * 0.08;
+      let spd = m.mode === "chase" ? m.baseSpeed + 2.65 : m.mode === "investigate" ? m.baseSpeed + 1.05 : 1.7 + r.floorNum * 0.10;
       if (r.finalPhase) spd += 1.0;
       if (r.event?.type === "hunt") spd += 1.15;
       if (r.event?.type === "listening" && p.noise > 22) spd += 0.45;
@@ -978,7 +994,13 @@ export default function SomethingHeardYou({ onExit }) {
 
   function updateGame(dtMs) {
     const r = runRef.current;
-    if (!r || !started || r.dead || r.won) return;
+    if (!r || !started) return;
+    if (r.killScare) {
+      r.killScare.timer -= dtMs;
+      if (r.killScare.timer <= 0) r.killScare = null;
+      setRun({ ...r });
+    }
+    if (r.dead || r.won) return;
     if (r.floorComplete && !r.won) { r.time += dtMs; setRun({ ...r }); return; }
     const dt = Math.min(dtMs, 34);
     const p = r.player;
@@ -1074,24 +1096,18 @@ export default function SomethingHeardYou({ onExit }) {
       if (md < 230 && Math.random() < 0.018) r.message = choice(["It is breathing with you.", "Do not turn around.", "The walls are too quiet."]);
     }
 
-    if (md < 82 && p.invuln <= 0 && (r.monster.attackCooldown || 0) <= 0 && hasLineOfSight(r.grid, r.monster, p)) {
-      p.hp -= 1;
-      p.invuln = 2600;
-      r.monster.attackCooldown = 1350;
-      p.sanity = clamp(p.sanity - 42, 0, p.maxSanity);
-      r.shake = Math.max(r.shake || 0, 18);
-      r.glitch = Math.max(r.glitch, 1);
-      scare(r, "CAUGHT", 1.15);
-      if (p.hp <= 0) {
-        r.dead = true;
-        r.message = "The dark learned your name.";
-      } else {
-        const spawn = cellCenter(1, 1);
-        p.x = spawn.x; p.y = spawn.y; p.angle = 0; p.vx = 0; p.vy = 0;
-        const far = randomOpenCell(r.grid, new Set(["1,1"]), CELL * 8);
-        r.monster.x = far.x; r.monster.y = far.y; r.monster.mode = "stalk"; r.monster.target = null;
-        r.message = `It hit you and dragged you back. ${p.hp} lives remaining.`;
-      }
+    if (md < 155 && p.invuln <= 0 && (r.monster.attackCooldown || 0) <= 0) {
+      // A catch is now a real horror-game death, not a weird invisible bump.
+      // The jumpscare renders in front of the camera for a moment, then the game-over screen appears.
+      p.hp = 0;
+      p.invuln = 9999;
+      r.monster.attackCooldown = 2400;
+      p.sanity = 0;
+      r.shake = Math.max(r.shake || 0, 28);
+      r.glitch = Math.max(r.glitch, 1.35);
+      r.killScare = { timer: 1550, seed: Math.random() };
+      r.dead = true;
+      r.message = "It caught you.";
     }
 
     r.hauntTimer -= dt;
@@ -1291,203 +1307,228 @@ export default function SomethingHeardYou({ onExit }) {
     const m = r.monster;
     const d = dist(p, m);
     const angle = normAng(Math.atan2(m.y - p.y, m.x - p.x) - p.angle);
-    if (Math.abs(angle) > FOV * 0.74 || d > MAX_DEPTH || !hasLineOfSight(r.grid, p, m)) return;
+    if (Math.abs(angle) > FOV * 0.72 || d > MAX_DEPTH || !hasLineOfSight(r.grid, p, m)) return;
+
+    // If it is this close, the attack system handles it with a full jumpscare.
+    // This prevents the "giant flickering body standing in my face" bug.
+    if (d < 135 && m.mode === "chase") return;
 
     const screenX = CANVAS_W / 2 + Math.tan(angle) * (CANVAS_W / 2) / Math.tan(FOV / 2);
     const col = Math.floor(screenX / (CANVAS_W / RAYS));
     if (rays[col] && d > rays[col].depth + 28) return;
 
     const horizon = CANVAS_H / 2 + Math.sin(p.bob) * 4 + (p.pitch || 0) * 230;
-    const scale = clamp((CELL * 430) / Math.max(1, d), 0.35, 2.85);
-    const bodyH = 156 * scale;
-    const bodyW = 58 * scale;
-    const footY = horizon + clamp((CELL * 230) / Math.max(1, d), 34, 255);
+    const scale = clamp((CELL * 405) / Math.max(1, d), 0.34, 2.15);
+    const bodyH = 190 * scale;
+    const bodyW = 48 * scale;
+    const footY = horizon + clamp((CELL * 226) / Math.max(1, d), 42, 254);
     const baseY = footY - bodyH;
     const [er, eg, eb] = r.theme.eye;
-    const alpha = clamp(1 - d / 1450, 0.18, 1);
-    const walk = Math.sin((m.bodyAnim || 0) + (m.bodySeed || 0));
-    const walk2 = Math.cos((m.bodyAnim || 0) * 0.72 + 1.7);
+    const alpha = clamp(1 - d / 1600, 0.22, 1);
+    const walk = Math.sin((m.bodyAnim || 0) * (m.mode === "chase" ? 1.35 : 0.9));
+    const walk2 = Math.cos((m.bodyAnim || 0) * 1.1 + 1.7);
     const chase = m.mode === "chase";
     const stun = m.stun > 0;
 
     ctx.save();
-    ctx.globalAlpha = stun ? alpha * 0.5 : alpha;
+    ctx.globalAlpha = stun ? alpha * 0.48 : alpha;
     ctx.translate(screenX, baseY);
 
-    // Red aura only around the actual body, not a full-screen fake face.
-    const aura = ctx.createRadialGradient(0, bodyH * 0.38, bodyW * 0.1, 0, bodyH * 0.38, bodyW * (chase ? 2.7 : 1.9));
-    aura.addColorStop(0, `rgba(${er},${eg},${eb},${chase ? 0.22 : 0.10})`);
-    aura.addColorStop(1, `rgba(${er},${eg},${eb},0)`);
+    // Black-red presence glow, anchored to the model.
+    const aura = ctx.createRadialGradient(0, bodyH * 0.42, bodyW * 0.1, 0, bodyH * 0.42, bodyW * (chase ? 3.4 : 2.3));
+    aura.addColorStop(0, `rgba(${er},${eg},${eb},${chase ? 0.22 : 0.08})`);
+    aura.addColorStop(0.62, `rgba(${er},0,0,${chase ? 0.10 : 0.04})`);
+    aura.addColorStop(1, `rgba(0,0,0,0)`);
     ctx.fillStyle = aura;
     ctx.beginPath();
-    ctx.ellipse(0, bodyH * 0.42, bodyW * 2.4, bodyH * 0.74, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, bodyH * 0.48, bodyW * 3.2, bodyH * 0.76, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Floor shadow to anchor it in the hallway.
+    // Ground shadow so it feels physical in the hallway.
     ctx.save();
-    ctx.globalAlpha *= 0.42;
-    ctx.fillStyle = "rgba(0,0,0,.95)";
+    ctx.globalAlpha *= 0.58;
+    ctx.fillStyle = "rgba(0,0,0,.96)";
     ctx.beginPath();
-    ctx.ellipse(0, bodyH + 5 * scale, bodyW * 1.08, 12 * scale, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, bodyH + 4 * scale, bodyW * 1.6, 12 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
-    ctx.shadowColor = chase ? `rgba(${er},${eg},${eb},.62)` : "rgba(0,0,0,.9)";
-    ctx.shadowBlur = chase ? 14 * scale : 7 * scale;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+    ctx.shadowColor = chase ? `rgba(${er},${eg},${eb},.7)` : "rgba(0,0,0,.9)";
+    ctx.shadowBlur = chase ? 18 * scale : 8 * scale;
 
-    // Back spine / ragged silhouette.
-    ctx.strokeStyle = "rgba(0,0,0,.98)";
-    ctx.lineWidth = 4.5 * scale;
+    // Thin, uneven legs.
+    ctx.strokeStyle = "rgba(0,0,0,.995)";
+    ctx.lineWidth = 8 * scale;
     ctx.beginPath();
-    ctx.moveTo(0, bodyH * 0.16);
-    ctx.quadraticCurveTo(-bodyW * 0.12, bodyH * 0.40, 0, bodyH * 0.65);
-    ctx.quadraticCurveTo(bodyW * 0.11, bodyH * 0.82, 0, bodyH * 0.98);
+    ctx.moveTo(-bodyW * 0.18, bodyH * 0.60);
+    ctx.lineTo(-bodyW * 0.42 + walk * 12 * scale, bodyH * 0.88);
+    ctx.lineTo(-bodyW * 0.58 + walk * 10 * scale, bodyH * 1.04);
+    ctx.moveTo(bodyW * 0.16, bodyH * 0.61);
+    ctx.lineTo(bodyW * 0.40 - walk * 12 * scale, bodyH * 0.88);
+    ctx.lineTo(bodyW * 0.60 - walk * 10 * scale, bodyH * 1.04);
     ctx.stroke();
 
-    // Legs with Roblox-horror lanky proportions.
-    ctx.strokeStyle = "rgba(3,0,0,.99)";
-    ctx.lineWidth = 9 * scale;
+    // Huge bent arms like Roblox horror chase monsters.
+    ctx.lineWidth = 10 * scale;
     ctx.beginPath();
-    ctx.moveTo(-bodyW * 0.20, bodyH * 0.62);
-    ctx.lineTo(-bodyW * 0.30 + walk * 9 * scale, bodyH * 0.92);
-    ctx.lineTo(-bodyW * 0.42 + walk * 8 * scale, bodyH * 1.02);
-    ctx.moveTo(bodyW * 0.20, bodyH * 0.62);
-    ctx.lineTo(bodyW * 0.30 - walk * 9 * scale, bodyH * 0.92);
-    ctx.lineTo(bodyW * 0.42 - walk * 8 * scale, bodyH * 1.02);
-    ctx.stroke();
-
-    // Extra-long claw arms.
-    ctx.lineWidth = 8.5 * scale;
-    ctx.beginPath();
-    ctx.moveTo(-bodyW * 0.48, bodyH * 0.30);
-    ctx.quadraticCurveTo(-bodyW * 1.10, bodyH * 0.50 + walk * 10 * scale, -bodyW * 0.88, bodyH * 0.84);
-    ctx.moveTo(bodyW * 0.48, bodyH * 0.30);
-    ctx.quadraticCurveTo(bodyW * 1.10, bodyH * 0.50 - walk * 10 * scale, bodyW * 0.88, bodyH * 0.84);
+    ctx.moveTo(-bodyW * 0.48, bodyH * 0.28);
+    ctx.quadraticCurveTo(-bodyW * 1.45, bodyH * 0.42 + walk2 * 10 * scale, -bodyW * 1.05, bodyH * 0.82);
+    ctx.moveTo(bodyW * 0.48, bodyH * 0.28);
+    ctx.quadraticCurveTo(bodyW * 1.45, bodyH * 0.42 - walk2 * 10 * scale, bodyW * 1.05, bodyH * 0.82);
     ctx.stroke();
 
     // Claws.
-    ctx.strokeStyle = `rgba(${er},${eg},${eb},${chase ? .42 : .22})`;
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = `rgba(${er},${eg},${eb},${chase ? .7 : .35})`;
+    ctx.lineWidth = 2.2 * scale;
     for (const side of [-1, 1]) {
-      const hx = side * bodyW * 0.88;
-      const hy = bodyH * 0.84;
+      const hx = side * bodyW * 1.05;
+      const hy = bodyH * 0.82;
       ctx.beginPath();
       ctx.moveTo(hx, hy);
-      ctx.lineTo(hx + side * bodyW * 0.16, hy + bodyH * 0.08);
+      ctx.lineTo(hx + side * bodyW * 0.22, hy + bodyH * 0.08);
       ctx.moveTo(hx, hy);
-      ctx.lineTo(hx + side * bodyW * 0.07, hy + bodyH * 0.11);
+      ctx.lineTo(hx + side * bodyW * 0.10, hy + bodyH * 0.12);
       ctx.moveTo(hx, hy);
-      ctx.lineTo(hx - side * bodyW * 0.03, hy + bodyH * 0.10);
+      ctx.lineTo(hx - side * bodyW * 0.04, hy + bodyH * 0.11);
       ctx.stroke();
     }
 
-    // Torso: torn, uneven, not a simple oval.
+    // Ragged torso, not a round smiley body.
     const torso = ctx.createLinearGradient(0, 0, 0, bodyH);
-    torso.addColorStop(0, "rgba(13,0,1,.99)");
-    torso.addColorStop(0.48, "rgba(4,0,0,.99)");
-    torso.addColorStop(1, "rgba(0,0,0,.98)");
+    torso.addColorStop(0, "rgba(9,0,2,.99)");
+    torso.addColorStop(0.55, "rgba(2,0,0,.99)");
+    torso.addColorStop(1, "rgba(0,0,0,.99)");
     ctx.fillStyle = torso;
     ctx.beginPath();
-    ctx.moveTo(-bodyW * 0.50, bodyH * 0.25);
-    ctx.quadraticCurveTo(-bodyW * 0.70, bodyH * 0.47, -bodyW * 0.40, bodyH * 0.70);
-    ctx.lineTo(-bodyW * 0.18, bodyH * 0.99);
-    ctx.lineTo(-bodyW * 0.04, bodyH * 0.90);
-    ctx.lineTo(bodyW * 0.10, bodyH * 1.02);
-    ctx.lineTo(bodyW * 0.34, bodyH * 0.70);
-    ctx.quadraticCurveTo(bodyW * 0.70, bodyH * 0.45, bodyW * 0.50, bodyH * 0.25);
-    ctx.quadraticCurveTo(bodyW * 0.22, bodyH * 0.17, 0, bodyH * 0.19);
-    ctx.quadraticCurveTo(-bodyW * 0.20, bodyH * 0.17, -bodyW * 0.50, bodyH * 0.25);
+    ctx.moveTo(-bodyW * 0.55, bodyH * 0.24);
+    ctx.lineTo(-bodyW * 0.78, bodyH * 0.45);
+    ctx.lineTo(-bodyW * 0.36, bodyH * 0.72);
+    ctx.lineTo(-bodyW * 0.22, bodyH * 0.96);
+    ctx.lineTo(0, bodyH * 0.87);
+    ctx.lineTo(bodyW * 0.24, bodyH * 1.0);
+    ctx.lineTo(bodyW * 0.38, bodyH * 0.72);
+    ctx.lineTo(bodyW * 0.76, bodyH * 0.44);
+    ctx.lineTo(bodyW * 0.52, bodyH * 0.24);
+    ctx.quadraticCurveTo(0, bodyH * 0.14, -bodyW * 0.55, bodyH * 0.24);
     ctx.fill();
 
-    // Rib-like cracks.
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = `rgba(${er},${eg},${eb},${chase ? .25 : .14})`;
-    ctx.lineWidth = 1.25 * scale;
-    for (let i = 0; i < 4; i++) {
-      const yy = bodyH * (0.38 + i * 0.075);
+    // Rib cracks.
+    ctx.strokeStyle = `rgba(${er},${eg},${eb},${chase ? 0.30 : 0.16})`;
+    ctx.lineWidth = 1.5 * scale;
+    for (let i = 0; i < 6; i++) {
+      const yy = bodyH * (0.34 + i * 0.075);
       ctx.beginPath();
-      ctx.moveTo(-bodyW * 0.22, yy);
-      ctx.lineTo(-bodyW * (0.06 + i * 0.01), yy + bodyH * 0.035);
-      ctx.moveTo(bodyW * 0.22, yy + bodyH * 0.015);
-      ctx.lineTo(bodyW * (0.05 + i * 0.012), yy + bodyH * 0.045);
+      ctx.moveTo(-bodyW * (0.2 + Math.random() * 0.12), yy);
+      ctx.lineTo(bodyW * (0.22 + Math.random() * 0.18), yy + Math.sin(r.time * 0.008 + i) * 2 * scale);
       ctx.stroke();
     }
 
-    // Head: stretched mask with no goofy smile.
-    ctx.shadowBlur = chase ? 11 * scale : 5 * scale;
-    ctx.fillStyle = "rgba(5,0,0,.995)";
+    // Creepy non-human head: tall mask shape with horns and slashed mouth.
+    ctx.fillStyle = "rgba(2,0,0,.995)";
     ctx.beginPath();
-    ctx.moveTo(0, bodyH * 0.005);
-    ctx.bezierCurveTo(-bodyW * 0.42, bodyH * 0.02, -bodyW * 0.48, bodyH * 0.20, -bodyW * 0.26, bodyH * 0.29);
-    ctx.bezierCurveTo(-bodyW * 0.12, bodyH * 0.36, bodyW * 0.12, bodyH * 0.36, bodyW * 0.26, bodyH * 0.29);
-    ctx.bezierCurveTo(bodyW * 0.50, bodyH * 0.18, bodyW * 0.42, bodyH * 0.02, 0, bodyH * 0.005);
+    ctx.moveTo(-bodyW * 0.62, bodyH * 0.16);
+    ctx.quadraticCurveTo(-bodyW * 0.86, -bodyH * 0.03, -bodyW * 0.34, -bodyH * 0.10);
+    ctx.lineTo(-bodyW * 0.16, -bodyH * 0.20);
+    ctx.lineTo(-bodyW * 0.04, -bodyH * 0.08);
+    ctx.lineTo(bodyW * 0.16, -bodyH * 0.20);
+    ctx.lineTo(bodyW * 0.34, -bodyH * 0.10);
+    ctx.quadraticCurveTo(bodyW * 0.86, -bodyH * 0.03, bodyW * 0.62, bodyH * 0.16);
+    ctx.quadraticCurveTo(bodyW * 0.42, bodyH * 0.32, 0, bodyH * 0.32);
+    ctx.quadraticCurveTo(-bodyW * 0.42, bodyH * 0.32, -bodyW * 0.62, bodyH * 0.16);
     ctx.fill();
 
-    // Neck.
-    ctx.fillRect(-bodyW * 0.12, bodyH * 0.25, bodyW * 0.24, bodyH * 0.13);
-
-    // Eyes, narrow and hostile.
-    const eyePulse = 0.72 + Math.sin((m.eyePulse || 0) + (m.bodySeed || 0)) * 0.18;
-    ctx.fillStyle = `rgba(${er},${eg},${eb},${chase ? 0.98 : 0.78})`;
+    // Eyes: narrow, angry slits.
+    const eyeGlow = 0.7 + Math.sin(m.eyePulse || 0) * 0.3;
     ctx.shadowColor = `rgba(${er},${eg},${eb},.95)`;
-    ctx.shadowBlur = (chase ? 10 : 5) * scale;
+    ctx.shadowBlur = 14 * scale;
+    ctx.fillStyle = `rgba(${er},${eg},${eb},${0.72 + 0.25 * eyeGlow})`;
     for (const side of [-1, 1]) {
-      ctx.beginPath();
-      ctx.ellipse(side * bodyW * 0.13, bodyH * 0.145, bodyW * 0.075 * eyePulse, bodyH * 0.014, side * 0.18, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.save();
+      ctx.translate(side * bodyW * 0.24, bodyH * 0.08);
+      ctx.rotate(side * -0.18);
+      ctx.fillRect(-bodyW * 0.15, -bodyH * 0.015, bodyW * 0.30, bodyH * 0.035);
+      ctx.restore();
     }
 
-    // Jagged mouth slit / teeth.
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = `rgba(${er},${eg},${eb},${chase ? .68 : .34})`;
-    ctx.lineWidth = Math.max(1.25, 1.2 * scale);
+    // Jagged mouth, never a smile.
+    ctx.shadowBlur = 8 * scale;
+    ctx.strokeStyle = `rgba(${er},${eg},${eb},${chase ? .85 : .55})`;
+    ctx.lineWidth = 2.4 * scale;
     ctx.beginPath();
-    ctx.moveTo(-bodyW * 0.16, bodyH * 0.225);
-    ctx.lineTo(-bodyW * 0.06, bodyH * 0.245);
-    ctx.lineTo(0, bodyH * 0.228);
-    ctx.lineTo(bodyW * 0.07, bodyH * 0.252);
-    ctx.lineTo(bodyW * 0.17, bodyH * 0.226);
+    ctx.moveTo(-bodyW * 0.28, bodyH * 0.22);
+    for (let i = 0; i <= 7; i++) {
+      const x = -bodyW * 0.28 + (bodyW * 0.56 * i) / 7;
+      const y = bodyH * 0.22 + (i % 2 ? bodyH * 0.045 : -bodyH * 0.012);
+      ctx.lineTo(x, y);
+    }
     ctx.stroke();
 
-    // Chase smear suggests speed without flickering the model.
-    if (chase && d < 720) {
-      ctx.globalAlpha *= 0.18;
-      ctx.fillStyle = `rgba(${er},${eg},${eb},.5)`;
-      ctx.fillRect(-bodyW * 0.06 + walk2 * 3 * scale, bodyH * 0.04, bodyW * 0.12, bodyH * 0.88);
-    }
-
-    if (stun) {
-      ctx.globalAlpha = alpha * 0.5;
-      ctx.strokeStyle = "rgba(120,210,255,.85)";
-      ctx.lineWidth = 2 * scale;
-      ctx.beginPath();
-      ctx.arc(0, bodyH * 0.30, bodyW * 0.88, 0, Math.PI * 2);
-      ctx.stroke();
-    }
     ctx.restore();
   }
 
-  function drawMiniMap(ctx, r) {
-    if (r.securityPing <= 0) return;
-    const scale = 4;
-    const ox = CANVAS_W - MAP_W * scale - 18;
-    const oy = 18;
+  function drawDeathJumpscare(ctx, r) {
+    if (!r.killScare) return;
+    const t = clamp(r.killScare.timer / 1550, 0, 1);
+    const shake = (1 - t) * 18 + 7;
+    const [er, eg, eb] = r.theme.eye;
     ctx.save();
-    ctx.globalAlpha = 0.86;
-    ctx.fillStyle = "rgba(0,0,0,.55)";
-    ctx.fillRect(ox - 8, oy - 8, MAP_W * scale + 16, MAP_H * scale + 16);
-    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
-      ctx.fillStyle = r.grid[y][x] ? "rgba(150,60,60,.42)" : "rgba(220,220,190,.15)";
-      ctx.fillRect(ox + x * scale, oy + y * scale, scale, scale);
+    ctx.translate(rand(-shake, shake), rand(-shake, shake));
+    ctx.fillStyle = `rgba(0,0,0,${0.35 + 0.35 * t})`;
+    ctx.fillRect(-40, -40, CANVAS_W + 80, CANVAS_H + 80);
+    const cx = CANVAS_W / 2;
+    const cy = CANVAS_H / 2 + 8;
+    const s = 1.0 + (1 - t) * 0.35;
+    ctx.scale(s, s);
+    ctx.translate(cx * (1 / s - 1), cy * (1 / s - 1));
+
+    const glow = ctx.createRadialGradient(cx, cy, 20, cx, cy, 380);
+    glow.addColorStop(0, `rgba(${er},${eg},${eb},.32)`);
+    glow.addColorStop(0.48, `rgba(100,0,0,.28)`);
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    ctx.fillStyle = "rgba(0,0,0,.99)";
+    ctx.beginPath();
+    ctx.moveTo(cx - 190, cy - 180);
+    ctx.quadraticCurveTo(cx - 260, cy - 20, cx - 130, cy + 190);
+    ctx.lineTo(cx - 64, cy + 130);
+    ctx.lineTo(cx, cy + 218);
+    ctx.lineTo(cx + 64, cy + 130);
+    ctx.lineTo(cx + 130, cy + 190);
+    ctx.quadraticCurveTo(cx + 260, cy - 20, cx + 190, cy - 180);
+    ctx.quadraticCurveTo(cx + 60, cy - 265, cx, cy - 190);
+    ctx.quadraticCurveTo(cx - 60, cy - 265, cx - 190, cy - 180);
+    ctx.fill();
+
+    ctx.shadowColor = `rgba(${er},${eg},${eb},1)`;
+    ctx.shadowBlur = 26;
+    ctx.fillStyle = `rgba(${er},${eg},${eb},.98)`;
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.translate(cx + side * 70, cy - 58);
+      ctx.rotate(side * -0.18);
+      ctx.fillRect(-48, -10, 96, 20);
+      ctx.restore();
     }
-    ctx.fillStyle = "#d22"; ctx.fillRect(ox + (r.monster.x / CELL) * scale - 2, oy + (r.monster.y / CELL) * scale - 2, 4, 4);
-    ctx.fillStyle = "#70ff90"; ctx.fillRect(ox + (r.player.x / CELL) * scale - 2, oy + (r.player.y / CELL) * scale - 2, 4, 4);
-    const obj = r.exit.active ? r.exit : r.items.find((i) => !i.collected);
-    if (obj) { ctx.fillStyle = "#ffd34f"; ctx.fillRect(ox + (obj.x / CELL) * scale - 2, oy + (obj.y / CELL) * scale - 2, 4, 4); }
+    ctx.strokeStyle = `rgba(${er},${eg},${eb},.95)`;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(cx - 105, cy + 55);
+    for (let i = 0; i <= 10; i++) {
+      const x = cx - 105 + 210 * i / 10;
+      const y = cy + 55 + (i % 2 ? 46 : -10);
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    ctx.fillStyle = `rgba(255,255,255,${0.08 + Math.random() * 0.12})`;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
     ctx.restore();
   }
+
 
   function drawGame(ctx, r) {
     const p = r.player;
@@ -1594,49 +1635,75 @@ export default function SomethingHeardYou({ onExit }) {
     }
     drawMonster(ctx, r, rays);
 
-    // flashlight darkness layer: readable center, heavy peripheral dark, no weird opaque cone
+    // Real flashlight: the room has readable ambient darkness, and the flashlight only clears a cone.
     const flashlight = !p.flashlightOff && (p.battery > 0 || p.hasLighter);
-    const beamX = CANVAS_W / 2 + sway * 4;
-    const beamY = clamp(horizon + 18, 150, CANVAS_H - 160);
     const batteryStrength = clamp(p.battery / Math.max(1, p.maxBattery), 0, 1);
     const flicker = flashlight && !p.hasLighter && (batteryStrength < 0.28 || r.event?.type === "brownout")
-      ? 1 - (Math.random() < 0.18 ? rand(0.22, 0.52) : 0)
+      ? 1 - (Math.random() < 0.18 ? rand(0.18, 0.46) : 0)
       : 1;
-    const lightRadius = p.hasLighter ? 230 : 315 + batteryStrength * 185;
-    const darkness = r.event?.type === "brownout" ? 0.9 : flashlight ? (p.hasLighter ? 0.84 : 0.72) : 0.955;
-    const dark = ctx.createRadialGradient(beamX, beamY, flashlight ? 55 : 10, beamX, beamY, lightRadius * flicker);
-    dark.addColorStop(0, `rgba(0,0,0,${flashlight ? 0.0 : 0.58})`);
-    dark.addColorStop(0.36, `rgba(0,0,0,${flashlight ? 0.08 : 0.78})`);
-    dark.addColorStop(0.72, `rgba(0,0,0,${darkness})`);
-    dark.addColorStop(1, "rgba(0,0,0,.985)");
-    ctx.fillStyle = dark;
+
+    ctx.save();
+    const baseDarkness = flashlight ? (r.event?.type === "brownout" ? 0.86 : 0.72) : 0.66;
+    ctx.fillStyle = `rgba(0,0,0,${baseDarkness})`;
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
     if (flashlight && !p.hasLighter) {
-      ctx.save();
+      const beamCenterX = CANVAS_W / 2 + sway * 4;
+      const beamCenterY = clamp(horizon + 10, 145, CANVAS_H - 145);
+      const spread = 250 + batteryStrength * 90;
+      const farY = -35;
+      const strength = clamp(0.44 + batteryStrength * 0.56, 0.35, 1) * flicker;
+
+      // Cut a cone out of the darkness overlay.
+      ctx.globalCompositeOperation = "destination-out";
+      const cone = ctx.createRadialGradient(beamCenterX, beamCenterY, 22, beamCenterX, beamCenterY - 80, 600 * flicker);
+      cone.addColorStop(0, `rgba(255,255,255,${0.76 * strength})`);
+      cone.addColorStop(0.36, `rgba(255,255,255,${0.46 * strength})`);
+      cone.addColorStop(0.74, `rgba(255,255,255,${0.12 * strength})`);
+      cone.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = cone;
+      ctx.beginPath();
+      ctx.moveTo(CANVAS_W / 2 - 26 + sway * 2, CANVAS_H + 18);
+      ctx.lineTo(beamCenterX - spread, farY);
+      ctx.quadraticCurveTo(beamCenterX, beamCenterY - 165, beamCenterX + spread, farY);
+      ctx.lineTo(CANVAS_W / 2 + 26 + sway * 2, CANVAS_H + 18);
+      ctx.closePath();
+      ctx.fill();
+
+      // Add a visible warm beam without brightening the whole screen.
       ctx.globalCompositeOperation = "screen";
-      const strength = clamp(0.28 + batteryStrength * 0.72, 0.25, 1) * flicker;
-      const hot = ctx.createRadialGradient(beamX, beamY, 12, beamX, beamY, lightRadius * 0.72);
-      hot.addColorStop(0, `rgba(255,244,205,${0.24 * strength})`);
-      hot.addColorStop(0.48, `rgba(255,218,150,${0.08 * strength})`);
+      const hot = ctx.createRadialGradient(beamCenterX, beamCenterY, 6, beamCenterX, beamCenterY - 100, 440);
+      hot.addColorStop(0, `rgba(255,242,205,${0.18 * strength})`);
+      hot.addColorStop(0.5, `rgba(255,215,145,${0.07 * strength})`);
       hot.addColorStop(1, "rgba(255,255,255,0)");
       ctx.fillStyle = hot;
-      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+      ctx.beginPath();
+      ctx.moveTo(CANVAS_W / 2 - 18 + sway * 2, CANVAS_H + 12);
+      ctx.lineTo(beamCenterX - spread * 0.82, farY);
+      ctx.lineTo(beamCenterX + spread * 0.82, farY);
+      ctx.lineTo(CANVAS_W / 2 + 18 + sway * 2, CANVAS_H + 12);
+      ctx.closePath();
+      ctx.fill();
       ctx.globalCompositeOperation = "source-over";
+
+      // Flashlight hand/body.
       ctx.fillStyle = "rgba(20,16,14,.82)";
       ctx.fillRect(CANVAS_W - 160 + sway * 2, CANVAS_H - 92 + Math.sin(p.bob) * 5, 112, 24);
       ctx.fillStyle = `rgba(255,232,165,${0.42 * strength})`;
       ctx.beginPath(); ctx.ellipse(CANVAS_W - 48 + sway * 2, CANVAS_H - 80 + Math.sin(p.bob) * 5, 22, 13, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-    }
-
-    if (p.hasLighter && flashlight) {
-      ctx.save();
+    } else if (p.hasLighter && flashlight) {
+      ctx.globalCompositeOperation = "destination-out";
+      const lighter = ctx.createRadialGradient(CANVAS_W / 2, CANVAS_H / 2 + 40, 20, CANVAS_W / 2, CANVAS_H / 2 + 40, 250);
+      lighter.addColorStop(0, "rgba(255,255,255,.46)");
+      lighter.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = lighter;
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
       ctx.globalCompositeOperation = "screen";
       ctx.fillStyle = `rgba(255,118,36,${0.08 + Math.sin(r.time * 0.026) * 0.025})`;
       ctx.beginPath(); ctx.arc(CANVAS_W - 84 + sway, CANVAS_H - 84 + Math.sin(p.bob) * 4, 54, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
+      ctx.globalCompositeOperation = "source-over";
     }
+    ctx.restore();
 
     for (const f of r.activeFlares) {
       const d = dist(p, f);
@@ -1768,7 +1835,9 @@ export default function SomethingHeardYou({ onExit }) {
       ctx.restore();
     }
 
-    if (!started || r.dead || r.won) {
+    drawDeathJumpscare(ctx, r);
+
+    if (!started || (r.dead && !r.killScare) || r.won) {
       ctx.save();
       ctx.fillStyle = "rgba(0,0,0,.74)";
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
