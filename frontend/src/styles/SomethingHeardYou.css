@@ -457,3 +457,8 @@
 .shy-game-card { isolation: isolate; }
 .shy-canvas { min-height: 320px; touch-action: none; user-select: none; }
 .shy-actions button, .shy-upgrade-grid button { pointer-events: auto; }
+
+/* Better version safety fixes */
+.shy-game-card, .shy-canvas { touch-action: none; }
+.shy-canvas { user-select: none; }
+.shy-upgrade-overlay button { user-select: none; }

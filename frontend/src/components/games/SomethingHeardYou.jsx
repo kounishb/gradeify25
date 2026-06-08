@@ -340,8 +340,13 @@ function createFloor(floorNum = 1, previousPlayer = null) {
       anger: 0,
       seenTimer: 0,
       lastKnown: null,
-      blinkTimer: 0,
-      baseSpeed: 1.65 + floorNum * 0.12,
+      blinkTimer: rand(2400, 5200),
+      stalkTimer: rand(1200, 2600),
+      ambushCooldown: rand(3200, 6200),
+      pressureTimer: rand(2200, 5200),
+      pathFrustration: 0,
+      lastDist: 9999,
+      baseSpeed: 2.05 + floorNum * 0.22,
     },
     exit: { ...exit, active: false, pulse: 0 },
     items,
@@ -419,6 +424,40 @@ function moveEntity(grid, ent, angle, amount, radius = 18) {
   moveEntityVector(grid, ent, mx, my, radius);
 }
 
+function smartMoveEntity(grid, ent, angle, amount, radius = 18) {
+  const before = { x: ent.x, y: ent.y };
+  const tries = [0, 0.32, -0.32, 0.68, -0.68, 1.08, -1.08, Math.PI];
+  for (const off of tries) {
+    ent.x = before.x;
+    ent.y = before.y;
+    moveEntity(grid, ent, angle + off, amount, radius);
+    if (Math.hypot(ent.x - before.x, ent.y - before.y) > amount * 0.28) return true;
+  }
+  ent.x = before.x;
+  ent.y = before.y;
+  return false;
+}
+
+function openCellNear(grid, center, minR = CELL * 3, maxR = CELL * 7, preferBehindAngle = null) {
+  let best = null;
+  let bestScore = -Infinity;
+  for (let i = 0; i < 180; i++) {
+    const a = preferBehindAngle == null ? rand(0, Math.PI * 2) : preferBehindAngle + Math.PI + rand(-1.25, 1.25);
+    const d = rand(minR, maxR);
+    const gx = Math.floor((center.x + Math.cos(a) * d) / CELL);
+    const gy = Math.floor((center.y + Math.sin(a) * d) / CELL);
+    if (!isOpenCell(grid, gx, gy)) continue;
+    const pos = cellCenter(gx, gy);
+    const actual = dist(center, pos);
+    if (actual < minR * 0.7 || actual > maxR * 1.25) continue;
+    const visible = hasLineOfSight(grid, center, pos);
+    const behind = preferBehindAngle == null ? 0 : Math.cos(normAng(Math.atan2(pos.y - center.y, pos.x - center.x) - preferBehindAngle));
+    const score = actual + (visible ? -240 : 180) - behind * 160 + Math.random() * 30;
+    if (score > bestScore) { bestScore = score; best = pos; }
+  }
+  return best;
+}
+
 function moveEntityVector(grid, ent, mx, my, radius = 18) {
   const nx = ent.x + mx;
   const ny = ent.y + my;
@@ -484,10 +523,10 @@ export default function SomethingHeardYou({ onExit }) {
     }
   }
 
-  function scare(r, text = "RUN") {
-    r.scare = { text, timer: 980, seed: Math.random() };
-    r.player.sanity = clamp(r.player.sanity - 24, 0, r.player.maxSanity);
-    r.glitch = Math.max(r.glitch, 0.9);
+  function scare(r, text = "RUN", power = 1) {
+    r.scare = { text, timer: 760 + 340 * power, seed: Math.random(), power };
+    r.player.sanity = clamp(r.player.sanity - 20 * power, 0, r.player.maxSanity);
+    r.glitch = Math.max(r.glitch, 0.65 + 0.35 * power);
   }
 
   function pickupNearby() {
@@ -556,7 +595,13 @@ export default function SomethingHeardYou({ onExit }) {
         item.collected = true;
         r.collected += 1;
         p.sanity = clamp(p.sanity - 8, 0, p.maxSanity);
-        makeNoise(r, p.x, p.y, 235);
+        makeNoise(r, p.x, p.y, 285);
+        if (r.collected >= 2 && Math.random() < 0.72) {
+          r.monster.mode = "chase";
+          r.monster.target = { x: p.x, y: p.y };
+          r.monster.lastKnown = { x: p.x, y: p.y };
+          r.monster.ambushCooldown = 1200;
+        }
         if (r.collected >= ITEM_COUNT) {
           r.exit.active = true;
           r.finalPhase = true;
@@ -726,16 +771,21 @@ export default function SomethingHeardYou({ onExit }) {
 
   function startEvent(r) {
     const ev = choice([
-      { type: "brownout", name: "BROWNOUT", timer: 5200, msg: "Brownout. The building exhales. Keep moving." },
-      { type: "hunt", name: "BLOOD HUNT", timer: 9000, msg: "Blood hunt. It moves faster." },
-      { type: "listening", name: "LISTENING HOUR", timer: 10500, msg: "Listening hour. Every sound carries farther." },
-      { type: "whispers", name: "WHISPER STORM", timer: 10000, msg: "Whispers flood the vents. Your mind is slipping." },
+      { type: "brownout", name: "BROWNOUT", timer: 7600, msg: "Brownout. The light is dying. Keep moving." },
+      { type: "hunt", name: "BLOOD HUNT", timer: 11500, msg: "Blood hunt. It knows your floor." },
+      { type: "listening", name: "LISTENING HOUR", timer: 13000, msg: "Listening hour. Every sound carries farther." },
+      { type: "whispers", name: "WHISPER STORM", timer: 11500, msg: "Whispers flood the vents. Your mind is slipping." },
+      { type: "lockdown", name: "LOCKDOWN", timer: 8500, msg: "Lockdown. The halls are shifting." },
     ]);
     r.event = ev;
     r.message = ev.msg;
-    if (ev.type === "hunt") {
-      r.monster.mode = "investigate";
+    r.glitch = Math.max(r.glitch, ev.type === "hunt" ? 0.72 : 0.38);
+    if (ev.type === "hunt" || ev.type === "lockdown") {
+      r.monster.mode = "chase";
       r.monster.target = { x: r.player.x, y: r.player.y };
+      r.monster.lastKnown = { x: r.player.x, y: r.player.y };
+      r.monster.anger = 100;
+      scare(r, ev.type === "hunt" ? "RUN" : "LOCKED", 0.85);
     }
   }
 
@@ -744,66 +794,103 @@ export default function SomethingHeardYou({ onExit }) {
     const m = r.monster;
     if (m.stun > 0) { m.stun -= dt; return; }
 
+    m.stalkTimer = (m.stalkTimer ?? 0) - dt;
+    m.ambushCooldown = (m.ambushCooldown ?? 0) - dt;
+    m.pressureTimer = (m.pressureTimer ?? 0) - dt;
+
     const d = dist(p, m);
-    const los = d < (r.finalPhase ? 850 : 620) && hasLineOfSight(r.grid, m, p);
-    const darkAttack = r.floorNum !== 4 || p.flashlightOff || p.battery <= 0 || r.finalPhase || d < 140;
-    if (los && darkAttack) {
+    const los = d < (r.finalPhase ? 1100 : 900) && hasLineOfSight(r.grid, m, p);
+    const playerLookingAtMonster = Math.abs(normAng(Math.atan2(m.y - p.y, m.x - p.x) - p.angle)) < 0.42;
+    const flashlightOn = !p.flashlightOff && (p.battery > 0 || p.hasLighter);
+    const activeFlare = r.activeFlares
+      .filter((f) => hasLineOfSight(r.grid, m, f))
+      .sort((a, b) => dist(m, a) - dist(m, b))[0];
+
+    if (activeFlare && dist(m, activeFlare) < activeFlare.radius * 2.25 && m.mode !== "chase") {
+      m.mode = "investigate";
+      m.target = { x: activeFlare.x, y: activeFlare.y };
+      m.lastKnown = m.target;
+    } else if (los) {
       m.mode = "chase";
       m.target = { x: p.x, y: p.y };
       m.lastKnown = { x: p.x, y: p.y };
-      m.seenTimer += dt;
+      m.anger = clamp((m.anger || 0) + dt * 0.018, 0, 100);
+      if (playerLookingAtMonster && flashlightOn && d < 520) p.sanity = clamp(p.sanity - dt * 0.018, 0, p.maxSanity);
+    } else if (p.noise > 16 && d < 1500) {
+      m.mode = p.noise > 50 || d < 420 ? "chase" : "investigate";
+      m.target = { x: p.x, y: p.y };
+      m.lastKnown = { x: p.x, y: p.y };
+      m.anger = clamp((m.anger || 0) + p.noise * 0.18, 0, 100);
     } else if (m.mode === "chase" && m.lastKnown) {
       m.target = m.lastKnown;
-      if (dist(m, m.lastKnown) < 50) m.mode = "investigate";
+      if (dist(m, m.lastKnown) < 56) { m.mode = "investigate"; m.stalkTimer = 700; }
     }
 
+    // Floor-specific behavior
     if (r.floorNum === 2) {
       if (dist(p, r.lastPlayerPos) < 6) r.stillTimer += dt;
       else { r.stillTimer = 0; r.lastPlayerPos = { x: p.x, y: p.y }; }
-      if (r.stillTimer > 6200 && m.mode !== "chase") {
-        const a = p.angle + Math.PI + rand(-0.8, 0.8);
-        const blink = { x: p.x, y: p.y };
-        for (let i = 0; i < 9; i++) moveEntity(r.grid, blink, a, 42, 16);
-        m.x = blink.x;
-        m.y = blink.y;
-        m.mode = "investigate";
-        m.target = { x: p.x, y: p.y };
-        r.stillTimer = 0;
-        scare(r, "BLINK");
-        r.message = "You stood still too long.";
+      if (r.stillTimer > 4200 && m.mode !== "chase") {
+        const blink = openCellNear(r.grid, p, CELL * 2.4, CELL * 4.2, p.angle) || { x: p.x - Math.cos(p.angle) * 260, y: p.y - Math.sin(p.angle) * 260 };
+        m.x = blink.x; m.y = blink.y; m.mode = "chase"; m.target = { x: p.x, y: p.y }; r.stillTimer = 0;
+        scare(r, "DON'T STOP", 1.2); r.message = "You stood still too long.";
       }
     }
     if (r.floorNum === 3) {
       m.blinkTimer -= dt;
       if (m.blinkTimer <= 0) {
         const a = rand(0, Math.PI * 2);
-        makeNoise(r, p.x + Math.cos(a) * rand(140, 300), p.y + Math.sin(a) * rand(140, 300), 150, true);
-        m.blinkTimer = rand(3500, 7000);
+        makeNoise(r, p.x + Math.cos(a) * rand(120, 360), p.y + Math.sin(a) * rand(120, 360), 170, true);
+        m.blinkTimer = rand(2600, 5900);
       }
     }
 
-    if (m.mode === "stalk") {
-      if (!m.target || dist(m, m.target) < 60 || Math.random() < 0.01) {
-        const a = rand(0, Math.PI * 2);
-        m.target = { x: p.x + Math.cos(a) * rand(360, 900), y: p.y + Math.sin(a) * rand(360, 900) };
+    // Stalk mode should actually stalk: stay near the player, then cut them off.
+    if (m.mode === "stalk" || !m.target) {
+      if (m.stalkTimer <= 0 || !m.target || dist(m, m.target) < 70 || d > 1200) {
+        const ambush = openCellNear(r.grid, p, CELL * 3.2, CELL * 7.5, p.angle);
+        if (ambush) m.target = ambush;
+        m.stalkTimer = rand(950, 2200);
+      }
+      if (d < 270 && hasLineOfSight(r.grid, m, p)) {
+        m.mode = "chase";
+        m.target = { x: p.x, y: p.y };
+        r.message = "It stepped out of the dark.";
+        scare(r, "MOVE", 0.8);
       }
     }
-    if (m.mode === "investigate" && (!m.target || dist(m, m.target) < 58)) {
-      m.mode = "stalk";
-      m.target = null;
+
+    // If the monster has been irrelevant for too long, move it near the player but usually out of sight.
+    if (m.ambushCooldown <= 0 && d > 760 && !los) {
+      const ambush = openCellNear(r.grid, p, CELL * 3.0, CELL * 5.6, p.angle);
+      if (ambush) {
+        m.x = ambush.x; m.y = ambush.y;
+        m.mode = "investigate";
+        m.target = { x: p.x, y: p.y };
+        m.lastKnown = { x: p.x, y: p.y };
+        r.message = choice(["Something moved behind the wall.", "A wet footstep answered yours.", "The hallway behind you is not empty."]);
+        if (Math.random() < 0.45) makeNoise(r, m.x, m.y, 120, true);
+      }
+      m.ambushCooldown = rand(4200, 8600);
     }
+
     const target = m.mode === "chase" ? p : m.target;
     if (target) {
-      let spd = m.mode === "chase" ? m.baseSpeed + 0.75 : m.mode === "investigate" ? m.baseSpeed + 0.25 : 1.18 + r.floorNum * 0.08;
-      if (r.finalPhase) spd += 0.45;
-      if (r.event?.type === "hunt") spd += 0.6;
-      if (r.floorNum >= 5) spd += 0.25;
+      let spd = m.mode === "chase" ? m.baseSpeed + 1.35 : m.mode === "investigate" ? m.baseSpeed + 0.55 : 1.65 + r.floorNum * 0.12;
+      if (r.finalPhase) spd += 0.75;
+      if (r.event?.type === "hunt") spd += 0.9;
+      if (r.event?.type === "listening" && p.noise > 22) spd += 0.45;
+      if (r.floorNum >= 5) spd += 0.35;
       const ang = Math.atan2(target.y - m.y, target.x - m.x);
       m.angle = ang;
-      moveEntity(r.grid, m, ang, spd * (dt / 16.67), 24);
-      if (isWall(r.grid, m.x, m.y)) {
-        m.x = target.x + Math.cos(ang + Math.PI) * 150;
-        m.y = target.y + Math.sin(ang + Math.PI) * 150;
+      const beforeD = dist(m, target);
+      const moved = smartMoveEntity(r.grid, m, ang, spd * (dt / 16.67), 24);
+      const afterD = dist(m, target);
+      if (!moved || afterD > beforeD - 0.2) m.pathFrustration = (m.pathFrustration || 0) + dt;
+      else m.pathFrustration = Math.max(0, (m.pathFrustration || 0) - dt * 2);
+      if (m.pathFrustration > 1450 && !hasLineOfSight(r.grid, m, p)) {
+        const ambush = openCellNear(r.grid, p, CELL * 2.5, CELL * 5.0, p.angle);
+        if (ambush) { m.x = ambush.x; m.y = ambush.y; m.pathFrustration = 0; }
       }
     }
   }
@@ -902,8 +989,8 @@ export default function SomethingHeardYou({ onExit }) {
     }
 
     if (!sprint) p.stamina = clamp(p.stamina + dt * 0.018, 0, p.maxStamina);
-    if (!p.flashlightOff && !p.hasLighter && p.battery > 0) p.battery = clamp(p.battery - dt * 0.0016 * (r.finalPhase ? 1.3 : 1) * (1 - (p.upgrades.battery || 0) * 0.08), 0, p.maxBattery);
-    if (p.battery <= 0 && !p.hasLighter) p.flashlightOff = true;
+    if (!p.flashlightOff && !p.hasLighter && p.battery > 0) p.battery = clamp(p.battery - dt * 0.00105 * (r.finalPhase ? 1.18 : 1) * (1 - (p.upgrades.battery || 0) * 0.08), 0, p.maxBattery);
+    if (p.battery <= 0 && !p.hasLighter) { p.flashlightOff = true; r.message = "Your flashlight died."; }
     if (p.hasCamera) p.cameraCharge = clamp(p.cameraCharge + dt * 0.004, 0, 100);
 
     for (const f of r.activeFlares) f.timer -= dt;
@@ -915,10 +1002,15 @@ export default function SomethingHeardYou({ onExit }) {
     checkTraps(r);
 
     const md = dist(p, r.monster);
-    const monsterVisible = md < 620 && hasLineOfSight(r.grid, p, r.monster);
-    if (monsterVisible) p.sanity = clamp(p.sanity - dt * 0.022 * (1 - md / 700) * (1 - (p.upgrades.sanity || 0) * 0.06), 0, p.maxSanity);
-    else if (p.flashlightOff && !p.hasLighter) p.sanity = clamp(p.sanity - dt * 0.0022, 0, p.maxSanity);
-    else p.sanity = clamp(p.sanity + dt * 0.0045, 0, p.maxSanity);
+    const monsterVisible = md < 760 && hasLineOfSight(r.grid, p, r.monster);
+    if (monsterVisible) p.sanity = clamp(p.sanity - dt * 0.027 * (1 - md / 860) * (1 - (p.upgrades.sanity || 0) * 0.06), 0, p.maxSanity);
+    else if (p.flashlightOff && !p.hasLighter) p.sanity = clamp(p.sanity - dt * 0.0034, 0, p.maxSanity);
+    else p.sanity = clamp(p.sanity + dt * 0.0032, 0, p.maxSanity);
+
+    if (md < 520) {
+      r.glitch = Math.max(r.glitch, clamp((520 - md) / 820, 0, 0.45));
+      if (md < 230 && Math.random() < 0.018) r.message = choice(["It is breathing with you.", "Do not turn around.", "The walls are too quiet."]);
+    }
 
     if (md < 44 && p.invuln <= 0) {
       p.hp -= 1;
@@ -1307,39 +1399,47 @@ export default function SomethingHeardYou({ onExit }) {
     }
     drawMonster(ctx, r, rays);
 
-    // flashlight darkness layer: brighter center, directional cone, still scary edges
+    // flashlight darkness layer: readable center, heavy peripheral dark, no weird opaque cone
     const flashlight = !p.flashlightOff && (p.battery > 0 || p.hasLighter);
     const beamX = CANVAS_W / 2 + sway * 4;
-    const beamY = horizon + 10;
-    const dark = ctx.createRadialGradient(beamX, beamY, 32, beamX, beamY, 720);
-    const darkness = r.event?.type === "brownout" ? 0.82 : flashlight ? (p.hasLighter ? 0.74 : 0.64) : 0.92;
-    dark.addColorStop(0, `rgba(0,0,0,${flashlight ? 0.0 : 0.32})`);
-    dark.addColorStop(0.24, `rgba(0,0,0,${flashlight ? 0.06 : 0.5})`);
-    dark.addColorStop(0.58, `rgba(0,0,0,${darkness})`);
-    dark.addColorStop(1, "rgba(0,0,0,.975)");
+    const beamY = clamp(horizon + 18, 150, CANVAS_H - 160);
+    const batteryStrength = clamp(p.battery / Math.max(1, p.maxBattery), 0, 1);
+    const flicker = flashlight && !p.hasLighter && (batteryStrength < 0.28 || r.event?.type === "brownout")
+      ? 1 - (Math.random() < 0.18 ? rand(0.22, 0.52) : 0)
+      : 1;
+    const lightRadius = p.hasLighter ? 230 : 315 + batteryStrength * 185;
+    const darkness = r.event?.type === "brownout" ? 0.9 : flashlight ? (p.hasLighter ? 0.84 : 0.72) : 0.955;
+    const dark = ctx.createRadialGradient(beamX, beamY, flashlight ? 55 : 10, beamX, beamY, lightRadius * flicker);
+    dark.addColorStop(0, `rgba(0,0,0,${flashlight ? 0.0 : 0.58})`);
+    dark.addColorStop(0.36, `rgba(0,0,0,${flashlight ? 0.08 : 0.78})`);
+    dark.addColorStop(0.72, `rgba(0,0,0,${darkness})`);
+    dark.addColorStop(1, "rgba(0,0,0,.985)");
     ctx.fillStyle = dark;
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
     if (flashlight && !p.hasLighter) {
       ctx.save();
-      const strength = clamp(p.battery / Math.max(1, p.maxBattery), 0.25, 1);
-      const cone = ctx.createLinearGradient(beamX, beamY - 35, beamX, CANVAS_H);
-      cone.addColorStop(0, `rgba(255,246,214,${0.22 * strength})`);
-      cone.addColorStop(0.38, `rgba(255,232,178,${0.11 * strength})`);
-      cone.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = cone;
-      ctx.beginPath();
-      ctx.moveTo(beamX - 34, beamY - 18);
-      ctx.bezierCurveTo(CANVAS_W * 0.35, CANVAS_H * 0.62, CANVAS_W * 0.22, CANVAS_H * 0.84, CANVAS_W * 0.16, CANVAS_H);
-      ctx.lineTo(CANVAS_W * 0.84, CANVAS_H);
-      ctx.bezierCurveTo(CANVAS_W * 0.78, CANVAS_H * 0.84, CANVAS_W * 0.65, CANVAS_H * 0.62, beamX + 34, beamY - 18);
-      ctx.closePath();
-      ctx.fill();
-      const hot = ctx.createRadialGradient(beamX, beamY, 12, beamX, beamY, 250 + p.battery * 1.5);
-      hot.addColorStop(0, `rgba(255,248,220,${0.18 * strength})`);
+      ctx.globalCompositeOperation = "screen";
+      const strength = clamp(0.28 + batteryStrength * 0.72, 0.25, 1) * flicker;
+      const hot = ctx.createRadialGradient(beamX, beamY, 12, beamX, beamY, lightRadius * 0.72);
+      hot.addColorStop(0, `rgba(255,244,205,${0.24 * strength})`);
+      hot.addColorStop(0.48, `rgba(255,218,150,${0.08 * strength})`);
       hot.addColorStop(1, "rgba(255,255,255,0)");
       ctx.fillStyle = hot;
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = "rgba(20,16,14,.82)";
+      ctx.fillRect(CANVAS_W - 160 + sway * 2, CANVAS_H - 92 + Math.sin(p.bob) * 5, 112, 24);
+      ctx.fillStyle = `rgba(255,232,165,${0.42 * strength})`;
+      ctx.beginPath(); ctx.ellipse(CANVAS_W - 48 + sway * 2, CANVAS_H - 80 + Math.sin(p.bob) * 5, 22, 13, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    if (p.hasLighter && flashlight) {
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      ctx.fillStyle = `rgba(255,118,36,${0.08 + Math.sin(r.time * 0.026) * 0.025})`;
+      ctx.beginPath(); ctx.arc(CANVAS_W - 84 + sway, CANVAS_H - 84 + Math.sin(p.bob) * 4, 54, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
 
@@ -1354,6 +1454,21 @@ export default function SomethingHeardYou({ onExit }) {
     const [fr, fg, fb] = theme.fog;
     ctx.fillStyle = `rgba(${fr},${fg},${fb},.18)`;
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    const monsterDistance = dist(p, r.monster);
+    if (monsterDistance < 560) {
+      const danger = clamp((560 - monsterDistance) / 560, 0, 1);
+      const vignette = ctx.createRadialGradient(CANVAS_W / 2, CANVAS_H / 2, 120, CANVAS_W / 2, CANVAS_H / 2, 620);
+      vignette.addColorStop(0, `rgba(110,0,0,${0.02 * danger})`);
+      vignette.addColorStop(0.55, `rgba(40,0,0,${0.08 * danger})`);
+      vignette.addColorStop(1, `rgba(120,0,0,${0.52 * danger})`);
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+      if (monsterDistance < 260 && r.monster.mode === "chase") {
+        ctx.fillStyle = `rgba(255,255,255,${0.06 * danger * (0.4 + Math.sin(r.time * 0.04) * 0.6)})`;
+        ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+      }
+    }
 
     if (r.gunFlash > 0) {
       ctx.fillStyle = `rgba(180,220,255,${r.gunFlash / 250})`;
@@ -1400,6 +1515,11 @@ export default function SomethingHeardYou({ onExit }) {
     if (r.event) {
       ctx.fillStyle = "rgba(255,65,65,.96)";
       ctx.fillText(`${r.event.name} ${(r.event.timer / 1000).toFixed(1)}s`, 650, 28);
+    }
+    const mdHud = dist(p, r.monster);
+    if (mdHud < 540 || r.monster.mode === "chase") {
+      ctx.fillStyle = r.monster.mode === "chase" ? "rgba(255,50,50,.95)" : "rgba(255,190,120,.82)";
+      ctx.fillText(r.monster.mode === "chase" ? "IT IS CHASING" : "SOMETHING IS NEAR", 760, 28);
     }
     ctx.fillStyle = "rgba(225,205,205,.78)";
     ctx.font = "12px 'Share Tech Mono', monospace";
