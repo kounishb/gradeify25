@@ -451,3 +451,9 @@
   .shy-upgrade-grid button { min-height: 124px; }
   .shy-header h1 { font-size: clamp(38px, 13vw, 58px); }
 }
+
+
+/* Stable Gradeify embed fixes */
+.shy-game-card { isolation: isolate; }
+.shy-canvas { min-height: 320px; touch-action: none; user-select: none; }
+.shy-actions button, .shy-upgrade-grid button { pointer-events: auto; }
