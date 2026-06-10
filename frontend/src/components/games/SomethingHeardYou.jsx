@@ -842,60 +842,69 @@ export default function SomethingHeardYou({ onExit }) {
     m.eyePulse = (m.eyePulse || 0) + dt * 0.012;
     m.stalkTimer = (m.stalkTimer ?? 0) - dt;
     m.ambushCooldown = Math.max(0, (m.ambushCooldown ?? 0) - dt);
+    m.pressureTimer = (m.pressureTimer || 0) - dt;
     if (m.stun > 0) { m.stun -= dt; return; }
 
     const d = dist(p, m);
-    const losToPlayer = d < (r.finalPhase ? 1400 : 1180) && hasLineOfSight(r.grid, m, p);
+    const losToPlayer = d < (r.finalPhase ? 1500 : 1260) && hasLineOfSight(r.grid, m, p);
     const angleToPlayerFromMonster = Math.atan2(p.y - m.y, p.x - m.x);
     const monsterFov = Math.abs(normAng(angleToPlayerFromMonster - (m.angle || 0)));
     const playerLookingAtMonster = Math.abs(normAng(Math.atan2(m.y - p.y, m.x - p.x) - p.angle));
 
-    // Real sight system: if it has a hallway view of you, it sees you.
-    // The old FOV gate made level 1 feel dead because the monster could stare the wrong way forever.
-    const seesPlayer = losToPlayer && (d < 1180 || monsterFov < 1.65 || m.mode === "chase" || r.finalPhase);
-    const hearsPlayer = p.noise > 12 && d < 1700;
-    const provokedByLight = losToPlayer && playerLookingAtMonster < 0.42 && d < 860 && !p.flashlightOff;
+    // Aggro rules: close = dangerous, hallway LOS = chase, flashlight in its face = chase.
+    // This fixes the old "orbiting on the minimap" problem where it could stalk nearby forever.
+    const closeThreat = d < 430;
+    const veryCloseThreat = d < 270;
+    const seesPlayer = losToPlayer && (d < 1260 || monsterFov < 1.9 || m.mode === "chase" || r.finalPhase);
+    const hearsPlayer = p.noise > 10 && d < 1750;
+    const provokedByLight = losToPlayer && playerLookingAtMonster < 0.52 && d < 920 && !p.flashlightOff;
 
-    // Keep level 1 alive: the monster patrols toward nearby halls instead of waiting across the map.
-    m.pressureTimer = (m.pressureTimer || 0) - dt;
-    if (m.pressureTimer <= 0 && m.mode !== "chase") {
-      const pressure = openCellNear(r.grid, p, CELL * 2.7, CELL * 6.7, p.angle);
-      if (pressure && !hasLineOfSight(r.grid, p, pressure)) {
-        m.target = pressure;
-        m.mode = "investigate";
-      } else if (pressure) {
-        m.target = pressure;
-      }
-      m.pressureTimer = rand(4200, 7800) - r.floorNum * 450;
+    if (veryCloseThreat && !m.attackWindup) {
+      m.attackWindup = 1;
+      r.message = "It is right behind you.";
+      r.glitch = Math.max(r.glitch, 0.55);
     }
 
     const activeFlare = r.activeFlares
       .filter((f) => hasLineOfSight(r.grid, m, f))
       .sort((a, b) => dist(m, a) - dist(m, b))[0];
 
-    if (activeFlare && dist(m, activeFlare) < activeFlare.radius * 2.0 && m.mode !== "chase" && !provokedByLight) {
+    if (activeFlare && dist(m, activeFlare) < activeFlare.radius * 2.0 && m.mode !== "chase" && !provokedByLight && !closeThreat) {
       m.mode = "investigate";
       m.target = { x: activeFlare.x, y: activeFlare.y };
       m.lastKnown = m.target;
-    } else if (seesPlayer || provokedByLight) {
-      if (m.mode !== "chase") r.message = provokedByLight ? "Your light found it. Now it sees you." : "It saw you.";
+    } else if (seesPlayer || provokedByLight || closeThreat) {
+      if (m.mode !== "chase") r.message = provokedByLight ? "Your light found it. Now it sees you." : closeThreat ? "It is coming straight for you." : "It saw you.";
       m.mode = "chase";
       m.target = { x: p.x, y: p.y };
       m.lastKnown = { x: p.x, y: p.y };
       m.lastSeenAt = r.time;
-      m.anger = clamp((m.anger || 0) + dt * 0.045, 0, 100);
-      if (d < 620) p.sanity = clamp(p.sanity - dt * 0.026, 0, p.maxSanity);
+      m.anger = clamp((m.anger || 0) + dt * (closeThreat ? 0.09 : 0.045), 0, 100);
+      if (d < 700) p.sanity = clamp(p.sanity - dt * 0.03, 0, p.maxSanity);
     } else if (hearsPlayer) {
-      m.mode = p.noise > 48 || d < 420 ? "chase" : "investigate";
+      m.mode = p.noise > 38 || d < 560 ? "chase" : "investigate";
       m.target = { x: p.x, y: p.y };
       m.lastKnown = { x: p.x, y: p.y };
-      m.anger = clamp((m.anger || 0) + p.noise * 0.18, 0, 100);
+      m.lastSeenAt = r.time;
+      m.anger = clamp((m.anger || 0) + p.noise * 0.2, 0, 100);
     } else if (m.mode === "chase" && m.lastKnown) {
       m.target = m.lastKnown;
-      if (dist(m, m.lastKnown) < 74 || r.time - (m.lastSeenAt || 0) > 5200) {
+      if (dist(m, m.lastKnown) < 74 || r.time - (m.lastSeenAt || 0) > 6000) {
         m.mode = "investigate";
-        m.stalkTimer = 400;
+        m.stalkTimer = 300;
       }
+    }
+
+    // Keep level 1 active: when it is not chasing, it pressures nearby non-visible halls.
+    if (m.pressureTimer <= 0 && m.mode !== "chase") {
+      const minR = d > CELL * 7 ? CELL * 3.2 : CELL * 2.0;
+      const maxR = d > CELL * 7 ? CELL * 6.8 : CELL * 4.8;
+      const pressure = openCellNear(r.grid, p, minR, maxR, p.angle);
+      if (pressure) {
+        m.target = pressure;
+        m.mode = "investigate";
+      }
+      m.pressureTimer = rand(2600, 5200) - r.floorNum * 300;
     }
 
     // Floor-specific pressure without cheap face popups.
@@ -918,29 +927,30 @@ export default function SomethingHeardYou({ onExit }) {
       }
     }
 
-    // Stalking = patrol through nearby halls. No teleporting into the player's face.
+    // Stalking = patrol through nearby halls, but never circle close forever.
     if ((m.mode === "stalk" || m.mode === "investigate" || !m.target) && (!m.target || dist(m, m.target) < 60 || m.stalkTimer <= 0)) {
-      const patrol = openCellNear(r.grid, p, CELL * 5.4, CELL * 10.5, p.angle);
+      const patrol = openCellNear(r.grid, p, CELL * 3.8, CELL * 8.8, p.angle);
       if (patrol) m.target = patrol;
       if (m.mode !== "investigate") m.mode = "stalk";
-      m.stalkTimer = rand(2200, 5200);
+      m.stalkTimer = rand(1800, 4200);
     }
 
     // If completely lost and very far, relocate only to a non-visible distant hall, never directly in front.
     if (m.ambushCooldown <= 0 && d > 1650 && !losToPlayer && m.mode !== "chase") {
-      const relocate = openCellNear(r.grid, p, CELL * 7.0, CELL * 11.5, p.angle);
+      const relocate = openCellNear(r.grid, p, CELL * 6.5, CELL * 10.8, p.angle);
       if (relocate && !hasLineOfSight(r.grid, p, relocate)) {
         m.x = relocate.x; m.y = relocate.y;
-        m.mode = "stalk";
-        m.target = null;
+        m.mode = "investigate";
+        m.target = openCellNear(r.grid, p, CELL * 3.2, CELL * 6.2, p.angle) || { x: p.x, y: p.y };
         r.message = choice(["Something moved somewhere deeper.", "A heavy footstep echoes through the maze.", "The halls rearranged around a shape."]);
       }
-      m.ambushCooldown = rand(11000, 19000);
+      m.ambushCooldown = rand(9000, 16000);
     }
 
     const target = m.mode === "chase" ? p : m.target;
     if (target) {
-      let spd = m.mode === "chase" ? m.baseSpeed + 2.65 : m.mode === "investigate" ? m.baseSpeed + 1.05 : 1.7 + r.floorNum * 0.10;
+      let spd = m.mode === "chase" ? m.baseSpeed + 3.35 : m.mode === "investigate" ? m.baseSpeed + 1.45 : 1.95 + r.floorNum * 0.10;
+      if (d < 420 && m.mode === "chase") spd += 1.25;
       if (r.finalPhase) spd += 1.0;
       if (r.event?.type === "hunt") spd += 1.15;
       if (r.event?.type === "listening" && p.noise > 22) spd += 0.45;
@@ -950,13 +960,12 @@ export default function SomethingHeardYou({ onExit }) {
       const canRunStraight = hasLineOfSight(r.grid, m, target);
       if (!canRunStraight && m.pathTimer <= 0) {
         m.pathStep = findPathStep(r.grid, m, target);
-        m.pathTimer = m.mode === "chase" ? 90 : 170;
+        m.pathTimer = m.mode === "chase" ? 70 : 135;
       }
       if (!canRunStraight && m.pathStep) moveTarget = m.pathStep;
 
       const ang = Math.atan2(moveTarget.y - m.y, moveTarget.x - m.x);
-      // Smooth rotation makes it feel like a creature, not a flashing overlay.
-      m.angle = normAng((m.angle || ang) + normAng(ang - (m.angle || ang)) * clamp(dt / 130, 0, 1));
+      m.angle = normAng((m.angle || ang) + normAng(ang - (m.angle || ang)) * clamp(dt / 105, 0, 1));
       const beforeD = dist(m, moveTarget);
       const moved = smartMoveEntity(r.grid, m, m.angle, spd * (dt / 16.67), 27);
       const afterD = dist(m, moveTarget);
@@ -964,10 +973,14 @@ export default function SomethingHeardYou({ onExit }) {
       if (!moved || afterD > beforeD - 0.1) m.pathFrustration = (m.pathFrustration || 0) + dt;
       else m.pathFrustration = Math.max(0, (m.pathFrustration || 0) - dt * 2);
 
-      // Unstick by choosing a nearby open path, not by jumping in front of the camera.
-      if (m.pathFrustration > 2200) {
-        const sidestep = openCellNear(r.grid, m, CELL * 1.0, CELL * 3.0, null);
-        if (sidestep) { m.target = sidestep; m.pathStep = null; }
+      // If pathing gets stuck while chasing, retarget the player immediately instead of orbiting.
+      if (m.pathFrustration > (m.mode === "chase" ? 900 : 1800)) {
+        m.pathStep = findPathStep(r.grid, m, p) || null;
+        if (m.mode === "chase") m.target = { x: p.x, y: p.y };
+        else {
+          const sidestep = openCellNear(r.grid, m, CELL * 1.0, CELL * 3.0, null);
+          if (sidestep) m.target = sidestep;
+        }
         m.pathFrustration = 0;
       }
     }
@@ -1721,42 +1734,53 @@ export default function SomethingHeardYou({ onExit }) {
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
     if (flashlight && !p.hasLighter) {
-      const beamCenterX = CANVAS_W / 2 + sway * 4;
-      const beamCenterY = clamp(horizon + 10, 145, CANVAS_H - 145);
-      const spread = 250 + batteryStrength * 90;
-      const farY = -35;
+      const beamCenterX = CANVAS_W / 2 + sway * 5;
+      const beamCenterY = clamp(horizon + 18, 155, CANVAS_H - 135);
       const strength = clamp(0.44 + batteryStrength * 0.56, 0.35, 1) * flicker;
 
-      // Cut a cone out of the darkness overlay.
+      // First-person flashlight: soft oval beam straight ahead, not a triangle from the bottom of the screen.
       ctx.globalCompositeOperation = "destination-out";
-      const cone = ctx.createRadialGradient(beamCenterX, beamCenterY, 22, beamCenterX, beamCenterY - 80, 600 * flicker);
-      cone.addColorStop(0, `rgba(255,255,255,${0.76 * strength})`);
-      cone.addColorStop(0.36, `rgba(255,255,255,${0.46 * strength})`);
-      cone.addColorStop(0.74, `rgba(255,255,255,${0.12 * strength})`);
-      cone.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = cone;
+      ctx.save();
+      ctx.translate(beamCenterX, beamCenterY);
+      ctx.scale(1.62, 0.82);
+      const beam = ctx.createRadialGradient(0, 0, 18, 0, 0, 330 * flicker);
+      beam.addColorStop(0, `rgba(255,255,255,${0.84 * strength})`);
+      beam.addColorStop(0.34, `rgba(255,255,255,${0.58 * strength})`);
+      beam.addColorStop(0.68, `rgba(255,255,255,${0.22 * strength})`);
+      beam.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = beam;
       ctx.beginPath();
-      ctx.moveTo(CANVAS_W / 2 - 26 + sway * 2, CANVAS_H + 18);
-      ctx.lineTo(beamCenterX - spread, farY);
-      ctx.quadraticCurveTo(beamCenterX, beamCenterY - 165, beamCenterX + spread, farY);
-      ctx.lineTo(CANVAS_W / 2 + 26 + sway * 2, CANVAS_H + 18);
-      ctx.closePath();
+      ctx.arc(0, 0, 345, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
 
-      // Add a visible warm beam without brightening the whole screen.
+      // Small spill on the lower foreground so the hand/near floor stays readable.
+      ctx.save();
+      ctx.translate(CANVAS_W / 2 + sway * 2, CANVAS_H - 86);
+      ctx.scale(1.25, 0.42);
+      const spill = ctx.createRadialGradient(0, 0, 4, 0, 0, 170);
+      spill.addColorStop(0, `rgba(255,255,255,${0.22 * strength})`);
+      spill.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = spill;
+      ctx.beginPath();
+      ctx.arc(0, 0, 180, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Add a visible warm hotspot without drawing a hard triangle.
       ctx.globalCompositeOperation = "screen";
-      const hot = ctx.createRadialGradient(beamCenterX, beamCenterY, 6, beamCenterX, beamCenterY - 100, 440);
-      hot.addColorStop(0, `rgba(255,242,205,${0.18 * strength})`);
-      hot.addColorStop(0.5, `rgba(255,215,145,${0.07 * strength})`);
+      ctx.save();
+      ctx.translate(beamCenterX, beamCenterY);
+      ctx.scale(1.45, 0.72);
+      const hot = ctx.createRadialGradient(0, 0, 8, 0, 0, 245);
+      hot.addColorStop(0, `rgba(255,242,205,${0.19 * strength})`);
+      hot.addColorStop(0.46, `rgba(255,215,145,${0.08 * strength})`);
       hot.addColorStop(1, "rgba(255,255,255,0)");
       ctx.fillStyle = hot;
       ctx.beginPath();
-      ctx.moveTo(CANVAS_W / 2 - 18 + sway * 2, CANVAS_H + 12);
-      ctx.lineTo(beamCenterX - spread * 0.82, farY);
-      ctx.lineTo(beamCenterX + spread * 0.82, farY);
-      ctx.lineTo(CANVAS_W / 2 + 18 + sway * 2, CANVAS_H + 12);
-      ctx.closePath();
+      ctx.arc(0, 0, 255, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
       ctx.globalCompositeOperation = "source-over";
 
       // Flashlight hand/body.
