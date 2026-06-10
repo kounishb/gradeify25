@@ -516,9 +516,9 @@ export default function Games() {
           <div className="game-card-top">
             <div>
               <p className="game-label">New Game</p>
-              <h2>Skyline Obby</h2>
+              <h2>Skyline Platformer</h2>
             </div>
-            <span className="game-pill">First Person Obby</span>
+            <span className="game-pill">First Person Platformer</span>
           </div>
 
           <p className="game-description">
@@ -547,7 +547,7 @@ export default function Games() {
             className="start-game-btn"
             onClick={() => setActiveGame("neutral-obby")}
           >
-            Start Skyline Obby
+            Start Skyline Platformer
           </button>
         </div>
       </div>
